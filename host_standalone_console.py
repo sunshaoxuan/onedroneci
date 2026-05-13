@@ -164,7 +164,7 @@ INDEX_HTML = """<!doctype html>
           <label>PostgreSQL Port <input name="postgresql_port" type="number" value="5432"></label>
           <label>PostgreSQL User <input name="postgresql_user" value="postgres"></label>
           <label>PostgreSQL Password <input name="postgresql_password" value="password"></label>
-          <label>OHR Host Address <input name="ohr_host_address" placeholder="默认取客户访问地址"></label>
+          <label>应用服务主机名 <input name="ohr_host_address" placeholder="默认取客户访问地址"></label>
           <label>OHR Service Port <input name="ohr_service_port" type="number" value="3198"></label>
         </div>
         <button type="submit">开始最终打包</button>
