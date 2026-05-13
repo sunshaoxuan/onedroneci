@@ -1029,13 +1029,13 @@ INDEX_HTML = """<!doctype html>
       <div>
         <div class="eyebrow">OHR Build Console</div>
         <h1>统一构建入口</h1>
-        <p class="muted">填写前后端分支参数，触发 CI 机上的打包流程，并在这里查看流水线状态与实时日志。</p>
+        <p class="muted">填写前后端分支参数，触发 CI 机上的本机构建流程，并在这里查看构建状态与实时日志。</p>
       </div>
       <div class="hero-panel">
         <span class="status-dot"></span>
         <div>
-          <strong>CI 直连 / Drone</strong>
-          <small>BUILD_EXECUTOR=direct 时在机器上完整出 package.zip + web.zip</small>
+          <strong>本机构建模式</strong>
+          <small>当前为 direct：不经过 DroneCI，由 8090 所在机器直接产出 package.zip + web.zip</small>
         </div>
       </div>
     </section>
@@ -1088,7 +1088,7 @@ INDEX_HTML = """<!doctype html>
       </div>
       <div class="card">
         <div class="section-title compact">
-          <h2>流水线</h2>
+          <h2>构建步骤</h2>
           <span class="muted">状态追踪</span>
         </div>
         <div id="build-detail" class="empty-state">请选择或启动一个构建。</div>
