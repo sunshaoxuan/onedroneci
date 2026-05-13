@@ -704,7 +704,28 @@ if [ -z "$bundle_zip" ] || [ ! -f "$bundle_zip" ]; then
   echo "前端发布包生成失败：npm run bundle 未生成 release_*.zip"
   exit 3
 fi
-cp "$bundle_zip" "$OUT_WEB_ZIP"
+publish_root="$(mktemp -d)"
+cleanup_publish_root() {
+  rm -rf "$publish_root"
+}
+trap cleanup_publish_root EXIT
+mkdir -p "$publish_root/ohr-cicd/web_prod" "$publish_root/ohr-cicd/conf_prod"
+unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
+mkdir -p "$publish_root/ohr-cicd/web_prod/help"
+cat > "$publish_root/ohr-cicd/conf_prod/TODO.md" <<'TODO'
+# TODO
+
+conf_prod deployment resources are pending a confirmed source.
+TODO
+cat > "$publish_root/ohr-cicd/web_prod/help/TODO.md" <<'TODO'
+# TODO
+
+help static site resources are pending a confirmed source.
+TODO
+(
+  cd "$publish_root"
+  zip -r "$OUT_WEB_ZIP" ohr-cicd
+)
 bundle_dir="${bundle_zip%.zip}"
 rm -rf "$bundle_zip" "$bundle_dir"
 ls -lh "$OUT_WEB_ZIP"

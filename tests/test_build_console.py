@@ -225,6 +225,10 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "npm run build" in script
     assert "npm run bundle" in script
     assert "release_*.zip" in script
+    assert "ohr-cicd/web_prod" in script
+    assert "ohr-cicd/conf_prod" in script
+    assert "web_prod/help" in script
+    assert "TODO.md" in script
     assert "前端发布包生成失败" in script
     assert 'zip -r "$OUT_WEB_ZIP" .' not in script
     assert "node_modules/*" not in script
