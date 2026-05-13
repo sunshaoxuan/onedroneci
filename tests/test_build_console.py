@@ -85,12 +85,15 @@ def test_create_build_allows_frontend_only_without_backend_branch(tmp_path, monk
             "build_frontend": True,
             "backend_branch": "",
             "frontend_release_branch": "release_front",
+            "conf_server_host": "192.168.70.136",
         }
     )
 
     assert meta["request"]["build_backend"] is False
     assert meta["request"]["build_frontend"] is True
     assert meta["request"]["help_docs_branch"] == "release_ci"
+    assert meta["request"]["conf_server_host"] == "192.168.70.136"
+    assert meta["request"]["conf_web_port"] == 80
     assert meta["request"]["backend_branch"] == ""
 
 
@@ -124,6 +127,7 @@ def test_create_build_uses_release_for_child_repos_and_configured_workspace(tmp_
         {
             "backend_branch": "release_20260129",
             "frontend_release_branch": "release_front",
+            "conf_server_host": "192.168.70.136",
         }
     )
     req = meta["request"]
@@ -145,6 +149,10 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
         {
             "backend_branch": "release_20260129",
             "frontend_release_branch": "release_front",
+            "conf_server_host": "192.168.70.136",
+            "conf_web_port": "40443",
+            "conf_worker_processes": "1",
+            "conf_worker_connections": "1024",
             "note": "smoke",
         }
     )
@@ -154,6 +162,10 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
     assert meta["request"]["frontend_workspace_branch"] == "master"
     assert meta["request"]["frontend_release_branch"] == "release_front"
     assert meta["request"]["help_docs_branch"] == "release_ci"
+    assert meta["request"]["conf_server_host"] == "192.168.70.136"
+    assert meta["request"]["conf_web_port"] == 40443
+    assert meta["request"]["conf_worker_processes"] == 1
+    assert meta["request"]["conf_worker_connections"] == 1024
     assert (tmp_path / meta["id"] / "metadata.json").is_file()
     assert [step["id"] for step in meta["steps"]] == list(server.DIRECT_STEP_IDS)
 
@@ -170,6 +182,7 @@ def test_create_build_requires_drone_config_when_drone_executor(tmp_path, monkey
             {
                 "backend_branch": "release_back",
                 "frontend_release_branch": "release_front",
+                "conf_server_host": "192.168.70.136",
             }
         )
     except ValueError as exc:
@@ -229,6 +242,13 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "release_*.zip" in script
     assert "ohr-cicd/web_prod" in script
     assert "ohr-cicd/conf_prod" in script
+    assert "conf_prod/TODO.md" not in script
+    assert "common-settings.conf" in script
+    assert "cicd.json" in script
+    assert "CONF_SERVER_HOST" in script
+    assert "CONF_WEB_PORT" in script
+    assert 'if [ "$CONF_WEB_PORT" != "80" ]; then' in script
+    assert 'portal_origin="$portal_origin:$CONF_WEB_PORT"' in script
     assert "web_prod/help" in script
     assert "ohr-help-docs" in script
     assert "svn checkout" in script

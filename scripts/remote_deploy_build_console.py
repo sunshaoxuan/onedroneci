@@ -69,6 +69,7 @@ def render_env() -> str:
         "HELP_DOCS_SVN_DIR": base.get("HELP_DOCS_SVN_DIR", "/opt/ohr-help-docs-svn"),
         "HELP_DOCS_SVN_USERNAME": base.get("HELP_DOCS_SVN_USERNAME", ""),
         "HELP_DOCS_SVN_PASSWORD": base.get("HELP_DOCS_SVN_PASSWORD", ""),
+        "CONF_PROD_TEMPLATE_DIR": base.get("CONF_PROD_TEMPLATE_DIR", f"{REMOTE_DIR}/conf_prod_template"),
         "FRONTEND_GIT_TOKEN": base.get("FRONTEND_GIT_TOKEN", git.get("OHR_BACK_GIT_TOKEN", "")),
         "NPM_AUTH_B64": base.get("NPM_AUTH_B64", ""),
     }
@@ -96,10 +97,11 @@ def main() -> int:
         timeout=45,
     )
     try:
-        _run(client, f"mkdir -p {REMOTE_DIR}/builds /opt/ohr-build-artifacts /opt/pnpm-cache /opt/workspace-cache-ohr /opt/ohr-backend/.m2 /opt/ohr-workspace-src /opt/ohr-help-docs-src /opt/ohr-help-docs-svn && chmod 700 {REMOTE_DIR}")
+        _run(client, f"mkdir -p {REMOTE_DIR}/builds /opt/ohr-build-artifacts /opt/pnpm-cache /opt/workspace-cache-ohr /opt/ohr-backend/.m2 /opt/ohr-workspace-src /opt/ohr-help-docs-src /opt/ohr-help-docs-svn && rm -rf {REMOTE_DIR}/conf_prod_template && mkdir -p {REMOTE_DIR}/conf_prod_template && chmod 700 {REMOTE_DIR}")
         with client.open_sftp() as sftp:
             sftp.put(str(ROOT / "build-console" / "server.py"), f"{REMOTE_DIR}/server.py")
             sftp.put(str(ROOT / "build-console" / "drone_adapter.py"), f"{REMOTE_DIR}/drone_adapter.py")
+            _upload_dir(sftp, ROOT / "build-console" / "conf_prod_template", f"{REMOTE_DIR}/conf_prod_template")
             _write_sftp(sftp, f"{REMOTE_DIR}/build-console.env", render_env())
             sftp.put(str(ROOT / "deploy" / "build-console" / "ohr-build-console.service"), REMOTE_SERVICE)
         _run(
@@ -134,6 +136,19 @@ curl -sS -I http://127.0.0.1:8090/ | head -20
 def _write_sftp(sftp: paramiko.SFTPClient, remote: str, text: str) -> None:
     with sftp.file(remote, "w") as f:
         f.write(text)
+
+
+def _upload_dir(sftp: paramiko.SFTPClient, local: Path, remote: str) -> None:
+    try:
+        sftp.mkdir(remote)
+    except OSError:
+        pass
+    for item in local.iterdir():
+        target = f"{remote}/{item.name}"
+        if item.is_dir():
+            _upload_dir(sftp, item, target)
+        else:
+            sftp.put(str(item), target)
 
 
 def _run(client: paramiko.SSHClient, command: str) -> str:

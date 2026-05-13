@@ -54,6 +54,7 @@ HELP_DOCS_SVN_URL = os.environ.get(
 HELP_DOCS_SVN_DIR = Path(os.environ.get("HELP_DOCS_SVN_DIR", "/opt/ohr-help-docs-svn"))
 HELP_DOCS_SVN_USERNAME = os.environ.get("HELP_DOCS_SVN_USERNAME", "")
 HELP_DOCS_SVN_PASSWORD = os.environ.get("HELP_DOCS_SVN_PASSWORD", "")
+CONF_PROD_TEMPLATE_DIR = Path(os.environ.get("CONF_PROD_TEMPLATE_DIR", "/opt/ohr-build-console/conf_prod_template"))
 HOST = os.environ.get("BUILD_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUILD_CONSOLE_PORT", "8090"))
 CONFIG_FILE = Path(os.environ.get("BUILD_CONSOLE_ENV", ROOT / "build-console.env"))
@@ -63,6 +64,7 @@ DRONE_TOKEN = os.environ.get("DRONE_TOKEN", "")
 DRONE_CONTROL_REPO = os.environ.get("DRONE_CONTROL_REPO", "")
 DRONE_CONTROL_BRANCH = os.environ.get("DRONE_CONTROL_BRANCH", "master")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+CONF_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$")
 DIRECT_STEP_IDS = (
     "validate",
     "checkout_backend",
@@ -159,6 +161,16 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
+def parse_int_field(payload: dict[str, Any], key: str, default: int) -> int:
+    raw = payload.get(key)
+    if raw in (None, ""):
+        return default
+    try:
+        return int(str(raw).strip())
+    except ValueError as exc:
+        raise ValueError(f"{key} 必须是数字") from exc
+
+
 def append_log(build_id: str, line: str) -> None:
     with log_path(build_id).open("a", encoding="utf-8") as f:
         f.write(line.rstrip("\n") + "\n")
@@ -208,6 +220,10 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         or ""
     ).strip()
     help_docs_branch = str(payload.get("help_docs_branch") or HELP_DOCS_BRANCH).strip()
+    conf_server_host = str(payload.get("conf_server_host") or "").strip()
+    conf_web_port = parse_int_field(payload, "conf_web_port", 80)
+    conf_worker_processes = parse_int_field(payload, "conf_worker_processes", 1)
+    conf_worker_connections = parse_int_field(payload, "conf_worker_connections", 1024)
     note = str(payload.get("note") or "").strip()
 
     if not build_backend and not build_frontend:
@@ -224,6 +240,16 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("请填写 Help 文档分支")
     if help_docs_branch and not BRANCH_RE.fullmatch(help_docs_branch):
         raise ValueError("Help 文档分支名仅允许字母、数字、._/-")
+    if build_frontend and not conf_server_host:
+        raise ValueError("请填写客户访问地址")
+    if conf_server_host and not CONF_HOST_RE.fullmatch(conf_server_host):
+        raise ValueError("客户访问地址仅允许字母、数字、点和中划线")
+    if build_frontend and not (1 <= conf_web_port <= 65535):
+        raise ValueError("Web 端口必须在 1-65535 之间")
+    if build_frontend and conf_worker_processes < 1:
+        raise ValueError("worker_processes 必须大于 0")
+    if build_frontend and conf_worker_connections < 1:
+        raise ValueError("worker_connections 必须大于 0")
     # ohr-workspace 不跟随 release_*；它固定使用配置分支。用户选择的是四个子项目共同存在的版本分支。
     frontend_workspace_branch = FRONTEND_WORKSPACE_BRANCH
     frontend_feelin_branch = frontend_release_branch
@@ -258,6 +284,10 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
             "frontend_micro_frontends_branch": frontend_micro_frontends_branch,
             "frontend_nocode_engine_branch": frontend_nocode_engine_branch,
             "help_docs_branch": help_docs_branch,
+            "conf_server_host": conf_server_host,
+            "conf_web_port": conf_web_port,
+            "conf_worker_processes": conf_worker_processes,
+            "conf_worker_connections": conf_worker_connections,
             "build_backend": build_backend,
             "build_frontend": build_frontend,
             "note": note,
@@ -788,14 +818,45 @@ mkdir -p "$publish_root/ohr-cicd/web_prod" "$publish_root/ohr-cicd/conf_prod"
 unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
 mkdir -p "$publish_root/ohr-cicd/web_prod/help"
 unzip -q "$HELP_DIR/$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
-cat > "$publish_root/ohr-cicd/conf_prod/TODO.md" <<'TODO'
-# TODO
+conf_dir="$publish_root/ohr-cicd/conf_prod"
+if [ ! -d "$CONF_PROD_TEMPLATE_DIR" ]; then
+  echo "conf_prod 模板目录不存在：$CONF_PROD_TEMPLATE_DIR"
+  exit 6
+fi
+cp -a "$CONF_PROD_TEMPLATE_DIR/." "$conf_dir/"
+rm -f "$conf_dir"/*.crt "$conf_dir"/*.key "$conf_dir"/TODO.md
+portal_origin="http://$CONF_SERVER_HOST"
+if [ "$CONF_WEB_PORT" != "80" ]; then
+  portal_origin="$portal_origin:$CONF_WEB_PORT"
+fi
+cat > "$conf_dir/common-settings.conf" <<CONF
+set \$ohr_server_name "localhost $CONF_SERVER_HOST";
+set \$ohr_portal_origin "$portal_origin";
 
-conf_prod deployment resources are pending a confirmed source.
-TODO
+set \$web_root_directory "ohr-cicd/web_prod";
+set \$engine_root_directory "ohr-cicd/web_prod/engine/serve-assets/";
+set \$help_root_directory "ohr-cicd/web_prod/help/";
+set \$portal_root_directory "ohr-cicd/web_prod/portal/dist/";
+set \$dumi_basic_root_directory "ohr-cicd/web_prod/dumi_basic/docs-dist/";
+set \$dumi_nocode_root_directory "ohr-cicd/web_prod/dumi_nocode/docs-dist/";
+CONF
+printf '{"hostPort":%s}\n' "$CONF_WEB_PORT" > "$conf_dir/cicd.json"
+python3 - "$conf_dir/nginx.conf" "$CONF_WEB_PORT" "$CONF_WORKER_PROCESSES" "$CONF_WORKER_CONNECTIONS" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+port, workers, connections = sys.argv[2:5]
+text = path.read_text(encoding="utf-8")
+text = re.sub(r"worker_processes\s+\d+;", f"worker_processes {workers};", text, count=1)
+text = re.sub(r"worker_connections\s+\d+;", f"worker_connections {connections};", text, count=1)
+text = re.sub(r"listen\s+\d+;", f"listen {port};", text, count=1)
+path.write_text(text, encoding="utf-8")
+PY
 (
   cd "$publish_root"
-  zip -r "$OUT_WEB_ZIP" ohr-cicd
+  zip -qr "$OUT_WEB_ZIP" ohr-cicd
 )
 bundle_dir="${bundle_zip%.zip}"
 rm -rf "$bundle_zip" "$bundle_dir"
@@ -828,6 +889,11 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "HELP_DOCS_SVN_WORKDIR": str(HELP_DOCS_SVN_DIR),
         "HELP_DOCS_SVN_USERNAME": HELP_DOCS_SVN_USERNAME,
         "HELP_DOCS_SVN_PASSWORD": HELP_DOCS_SVN_PASSWORD,
+        "CONF_PROD_TEMPLATE_DIR": str(CONF_PROD_TEMPLATE_DIR),
+        "CONF_SERVER_HOST": req.get("conf_server_host") or "",
+        "CONF_WEB_PORT": str(req.get("conf_web_port") or 80),
+        "CONF_WORKER_PROCESSES": str(req.get("conf_worker_processes") or 1),
+        "CONF_WORKER_CONNECTIONS": str(req.get("conf_worker_connections") or 1024),
         "OHR_BUILD_ID": build_id,
         "OUT_WEB_ZIP": str(ARTIFACT_ROOT / build_id / "web.zip"),
     }
@@ -1126,7 +1192,7 @@ INDEX_HTML = """<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OHR 构建入口</title>
-  <link rel="stylesheet" href="/style.css?v=3">
+  <link rel="stylesheet" href="/style.css?v=4">
 </head>
 <body>
   <main>
@@ -1176,6 +1242,25 @@ INDEX_HTML = """<!doctype html>
           <summary>前端分支规则</summary>
           <p class="muted">ohr-workspace 不使用 release_* 分支，构建时固定检出 master；上方选择的版本分支会同时用于 ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends。若候选列表不全，可直接手输。</p>
         </details>
+        <div class="subsection-title">客户配置区</div>
+        <div class="form-grid four">
+          <div class="field-block">
+            <label for="input-conf-server-host">客户访问地址</label>
+            <input id="input-conf-server-host" name="conf_server_host" placeholder="例如 192.168.70.136" autocomplete="off">
+          </div>
+          <div class="field-block">
+            <label for="input-conf-web-port">Web 端口</label>
+            <input id="input-conf-web-port" name="conf_web_port" type="number" min="1" max="65535" value="80" autocomplete="off">
+          </div>
+          <div class="field-block">
+            <label for="input-conf-worker-processes">worker_processes</label>
+            <input id="input-conf-worker-processes" name="conf_worker_processes" type="number" min="1" value="1" autocomplete="off">
+          </div>
+          <div class="field-block">
+            <label for="input-conf-worker-connections">worker_connections</label>
+            <input id="input-conf-worker-connections" name="conf_worker_connections" type="number" min="1" value="1024" autocomplete="off">
+          </div>
+        </div>
         <div class="form-grid">
           <label>备注 <input name="note" placeholder="例如：测试环境首次打包"></label>
         </div>
@@ -1211,7 +1296,7 @@ INDEX_HTML = """<!doctype html>
       <pre id="log"></pre>
     </section>
   </main>
-  <script src="/app.js?v=8"></script>
+  <script src="/app.js?v=9"></script>
 </body>
 </html>
 """
@@ -1252,6 +1337,10 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const backendBranch = (form.get('backend_branch') || '').trim();
   const ws = getFrontendWorkspaceBranch();
   const helpDocsBranch = (form.get('help_docs_branch') || '').trim();
+  const confServerHost = (form.get('conf_server_host') || '').trim();
+  const confWebPort = Number(form.get('conf_web_port') || 80);
+  const confWorkerProcesses = Number(form.get('conf_worker_processes') || 1);
+  const confWorkerConnections = Number(form.get('conf_worker_connections') || 1024);
   if (!buildBackend && !buildFrontend) {
     setFormLocked(false);
     alert('请至少选择一个构建目标');
@@ -1272,6 +1361,21 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
     alert('请填写 Help 文档分支');
     return;
   }
+  if (buildFrontend && !confServerHost) {
+    setFormLocked(false);
+    alert('请填写客户访问地址');
+    return;
+  }
+  if (buildFrontend && (!Number.isInteger(confWebPort) || confWebPort < 1 || confWebPort > 65535)) {
+    setFormLocked(false);
+    alert('Web 端口必须在 1-65535 之间');
+    return;
+  }
+  if (buildFrontend && (!Number.isInteger(confWorkerProcesses) || confWorkerProcesses < 1 || !Number.isInteger(confWorkerConnections) || confWorkerConnections < 1)) {
+    setFormLocked(false);
+    alert('worker 配置必须是大于 0 的整数');
+    return;
+  }
   setFormLocked(true);
   const payload = {
     build_backend: buildBackend,
@@ -1279,6 +1383,10 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
     backend_branch: backendBranch,
     frontend_release_branch: ws,
     help_docs_branch: helpDocsBranch,
+    conf_server_host: confServerHost,
+    conf_web_port: confWebPort,
+    conf_worker_processes: confWorkerProcesses,
+    conf_worker_connections: confWorkerConnections,
     note: form.get('note')
   };
   const res = await fetch('/api/builds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -1320,9 +1428,16 @@ function syncBuildTargetInputs() {
   const backendInput = document.getElementById('input-backend-branch');
   const frontendInput = document.getElementById('input-frontend-release');
   const helpDocsInput = document.getElementById('input-help-docs-branch');
+  const confInputs = [
+    document.getElementById('input-conf-server-host'),
+    document.getElementById('input-conf-web-port'),
+    document.getElementById('input-conf-worker-processes'),
+    document.getElementById('input-conf-worker-connections')
+  ];
   backendInput.disabled = !backendToggle.checked;
   frontendInput.disabled = !frontendToggle.checked;
   helpDocsInput.disabled = !frontendToggle.checked;
+  confInputs.forEach(input => { input.disabled = !frontendToggle.checked; });
 }
 
 (function wireBuildTargetToggles() {
@@ -1447,6 +1562,18 @@ function renderDetail(build) {
       <div>
         <div class="muted">Help 文档分支</div>
         <strong>${build.request.help_docs_branch || ''}</strong>
+      </div>
+      <div>
+        <div class="muted">客户访问地址</div>
+        <strong>${build.request.conf_server_host || ''}</strong>
+      </div>
+      <div>
+        <div class="muted">Web 端口</div>
+        <strong>${build.request.conf_web_port || ''}</strong>
+      </div>
+      <div>
+        <div class="muted">worker</div>
+        <strong>${build.request.conf_worker_processes || ''}/${build.request.conf_worker_connections || ''}</strong>
       </div>
       <div>
         <div class="muted">执行器</div>
@@ -1577,6 +1704,8 @@ h2 { font-size: 19px; }
 .section-title.compact { align-items: center; margin-bottom: 14px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.form-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.subsection-title { margin: 18px 0 10px; font-weight: 800; color: #172033; }
 .field-block {
   display: flex;
   flex-direction: column;
