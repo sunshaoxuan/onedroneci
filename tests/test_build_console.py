@@ -54,7 +54,7 @@ def test_create_build_requires_backend_branch(tmp_path, monkeypatch):
         raise AssertionError("empty branch should fail")
 
 
-def test_create_build_requires_frontend_release_branch(tmp_path, monkeypatch):
+def test_create_build_requires_frontend_release_branch_when_frontend_enabled(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)
     monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
@@ -73,7 +73,47 @@ def test_create_build_requires_frontend_release_branch(tmp_path, monkeypatch):
         raise AssertionError("missing workspace branch should fail")
 
 
-def test_create_build_uses_release_for_child_repos_and_main_for_workspace(tmp_path, monkeypatch):
+def test_create_build_allows_frontend_only_without_backend_branch(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
+    monkeypatch.setattr(server, "EXECUTOR", "direct")
+
+    meta = server.create_build(
+        {
+            "build_backend": False,
+            "build_frontend": True,
+            "backend_branch": "",
+            "frontend_release_branch": "release_front",
+        }
+    )
+
+    assert meta["request"]["build_backend"] is False
+    assert meta["request"]["build_frontend"] is True
+    assert meta["request"]["backend_branch"] == ""
+
+
+def test_create_build_requires_at_least_one_target(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
+
+    try:
+        server.create_build(
+            {
+                "build_backend": False,
+                "build_frontend": False,
+                "backend_branch": "",
+                "frontend_release_branch": "",
+            }
+        )
+    except ValueError as exc:
+        assert "至少选择" in str(exc)
+    else:
+        raise AssertionError("missing build target should fail")
+
+
+def test_create_build_uses_release_for_child_repos_and_configured_workspace(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)
     monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
@@ -86,7 +126,7 @@ def test_create_build_uses_release_for_child_repos_and_main_for_workspace(tmp_pa
         }
     )
     req = meta["request"]
-    assert req["frontend_workspace_branch"] == "main"
+    assert req["frontend_workspace_branch"] == "master"
     assert req["frontend_release_branch"] == "release_front"
     assert req["frontend_feelin_branch"] == "release_front"
     assert req["frontend_lowcode_engine_branch"] == "release_front"
@@ -110,7 +150,7 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
 
     assert meta["executor"] == "direct"
     assert meta["request"]["backend_branch"] == "release_20260129"
-    assert meta["request"]["frontend_workspace_branch"] == "main"
+    assert meta["request"]["frontend_workspace_branch"] == "master"
     assert meta["request"]["frontend_release_branch"] == "release_front"
     assert (tmp_path / meta["id"] / "metadata.json").is_file()
     assert [step["id"] for step in meta["steps"]] == list(server.DIRECT_STEP_IDS)

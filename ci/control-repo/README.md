@@ -23,7 +23,7 @@ build-console 会通过 Drone API 传入：
 
 - `BUILD_ID`
 - `OHR_BACK_BRANCH`
-- `FRONTEND_WORKSPACE_BRANCH`：固定为 `main`
+- `FRONTEND_WORKSPACE_BRANCH`：固定 workspace 分支，当前默认 `master`
 - `FRONTEND_RELEASE_BRANCH`：四个前端子项目共同存在的 `release_*` 分支
 - `FRONTEND_FEELIN_BRANCH`
 - `FRONTEND_LOWCODE_ENGINE_BRANCH`

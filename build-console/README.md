@@ -5,7 +5,8 @@
 ## 功能
 
 - 选择后端分支与前端版本分支，触发打包；展示流水线步骤、状态与增量日志。
-- 前端版本分支来自 `ohr-feelin`、`ohr-lowcode-engine`、`ohr-micro-frontends`、`ohr-nocode-engine` 共同存在的 `release_*` 分支；`ohr-workspace` 固定使用 `main`。
+- 前端版本分支来自 `ohr-feelin`、`ohr-lowcode-engine`、`ohr-micro-frontends`、`ohr-nocode-engine` 共同存在的 `release_*` 分支；`ohr-workspace` 固定使用 `FRONTEND_WORKSPACE_BRANCH`（默认 `master`）。
+- 构建目标可单独开关：只构建后端 `package.zip`、只构建前端 `web.zip`，或两者都构建。
 - 成功后下载 **`package.zip`** 与 **`web.zip`**（路径见 API 说明）。
 - **执行器**由 `BUILD_EXECUTOR` 控制：
   - **`direct`**：在 CI 本机线程内执行克隆、Maven、前端构建等（见 `server.py`）。
@@ -25,7 +26,7 @@ python build-console/server.py
 
 ## API
 
-- `POST /api/builds`：创建构建（JSON：`backend_branch`、`frontend_release_branch`、`note`；旧字段 `frontend_workspace_branch` 兼容为前端版本分支）
+- `POST /api/builds`：创建构建（JSON：`build_backend`、`build_frontend`、`backend_branch`、`frontend_release_branch`、`note`；旧字段 `frontend_workspace_branch` 兼容为前端版本分支）
 - `GET /api/builds`：构建列表
 - `GET /api/builds/{id}`：构建详情（drone 模式下会同步 Drone 状态）
 - `GET /api/builds/{id}/log?offset=0`：增量日志

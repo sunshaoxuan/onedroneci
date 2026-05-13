@@ -42,7 +42,7 @@ FRONTEND_CHILD_REPOS = {
         "FRONTEND_NOCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-nocode-engine.git"
     ),
 }
-FRONTEND_WORKSPACE_BRANCH = os.environ.get("FRONTEND_WORKSPACE_BRANCH", "main")
+FRONTEND_WORKSPACE_BRANCH = os.environ.get("FRONTEND_WORKSPACE_BRANCH", "master")
 HOST = os.environ.get("BUILD_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUILD_CONSOLE_PORT", "8090"))
 CONFIG_FILE = Path(os.environ.get("BUILD_CONSOLE_ENV", ROOT / "build-console.env"))
@@ -178,6 +178,8 @@ def update_step(build_id: str, step_id: str, status: str, message: str | None = 
 
 
 def create_build(payload: dict[str, Any]) -> dict[str, Any]:
+    build_backend = bool(payload.get("build_backend", True))
+    build_frontend = bool(payload.get("build_frontend", True))
     backend_branch = str(payload.get("backend_branch") or "").strip()
     frontend_release_branch = str(
         payload.get("frontend_release_branch")
@@ -188,15 +190,17 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
     ).strip()
     note = str(payload.get("note") or "").strip()
 
-    if not backend_branch:
+    if not build_backend and not build_frontend:
+        raise ValueError("请至少选择一个构建目标")
+    if build_backend and not backend_branch:
         raise ValueError("请填写后端分支")
-    if not BRANCH_RE.fullmatch(backend_branch):
+    if backend_branch and not BRANCH_RE.fullmatch(backend_branch):
         raise ValueError("后端分支名仅允许字母、数字、._/-")
-    if not frontend_release_branch:
+    if build_frontend and not frontend_release_branch:
         raise ValueError("请填写前端版本分支")
-    if not BRANCH_RE.fullmatch(frontend_release_branch):
+    if frontend_release_branch and not BRANCH_RE.fullmatch(frontend_release_branch):
         raise ValueError("前端版本分支名仅允许字母、数字、._/-")
-    # ohr-workspace 不跟随 release_*；它固定使用 main。用户选择的是四个子项目共同存在的版本分支。
+    # ohr-workspace 不跟随 release_*；它固定使用配置分支。用户选择的是四个子项目共同存在的版本分支。
     frontend_workspace_branch = FRONTEND_WORKSPACE_BRANCH
     frontend_feelin_branch = frontend_release_branch
     frontend_lowcode_engine_branch = frontend_release_branch
@@ -229,6 +233,8 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
             "frontend_lowcode_engine_branch": frontend_lowcode_engine_branch,
             "frontend_micro_frontends_branch": frontend_micro_frontends_branch,
             "frontend_nocode_engine_branch": frontend_nocode_engine_branch,
+            "build_backend": build_backend,
+            "build_frontend": build_frontend,
             "note": note,
         },
         "steps": make_steps(EXECUTOR),
@@ -255,72 +261,88 @@ def run_direct_build(build_id: str) -> None:
     try:
         meta = update_build(build_id, status="running")
         request = meta["request"]
+        build_backend = bool(request.get("build_backend", True))
+        build_frontend = bool(request.get("build_frontend", True))
         branch = request["backend_branch"]
-        append_log(build_id, f"构建开始：backend_branch={branch}")
+        append_log(
+            build_id,
+            f"构建开始：build_backend={build_backend}, build_frontend={build_frontend}, "
+            f"backend_branch={branch or '-'}, frontend_release_branch={request.get('frontend_release_branch') or '-'}",
+        )
 
         update_step(build_id, "validate", "running")
-        if not OHR_BACK_DIR.is_dir():
+        if build_backend and not OHR_BACK_DIR.is_dir():
             raise RuntimeError(f"后端目录不存在：{OHR_BACK_DIR}")
-        if not os.environ.get("OHR_BACK_GIT_TOKEN") and not os.environ.get("FRONTEND_GIT_TOKEN"):
+        if build_frontend and not os.environ.get("OHR_BACK_GIT_TOKEN") and not os.environ.get("FRONTEND_GIT_TOKEN"):
             raise RuntimeError("需配置 OHR_BACK_GIT_TOKEN 或 FRONTEND_GIT_TOKEN 以克隆前端 workspace")
         update_step(build_id, "validate", "success")
 
-        update_step(build_id, "checkout_backend", "running")
-        rc = run_command(build_id, checkout_command(branch), cwd=OHR_BACK_DIR)
-        if rc != 0:
-            raise RuntimeError("后端代码检出失败")
-        update_step(build_id, "checkout_backend", "success")
+        if build_backend:
+            update_step(build_id, "checkout_backend", "running")
+            rc = run_command(build_id, checkout_command(branch), cwd=OHR_BACK_DIR)
+            if rc != 0:
+                raise RuntimeError("后端代码检出失败")
+            update_step(build_id, "checkout_backend", "success")
 
-        update_step(build_id, "build_backend", "running")
-        rc = run_command(build_id, build_command(), cwd=OHR_BACK_DIR, timeout=None)
-        if rc != 0:
-            raise RuntimeError("后端打包失败")
-        update_step(build_id, "build_backend", "success")
+            update_step(build_id, "build_backend", "running")
+            rc = run_command(build_id, build_command(), cwd=OHR_BACK_DIR, timeout=None)
+            if rc != 0:
+                raise RuntimeError("后端打包失败")
+            update_step(build_id, "build_backend", "success")
+        else:
+            update_step(build_id, "checkout_backend", "skipped", "未选择后端构建")
+            update_step(build_id, "build_backend", "skipped", "未选择后端构建")
 
         (ARTIFACT_ROOT / build_id).mkdir(parents=True, exist_ok=True)
-        fe_env = direct_frontend_env(request, build_id)
+        if build_frontend:
+            fe_env = direct_frontend_env(request, build_id)
 
-        update_step(build_id, "restore_frontend", "running")
-        rc = run_command(
-            build_id,
-            DIRECT_FRONTEND_RESTORE_SCRIPT,
-            cwd=Path("/"),
-            timeout=None,
-            extra_env=fe_env,
-        )
-        if rc != 0:
-            raise RuntimeError("前端工作区恢复失败")
-        update_step(build_id, "restore_frontend", "success")
+            update_step(build_id, "restore_frontend", "running")
+            rc = run_command(
+                build_id,
+                DIRECT_FRONTEND_RESTORE_SCRIPT,
+                cwd=Path("/"),
+                timeout=None,
+                extra_env=fe_env,
+            )
+            if rc != 0:
+                raise RuntimeError("前端工作区恢复失败")
+            update_step(build_id, "restore_frontend", "success")
 
-        update_step(build_id, "build_frontend", "running")
-        rc = run_command(
-            build_id,
-            DIRECT_FRONTEND_BUILD_SCRIPT,
-            cwd=Path("/"),
-            timeout=None,
-            extra_env=fe_env,
-        )
-        if rc != 0:
-            raise RuntimeError("前端构建失败")
-        update_step(build_id, "build_frontend", "success")
+            update_step(build_id, "build_frontend", "running")
+            rc = run_command(
+                build_id,
+                DIRECT_FRONTEND_BUILD_SCRIPT,
+                cwd=Path("/"),
+                timeout=None,
+                extra_env=fe_env,
+            )
+            if rc != 0:
+                raise RuntimeError("前端构建失败")
+            update_step(build_id, "build_frontend", "success")
+        else:
+            update_step(build_id, "restore_frontend", "skipped", "未选择前端构建")
+            update_step(build_id, "build_frontend", "skipped", "未选择前端构建")
 
         update_step(build_id, "collect_artifacts", "running")
         pkg_src = OHR_BACK_DIR / "package.zip"
         web_src = ARTIFACT_ROOT / build_id / "web.zip"
-        if not pkg_src.is_file():
+        if build_backend and not pkg_src.is_file():
             raise RuntimeError(f"未找到产物：{pkg_src}")
-        if not web_src.is_file():
+        if build_frontend and not web_src.is_file():
             raise RuntimeError(f"未找到产物：{web_src}")
-        shutil.copy2(pkg_src, artifact_path(build_id, "package.zip"))
-        shutil.copy2(web_src, artifact_path(build_id, "web.zip"))
-        shutil.copy2(pkg_src, shared_artifact_path(build_id, "package.zip"))
-        shutil.copy2(web_src, shared_artifact_path(build_id, "web.zip"))
+        if build_backend:
+            shutil.copy2(pkg_src, artifact_path(build_id, "package.zip"))
+            shutil.copy2(pkg_src, shared_artifact_path(build_id, "package.zip"))
+        if build_frontend:
+            shutil.copy2(web_src, artifact_path(build_id, "web.zip"))
         artifacts = []
         for name in ("package.zip", "web.zip"):
             p = artifact_path(build_id, name)
-            artifacts.append({"name": name, "size": p.stat().st_size, "path": str(p)})
-        update_build(build_id, artifact=artifacts[0], artifacts=artifacts)
-        append_log(build_id, "产物已收集：package.zip, web.zip")
+            if p.is_file():
+                artifacts.append({"name": name, "size": p.stat().st_size, "path": str(p)})
+        update_build(build_id, artifact=artifacts[0] if artifacts else None, artifacts=artifacts)
+        append_log(build_id, "产物已收集：" + ", ".join(item["name"] for item in artifacts))
         update_step(build_id, "collect_artifacts", "success")
         update_build(build_id, status="success")
         append_log(build_id, "构建成功。")
@@ -541,7 +563,14 @@ fi
 cd "$BASE"
 git remote set-url origin "$GIT_SYNC_URL"
 git fetch --all --prune
-git checkout "$FRONTEND_WS_BRANCH"
+if git show-ref --verify --quiet "refs/remotes/origin/$FRONTEND_WS_BRANCH"; then
+  git checkout -B "$FRONTEND_WS_BRANCH" "origin/$FRONTEND_WS_BRANCH"
+else
+  echo "远端 ohr-workspace 不存在分支：$FRONTEND_WS_BRANCH"
+  echo "可用分支（前 40 个）："
+  git branch -r | sed -n '1,40p'
+  exit 2
+fi
 npm i -g pnpm@10.22.0 --registry=https://registry.npmmirror.com/
 npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
 pnpm config set store-dir /opt/pnpm-cache || true
@@ -665,7 +694,7 @@ def list_release_branches_for_url(url: str, limit: int = 500) -> list[str]:
 
 
 def list_frontend_release_branches(limit: int = 200) -> list[str]:
-    """列出四个前端子项目共同存在的 release_* 分支；ohr-workspace 固定使用 main。"""
+    """列出四个前端子项目共同存在的 release_* 分支；ohr-workspace 使用 FRONTEND_WORKSPACE_BRANCH。"""
     branch_sets = [set(list_release_branches_for_url(url)) for url in FRONTEND_CHILD_REPOS.values()]
     if not branch_sets:
         return []
@@ -893,25 +922,29 @@ INDEX_HTML = """<!doctype html>
       <div class="section-title">
         <div>
           <h2>构建参数</h2>
-          <p class="muted">后端分支来自后端仓库；前端版本分支来自 feelin、lowcode、micro-frontends、nocode 四个子项目共同存在的 release_* 分支。ohr-workspace 固定使用 main。</p>
+          <p class="muted">后端分支来自后端仓库；前端版本分支来自 feelin、lowcode、micro-frontends、nocode 四个子项目共同存在的 release_* 分支。ohr-workspace 固定使用 master。</p>
         </div>
       </div>
       <form id="build-form">
+        <div class="target-row">
+          <label class="toggle-option"><input id="toggle-backend" type="checkbox" checked> 构建后端 package.zip</label>
+          <label class="toggle-option"><input id="toggle-frontend" type="checkbox" checked> 构建前端 web.zip</label>
+        </div>
         <div class="form-grid">
           <div class="field-block">
             <label for="input-backend-branch">后端分支</label>
-            <input id="input-backend-branch" name="backend_branch" list="backend-branches" placeholder="例如 release_20260129" autocomplete="off" required>
+            <input id="input-backend-branch" name="backend_branch" list="backend-branches" placeholder="例如 release_20260129" autocomplete="off">
             <datalist id="backend-branches"></datalist>
           </div>
           <div class="field-block">
             <label for="input-frontend-release">前端版本分支（四个子项目共同存在）</label>
-            <input id="input-frontend-release" list="frontend-branches" placeholder="例如 release_20260325" autocomplete="off" required>
+            <input id="input-frontend-release" list="frontend-branches" placeholder="例如 release_20260325" autocomplete="off">
             <datalist id="frontend-branches"></datalist>
           </div>
         </div>
         <details class="sync-hint">
           <summary>前端分支规则</summary>
-          <p class="muted">ohr-workspace 不使用 release_* 分支，构建时固定检出 main；上方选择的版本分支会同时用于 ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends。若候选列表不全，可直接手输。</p>
+          <p class="muted">ohr-workspace 不使用 release_* 分支，构建时固定检出 master；上方选择的版本分支会同时用于 ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends。若候选列表不全，可直接手输。</p>
         </details>
         <div class="form-grid">
           <label>备注 <input name="note" placeholder="例如：测试环境首次打包"></label>
@@ -947,7 +980,7 @@ INDEX_HTML = """<!doctype html>
       <pre id="log"></pre>
     </section>
   </main>
-  <script src="/app.js?v=5"></script>
+  <script src="/app.js?v=6"></script>
 </body>
 </html>
 """
@@ -979,13 +1012,26 @@ const statusLabel = {
 document.getElementById('build-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
+  const buildBackend = document.getElementById('toggle-backend').checked;
+  const buildFrontend = document.getElementById('toggle-frontend').checked;
+  const backendBranch = (form.get('backend_branch') || '').trim();
   const ws = getFrontendWorkspaceBranch();
-  if (!ws) {
+  if (!buildBackend && !buildFrontend) {
+    alert('请至少选择一个构建目标');
+    return;
+  }
+  if (buildBackend && !backendBranch) {
+    alert('请选择或填写后端分支');
+    return;
+  }
+  if (buildFrontend && !ws) {
     alert('请选择或填写前端版本分支');
     return;
   }
   const payload = {
-    backend_branch: form.get('backend_branch'),
+    build_backend: buildBackend,
+    build_frontend: buildFrontend,
+    backend_branch: backendBranch,
     frontend_release_branch: ws,
     note: form.get('note')
   };
@@ -997,6 +1043,20 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   }
   selectBuild(data.id);
 });
+
+(function wireBuildTargetToggles() {
+  const backendToggle = document.getElementById('toggle-backend');
+  const frontendToggle = document.getElementById('toggle-frontend');
+  const backendInput = document.getElementById('input-backend-branch');
+  const frontendInput = document.getElementById('input-frontend-release');
+  function sync() {
+    backendInput.disabled = !backendToggle.checked;
+    frontendInput.disabled = !frontendToggle.checked;
+  }
+  backendToggle.addEventListener('change', sync);
+  frontendToggle.addEventListener('change', sync);
+  sync();
+})();
 
 function getFrontendWorkspaceBranch() {
   const input = document.getElementById('input-frontend-release');
@@ -1282,6 +1342,31 @@ details.sync-hint summary {
   user-select: none;
 }
 details.sync-hint p { margin: 10px 0 0; line-height: 1.6; }
+.target-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.toggle-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, .72);
+}
+.toggle-option input {
+  width: auto;
+  margin: 0;
+}
+.field-block input:disabled {
+  color: #94a3b8;
+  background: #f1f5f9;
+  cursor: not-allowed;
+}
 .submit-row { display: flex; align-items: flex-end; justify-content: flex-end; padding-bottom: 16px; }
 button {
   border: 0;

@@ -53,7 +53,7 @@ def render_env() -> str:
         "DRONE_CONTROL_REPO": base.get("DRONE_CONTROL_REPO", ""),
         "DRONE_CONTROL_BRANCH": base.get("DRONE_CONTROL_BRANCH", "master"),
         "FRONTEND_WORKSPACE_GIT_URL": base.get("FRONTEND_WORKSPACE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-workspace.git"),
-        "FRONTEND_WORKSPACE_BRANCH": base.get("FRONTEND_WORKSPACE_BRANCH", "main"),
+        "FRONTEND_WORKSPACE_BRANCH": base.get("FRONTEND_WORKSPACE_BRANCH", "master"),
         "FRONTEND_WORKSPACE_DIR": base.get("FRONTEND_WORKSPACE_DIR", "/opt/ohr-workspace-src"),
         "FRONTEND_FEELIN_GIT_URL": base.get("FRONTEND_FEELIN_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-feelin.git"),
         "FRONTEND_LOWCODE_ENGINE_GIT_URL": base.get("FRONTEND_LOWCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-lowcode-engine.git"),
