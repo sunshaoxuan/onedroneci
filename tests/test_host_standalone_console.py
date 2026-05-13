@@ -90,3 +90,11 @@ def test_i18n_contains_terminal_controls_and_statuses():
         "refreshStatus",
     ):
         assert key in console.APP_JS
+
+
+def test_console_uses_commercial_delivery_package_naming():
+    assert "OHR Delivery Package Console" in console.INDEX_HTML
+    assert "OHR 製品パッケージ生成" in console.APP_JS
+    assert "OHR 产品交付包生成" in console.APP_JS
+    assert "最终安装包" not in console.APP_JS
+    assert "最終インストールパッケージ" not in console.APP_JS

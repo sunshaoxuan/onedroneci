@@ -296,16 +296,16 @@ INDEX_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OHR Standalone Console</title>
+  <title>OHR Delivery Package Console</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <main class="shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">OHR Standalone Console</p>
-        <h1 data-i18n="title">最終インストールパッケージ</h1>
-        <p class="subcopy" data-i18n="subtitle">固定資材を宿主機に保持し、ビルド端末の成果物だけを差し替えて完全な納品物を生成します。</p>
+        <p class="eyebrow">OHR Delivery Package Console</p>
+        <h1 data-i18n="title">OHR 製品パッケージ生成</h1>
+        <p class="subcopy" data-i18n="subtitle">固定資材を宿主機に保持し、ビルド端末の成果物を組み込んだ正式な納品パッケージを生成します。</p>
       </div>
       <div class="hero-actions">
         <label class="lang-label" for="language" data-i18n="language">表示言語</label>
@@ -339,7 +339,7 @@ INDEX_HTML = """<!doctype html>
           </div>
           <div class="run-actions">
             <button id="stopJob" class="danger" type="button" disabled data-i18n="stopJob">停止</button>
-            <button id="startJob" type="submit" data-i18n="startJob">最終パッケージ開始</button>
+            <button id="startJob" type="submit" data-i18n="startJob">交付包生成を開始</button>
           </div>
         </div>
         <div class="grid">
@@ -379,8 +379,8 @@ INDEX_HTML = """<!doctype html>
 APP_JS = r"""
 const I18N = {
   'ja-JP': {
-    title: '最終インストールパッケージ',
-    subtitle: '固定資材を宿主機に保持し、ビルド端末の成果物だけを差し替えて完全な納品物を生成します。',
+    title: 'OHR 製品パッケージ生成',
+    subtitle: '固定資材を宿主機に保持し、ビルド端末の成果物を組み込んだ正式な納品パッケージを生成します。',
     language: '表示言語',
     terminalTitle: 'ビルド端末',
     terminalUnknown: '状態不明',
@@ -396,7 +396,7 @@ const I18N = {
     formKicker: 'パッケージ設定',
     formTitle: '構成パラメータ',
     stopJob: '停止',
-    startJob: '最終パッケージ開始',
+    startJob: '交付包生成を開始',
     backendBranch: 'バックエンドブランチ',
     frontendBranch: 'フロントエンドブランチ',
     helpBranch: 'ヘルプブランチ',
@@ -418,8 +418,8 @@ const I18N = {
     cancelled: '停止しました'
   },
   'zh-CN': {
-    title: '最终安装包',
-    subtitle: '固定资源保留在宿主机，只替换构建终端生成的成果物，完成完整交付包。',
+    title: 'OHR 产品交付包生成',
+    subtitle: '固定资源保留在宿主机，将构建终端产出的成果物组装为正式产品交付包。',
     language: '显示语言',
     terminalTitle: '构建终端',
     terminalUnknown: '状态未知',
@@ -435,7 +435,7 @@ const I18N = {
     formKicker: '打包设置',
     formTitle: '构造参数',
     stopJob: '停止',
-    startJob: '开始最终打包',
+    startJob: '开始生成交付包',
     backendBranch: '后端分支',
     frontendBranch: '前端分支',
     helpBranch: 'Help 分支',
@@ -457,8 +457,8 @@ const I18N = {
     cancelled: '已停止'
   },
   'en-US': {
-    title: 'Final Installation Package',
-    subtitle: 'Static resources stay on the host, while build terminal artifacts are replaced to produce the final delivery package.',
+    title: 'OHR Delivery Package Console',
+    subtitle: 'Static resources stay on the host while build terminal artifacts are assembled into a formal product delivery package.',
     language: 'Language',
     terminalTitle: 'Build terminal',
     terminalUnknown: 'Unknown',
@@ -474,7 +474,7 @@ const I18N = {
     formKicker: 'Package settings',
     formTitle: 'Build parameters',
     stopJob: 'Stop',
-    startJob: 'Start final packaging',
+    startJob: 'Generate delivery package',
     backendBranch: 'Backend branch',
     frontendBranch: 'Frontend branch',
     helpBranch: 'Help branch',

@@ -1,6 +1,6 @@
-# 宿主机最终打包网站部署说明
+# 宿主机产品交付包生成网站部署说明
 
-宿主机网站固定监听 `0.0.0.0:8091`，页面上只称呼远端为“构建终端”。固定包、SQL 模板和最终输出目录都保留在宿主机侧，构建终端只负责生成 `package.zip` 和 `web.zip`。
+宿主机网站固定监听 `0.0.0.0:8091`，页面上只称呼远端为“构建终端”。固定包、SQL 模板和产品交付输出目录都保留在宿主机侧，构建终端只负责生成 `package.zip` 和 `web.zip`。
 
 ## 配置项
 
@@ -11,7 +11,7 @@
 - `HOST_STANDALONE_MANAGEMENT_TOKEN`：管理 token；不配置时进程启动时自动生成
 - `REMOTE_BUILD_CONSOLE_URL`：构建终端网站地址
 - `HV_HYPERV_VM_NAME`：允许页面启停的唯一虚拟机名称
-- `STANDALONE_OUTPUT_DIR`：最终交付目录
+- `STANDALONE_OUTPUT_DIR`：产品交付输出目录
 - `STANDALONE_TEMPLATE_ZIP`：固定壳包模板
 - `STANDALONE_SQL_TEMPLATE_DIR`：固定 SQL 模板目录
 
