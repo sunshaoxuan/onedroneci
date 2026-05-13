@@ -1,0 +1,32 @@
+# OHR 构建入口（build-console）
+
+轻量内部 Web，默认端口 `8090`（由 `build-console.env` 中 `BUILD_CONSOLE_HOST` / `BUILD_CONSOLE_PORT` 配置）。
+
+## 功能
+
+- 选择后端分支与前端 workspace 分支，触发打包；展示流水线步骤、状态与增量日志。
+- 成功后下载 **`package.zip`** 与 **`web.zip`**（路径见 API 说明）。
+- **执行器**由 `BUILD_EXECUTOR` 控制：
+  - **`direct`**：在 CI 本机线程内执行克隆、Maven、前端构建等（见 `server.py`）。
+  - **`drone`**：通过 Drone API 触发**控制仓库**流水线，控制台同步 Drone 状态与日志；产物来自与 Runner 共享的 `BUILD_ARTIFACT_ROOT`。
+
+**Drone 模式的环境变量、控制仓、Runner 目录与排障**见仓库 [`docs/DRONE.md`](../docs/DRONE.md)。
+
+## 本地启动
+
+```bash
+python build-console/server.py
+```
+
+访问：`http://127.0.0.1:8090`（默认）。
+
+生产环境通常由 `scripts/remote_deploy_build_console.py` 部署到 `/opt/ohr-build-console`，并通过 `BUILD_CONSOLE_ENV` 或同目录 `build-console.env` 加载配置。示例变量见 `build-console.env.example`。
+
+## API
+
+- `POST /api/builds`：创建构建（JSON：`backend_branch`、`frontend_workspace_branch`、`note`）
+- `GET /api/builds`：构建列表
+- `GET /api/builds/{id}`：构建详情（drone 模式下会同步 Drone 状态）
+- `GET /api/builds/{id}/log?offset=0`：增量日志
+- `GET /api/builds/{id}/artifact/package.zip` / `.../web.zip`：下载产物
+- `GET /api/backend-branches`、`GET /api/frontend-branches`：分支候选（供页面使用）

@@ -1,0 +1,48 @@
+# 后端打 package.zip — Drone 模板（secrets 在 UI 中创建后绑定）
+#
+# 全链路说明：docs/DRONE.md 第 6 节；Web 操作细节：ci/DRONE_PACKAGE_WEB.md
+#
+# Web 手动触发：
+# 1. 推荐：Promote 任意一次成功构建，target 填 package，并添加参数 OHR_BACK_BRANCH=<你的分支>
+# 2. 兼容：如果 Web UI 没有参数输入框，可直接把 promote target 填成分支名
+kind: pipeline
+type: docker
+name: ohr-back-package-zip
+
+trigger:
+  event:
+    - push
+    - custom
+    - promote
+
+steps:
+  - name: collect
+    image: maven:3.9.9-eclipse-temurin-24
+    environment:
+      MAVEN_SETTINGS_XML:
+        from_secret: maven_settings_xml
+      MAVEN_OPTS: "-Xmx4096m -Xms512m -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true"
+    commands:
+      - apt-get update -qy && apt-get install -y zip
+      - mkdir -p /root/.m2
+      - printf '%s' "$MAVEN_SETTINGS_XML" > /root/.m2/settings.xml
+      - chmod 600 /root/.m2/settings.xml
+      - cd /drone/src
+      - |
+        BRANCH_FROM_TARGET=""
+        if [ "${DRONE_BUILD_EVENT:-}" = "promote" ] && [ -n "${DRONE_DEPLOY_TO:-}" ] && [ "${DRONE_DEPLOY_TO}" != "package" ]; then
+          BRANCH_FROM_TARGET="$DRONE_DEPLOY_TO"
+        fi
+        export OHR_BACK_BRANCH="${OHR_BACK_BRANCH:-${BRANCH_FROM_TARGET:-${DRONE_BRANCH:-}}}"
+        case "$OHR_BACK_BRANCH" in
+          ""|*[!A-Za-z0-9._/-]*)
+            echo "Invalid OHR_BACK_BRANCH: $OHR_BACK_BRANCH"
+            exit 2
+            ;;
+        esac
+        echo "Packaging branch: $OHR_BACK_BRANCH"
+      - git fetch origin "$OHR_BACK_BRANCH"
+      - git checkout -B "$OHR_BACK_BRANCH" FETCH_HEAD
+      - git rev-parse --short HEAD
+      - bash ./collect-ohr.sh
+      - ls -la package.zip

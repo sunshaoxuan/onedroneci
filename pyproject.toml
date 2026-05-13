@@ -1,0 +1,25 @@
+[project]
+name = "hv-vm-tools"
+version = "0.1.0"
+description = "本机 Hyper-V 宿主机上对固定 IP 虚拟机做连通性检查、可选 SSH 与宿主机 Hyper-V 管理"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+ssh = ["paramiko>=3.4.0"]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "paramiko>=3.4.0"]
+
+[project.scripts]
+hv-vm = "hv_vm_tools.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hv_vm_tools*"]

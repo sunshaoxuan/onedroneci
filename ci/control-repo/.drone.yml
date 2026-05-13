@@ -1,0 +1,205 @@
+# OHR 全量构建（后端 package.zip + 前端 web.zip）。完整说明见仓库 docs/DRONE.md。
+kind: pipeline
+type: docker
+name: ohr-full-build
+
+platform:
+  os: linux
+  arch: amd64
+
+trigger:
+  event:
+    - custom
+
+steps:
+  - name: validate-params
+    image: alpine:3.20
+    commands:
+      - |
+        set -euo pipefail
+        valid='^[A-Za-z0-9._/-]+$'
+        required='OHR_BACK_BRANCH FRONTEND_WORKSPACE_BRANCH FRONTEND_RELEASE_BRANCH BUILD_ID'
+        for name in $required; do
+          eval value="\${$name:-}"
+          if [ -z "$value" ]; then
+            echo "$name is required"
+            exit 2
+          fi
+          if ! echo "$value" | grep -Eq "$valid"; then
+            echo "$name has invalid characters: $value"
+            exit 2
+          fi
+        done
+        for name in FRONTEND_FEELIN_BRANCH FRONTEND_LOWCODE_ENGINE_BRANCH FRONTEND_MICRO_FRONTENDS_BRANCH FRONTEND_NOCODE_ENGINE_BRANCH; do
+          eval value="\${$name:-}"
+          if [ -n "$value" ] && ! echo "$value" | grep -Eq "$valid"; then
+            echo "$name has invalid characters: $value"
+            exit 2
+          fi
+        done
+        echo "BUILD_ID=$BUILD_ID"
+        echo "OHR_BACK_BRANCH=$OHR_BACK_BRANCH"
+        echo "FRONTEND_WORKSPACE_BRANCH=$FRONTEND_WORKSPACE_BRANCH"
+        echo "FRONTEND_RELEASE_BRANCH=$FRONTEND_RELEASE_BRANCH"
+
+  - name: build-backend-package
+    image: maven:3.9.9-eclipse-temurin-24
+    environment:
+      OHR_BACK_GIT_TOKEN:
+        from_secret: ohr_back_git_token
+      MAVEN_SETTINGS_XML:
+        from_secret: maven_settings_xml
+      MAVEN_OPTS: "-Xmx4096m -Xms512m -XX:+UseG1GC -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true"
+    volumes:
+      - name: m2-cache
+        path: /root/.m2
+      - name: artifacts
+        path: /mnt/artifacts
+    commands:
+      - |
+        set -euo pipefail
+        apt-get update -qy && apt-get install -y git zip
+        mkdir -p /work /mnt/artifacts/$BUILD_ID /root/.m2
+        printf '%s' "$MAVEN_SETTINGS_XML" > /root/.m2/settings.xml
+        chmod 600 /root/.m2/settings.xml
+        cd /work
+        if [ ! -d ohr-back/.git ]; then
+          git clone "https://oauth2:${OHR_BACK_GIT_TOKEN}@upds7.ujob100.com/ohr/ohr-back.git" ohr-back
+        fi
+        cd ohr-back
+        git remote set-url origin "https://oauth2:${OHR_BACK_GIT_TOKEN}@upds7.ujob100.com/ohr/ohr-back.git"
+        git fetch origin "$OHR_BACK_BRANCH"
+        git checkout -B "$OHR_BACK_BRANCH" FETCH_HEAD
+        rm -rf package package.zip
+        mvn -s /root/.m2/settings.xml -B clean package -Dmaven.test.skip
+        mkdir -p package
+        cp ./standalone/target/standalone*.jar ./package/standalone.jar
+        zip -r package.zip ./package
+        ls -lh package.zip package/standalone.jar
+        cp package.zip "/mnt/artifacts/$BUILD_ID/package.zip"
+
+  - name: restore-frontend-workspace
+    image: node:20-bookworm
+    environment:
+      BASE_DIR: /drone/src
+      FRONTEND_GIT_TOKEN:
+        from_secret: frontend_git_token
+      NPM_AUTH_B64:
+        from_secret: npm_auth_b64
+    volumes:
+      - name: pnpm-cache
+        path: /root/.cache/pnpm
+      - name: workspace-cache
+        path: /mnt/cache
+    commands:
+      - |
+        set -euo pipefail
+        cd $BASE_DIR
+        npm i -g pnpm@10.22.0 --registry=https://registry.npmmirror.com/
+        npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
+        pnpm config set store-dir /root/.cache/pnpm
+        npm i yalc -g --registry=https://registry.npmmirror.com/
+        npm config set registry https://registry.smartcompany.cn/repository/npm-group/
+        npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
+        npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
+        npm i -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
+        export RELEASE_BRANCH="$FRONTEND_RELEASE_BRANCH"
+        export FEELIN_BRANCH="${FRONTEND_FEELIN_BRANCH:-$FRONTEND_RELEASE_BRANCH}"
+        export LOWCODE_ENGINE_BRANCH="${FRONTEND_LOWCODE_ENGINE_BRANCH:-$FRONTEND_RELEASE_BRANCH}"
+        export MICRO_FRONTENDS_BRANCH="${FRONTEND_MICRO_FRONTENDS_BRANCH:-$FRONTEND_RELEASE_BRANCH}"
+        export NOCODE_ENGINE_BRANCH="${FRONTEND_NOCODE_ENGINE_BRANCH:-$FRONTEND_RELEASE_BRANCH}"
+        if [ -d /mnt/cache/ohr-workspace/.git ]; then
+          echo "Restoring workspace cache..."
+          cp -a /mnt/cache/ohr-workspace/. ./
+          git reset --hard HEAD
+          git clean -fd
+          git fetch --all --prune
+          git checkout "$FRONTEND_WORKSPACE_BRANCH"
+          pnpm i
+          npm run setup:reset-git
+          cd ./ohr-feelin && git fetch --all --prune && git checkout "$FEELIN_BRANCH" && git pull
+          cd ../ohr-lowcode-engine && git fetch --all --prune && git checkout "$LOWCODE_ENGINE_BRANCH" && git pull
+          cd ../ohr-micro-frontends && git fetch --all --prune && git checkout "$MICRO_FRONTENDS_BRANCH" && git pull
+          cd ../ohr-nocode-engine && git fetch --all --prune && git checkout "$NOCODE_ENGINE_BRANCH" && git pull
+          cd ..
+        else
+          echo "Cache not found, clean install."
+          git fetch --all --prune
+          git checkout "$FRONTEND_WORKSPACE_BRANCH"
+          pnpm i
+          npx cross-env RELEASE_BRANCH="$FRONTEND_RELEASE_BRANCH" ohr-cli run-tasks --task clone-ohr
+        fi
+        ohr-cli run-tasks --task install-modules-ohr
+        npm run setup:rm-yalc
+
+  - name: build-frontend-web
+    image: node:20-bookworm
+    environment:
+      BASE_DIR: /drone/src
+      NPM_AUTH_B64:
+        from_secret: npm_auth_b64
+    volumes:
+      - name: pnpm-cache
+        path: /root/.cache/pnpm
+      - name: artifacts
+        path: /mnt/artifacts
+    commands:
+      - |
+        set -euo pipefail
+        cd $BASE_DIR
+        apt-get update -qy && apt-get install -y zip
+        npm i -g pnpm@10.22.0 --registry=https://registry.npmmirror.com/
+        npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
+        pnpm config set store-dir /root/.cache/pnpm
+        npm i yalc -g --registry=https://registry.npmmirror.com/
+        npm config set registry https://registry.smartcompany.cn/repository/npm-group/
+        npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
+        npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
+        npm i -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
+        npm run build
+        mkdir -p "/mnt/artifacts/$BUILD_ID"
+        rm -f "/mnt/artifacts/$BUILD_ID/web.zip"
+        if [ -d dist ]; then
+          zip -r "/mnt/artifacts/$BUILD_ID/web.zip" dist
+        elif [ -d build ]; then
+          zip -r "/mnt/artifacts/$BUILD_ID/web.zip" build
+        else
+          zip -r "/mnt/artifacts/$BUILD_ID/web.zip" . -x "node_modules/*" ".git/*" "*/node_modules/*" "*/.git/*"
+        fi
+        ls -lh "/mnt/artifacts/$BUILD_ID/web.zip"
+
+  - name: persist-frontend-workspace
+    image: node:20-bookworm
+    environment:
+      BASE_DIR: /drone/src
+    volumes:
+      - name: workspace-cache
+        path: /mnt/cache
+    commands:
+      - |
+        set -euo pipefail
+        cd $BASE_DIR
+        mkdir -p /mnt/cache
+        rm -rf /mnt/cache/ohr-workspace.tmp
+        cp -a . /mnt/cache/ohr-workspace.tmp
+        rm -rf /mnt/cache/ohr-workspace.prev
+        if [ -d /mnt/cache/ohr-workspace ]; then
+          mv /mnt/cache/ohr-workspace /mnt/cache/ohr-workspace.prev
+        fi
+        mv /mnt/cache/ohr-workspace.tmp /mnt/cache/ohr-workspace
+        rm -rf /mnt/cache/ohr-workspace.prev
+        echo "Workspace cache persisted."
+
+volumes:
+  - name: pnpm-cache
+    host:
+      path: /opt/pnpm-cache
+  - name: workspace-cache
+    host:
+      path: /opt/workspace-cache-ohr
+  - name: m2-cache
+    host:
+      path: /opt/ohr-backend/.m2
+  - name: artifacts
+    host:
+      path: /opt/ohr-build-artifacts

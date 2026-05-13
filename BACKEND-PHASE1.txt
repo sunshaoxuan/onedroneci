@@ -1,0 +1,27 @@
+后端第一阶段（环境）说明
+====================
+目标机：见 vm-access.env 中 HV_VM_HOST（默认 192.168.250.50）
+仓库：https://upds7.ujob100.com/ohr/ohr-back.git
+克隆目录（脚本默认）：/root/ohr-back
+
+本机执行（在 hv-vm-tools 目录下）：
+  pip install paramiko
+  python scripts/remote_setup_backend_phase1.py
+
+远程将执行：
+  - apt 安装 git、wget、curl、gnupg 等
+  - 添加 Adoptium APT 源并安装 temurin-24-jdk
+  - git clone 或 git pull 上述仓库
+
+若 git clone 失败：检查内网 DNS、HTTPS 证书（自签名时可能需在目标机配置 GIT_SSL_NO_VERIFY 或导入 CA），以及仓库是否需要账号/Token。
+
+--- 实测补充（本环境）---
+1) 该 VM 上 UDP DNS 不可用（dig @223.5.5.5 超时），但部分 HTTPS 可达；可用脚本在本机解析 IP 后写入 /etc/hosts：
+   python scripts/remote_backend_phase1_hosts_fallback.py
+   同时会暂移 /etc/apt/sources.list.d 下 docker、nodesource 的 .list，避免 apt update 反复失败。
+2) 仓库为私有：本机 git clone 会报 HTTP Basic: Access denied，需在 URL 中带 Token 或配置 git 凭据后再克隆/上传。
+3) 若 VM 出站 TCP 443 到 Git 服务器仍超时，需在 Hyper-V/防火墙侧放行，或由本机打包后 scp 到 VM（仍需解决私有仓库鉴权）。
+
+诊断辅助脚本：
+  python scripts/remote_net_diag.py
+  python scripts/remote_quick_status.py

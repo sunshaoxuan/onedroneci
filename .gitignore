@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# 本地凭据（含密码，切勿提交到公开仓库）
+vm-access.env
+VM-ACCESS.txt
+git-access.env
+deploy/drone/drone.env
+build-console/build-console.env
+build-console/builds/
+.repo-git/
+
+# 远端/本机一次性诊断与构建日志，可能包含 token、私服凭据或内部环境信息。
+_*.txt
+_*.log
+_subagent_vm_proxy_retest.py
