@@ -643,6 +643,9 @@ npm config set registry https://registry.smartcompany.cn/repository/npm-group/
 npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
 npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
 npm i -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
+if [ -n "${FRONTEND_GIT_TOKEN:-}" ]; then
+  git config --global url."https://oauth2:${FRONTEND_GIT_TOKEN}@${FRONTEND_GIT_HOST}/".insteadOf "https://${FRONTEND_GIT_HOST}/"
+fi
 pnpm i
 export RELEASE_BRANCH="$FRONTEND_REL_BRANCH"
 export FEELIN_BRANCH="${FRONTEND_FEELIN_BRANCH:-$FRONTEND_REL_BRANCH}"
@@ -683,8 +686,12 @@ ls -lh "$OUT_WEB_ZIP"
 
 def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
     rel = req["frontend_release_branch"]
+    token = os.environ.get("FRONTEND_GIT_TOKEN") or os.environ.get("OHR_BACK_GIT_TOKEN", "")
+    host = urllib.parse.urlparse(FRONTEND_WORKSPACE_GIT_URL).hostname or "upds7.ujob100.com"
     return {
         "GIT_SYNC_URL": workspace_git_url_with_token(),
+        "FRONTEND_GIT_TOKEN": token,
+        "FRONTEND_GIT_HOST": host,
         "NPM_AUTH_B64": npm_auth_b64_value(),
         "OHR_FRONTEND_WORKDIR": str(FRONTEND_WORKSPACE_DIR),
         "FRONTEND_WS_BRANCH": req["frontend_workspace_branch"],
