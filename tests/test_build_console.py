@@ -216,3 +216,15 @@ def test_list_backend_release_branches_parses_refs(monkeypatch, tmp_path):
     monkeypatch.setattr(server.subprocess, "run", lambda *args, **kwargs: Result())
 
     assert server.list_backend_release_branches() == ["release_20260502", "release_20260501"]
+
+
+def test_direct_frontend_build_uses_bundle_zip_only():
+    server = load_server()
+    script = server.DIRECT_FRONTEND_BUILD_SCRIPT
+
+    assert "npm run build" in script
+    assert "npm run bundle" in script
+    assert "release_*.zip" in script
+    assert "前端发布包生成失败" in script
+    assert 'zip -r "$OUT_WEB_ZIP" .' not in script
+    assert "node_modules/*" not in script

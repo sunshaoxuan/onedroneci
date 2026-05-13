@@ -693,16 +693,20 @@ npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
 npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
 npm i -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
 apt-get update -qy && apt-get install -y zip
+find . -maxdepth 1 -type f -name 'release_*.zip' -delete
+find . -maxdepth 1 -type d -name 'release_*' -exec rm -rf {} +
 npm run build
+npm run bundle
 mkdir -p "$(dirname "$OUT_WEB_ZIP")"
 rm -f "$OUT_WEB_ZIP"
-if [ -d dist ]; then
-  zip -r "$OUT_WEB_ZIP" dist
-elif [ -d build ]; then
-  zip -r "$OUT_WEB_ZIP" build
-else
-  zip -r "$OUT_WEB_ZIP" . -x "node_modules/*" ".git/*" "*/node_modules/*" "*/.git/*"
+bundle_zip="$(find . -maxdepth 1 -type f -name 'release_*.zip' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
+if [ -z "$bundle_zip" ] || [ ! -f "$bundle_zip" ]; then
+  echo "前端发布包生成失败：npm run bundle 未生成 release_*.zip"
+  exit 3
 fi
+cp "$bundle_zip" "$OUT_WEB_ZIP"
+bundle_dir="${bundle_zip%.zip}"
+rm -rf "$bundle_zip" "$bundle_dir"
 ls -lh "$OUT_WEB_ZIP"
 """
 
