@@ -1072,7 +1072,7 @@ INDEX_HTML = """<!doctype html>
       <pre id="log"></pre>
     </section>
   </main>
-  <script src="/app.js?v=7"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>
 """
@@ -1107,7 +1107,6 @@ const terminalStatuses = ['success', 'failed', 'cancelled'];
 
 document.getElementById('build-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  setFormLocked(true);
   const form = new FormData(event.target);
   const buildBackend = document.getElementById('toggle-backend').checked;
   const buildFrontend = document.getElementById('toggle-frontend').checked;
@@ -1128,6 +1127,7 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
     alert('请选择或填写前端版本分支');
     return;
   }
+  setFormLocked(true);
   const payload = {
     build_backend: buildBackend,
     build_frontend: buildFrontend,
