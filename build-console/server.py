@@ -1035,7 +1035,7 @@ INDEX_HTML = """<!doctype html>
         <span class="status-dot"></span>
         <div>
           <strong>本机构建模式</strong>
-          <small>当前为 direct：不经过 DroneCI，由 8090 所在机器直接产出 package.zip + web.zip</small>
+          <small>当前为 direct：由 8090 所在机器直接构建并产出 package.zip + web.zip</small>
         </div>
       </div>
     </section>
