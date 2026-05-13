@@ -5,6 +5,7 @@ import base64
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import threading
@@ -63,6 +64,12 @@ DIRECT_STEP_IDS = (
 DRONE_STEP_IDS = ("validate-params", "build-backend-package", "restore-frontend-workspace", "build-frontend-web", "persist-frontend-workspace")
 BUILD_LOCK = threading.Lock()
 BUILD_THREADS: dict[str, threading.Thread] = {}
+BUILD_PROCS: dict[str, subprocess.Popen[str]] = {}
+CANCELLED_BUILDS: set[str] = set()
+
+
+class BuildCancelled(RuntimeError):
+    pass
 
 
 def load_env_file(path: Path) -> None:
@@ -161,13 +168,15 @@ def update_step(build_id: str, step_id: str, status: str, message: str | None = 
         if step["id"] == step_id:
             if status == "running" and not step["started_at"]:
                 step["started_at"] = now()
-            if status in ("success", "failed", "skipped"):
+            if status in ("success", "failed", "skipped", "cancelled"):
                 step["finished_at"] = now()
             step["status"] = status
             if message:
                 step["message"] = message
             break
-    if status == "failed":
+    if status == "cancelled":
+        meta["status"] = "cancelled"
+    elif status == "failed":
         meta["status"] = "failed"
     elif all(s["status"] in ("success", "skipped") for s in meta["steps"]):
         meta["status"] = "success"
@@ -259,6 +268,8 @@ def run_direct_build(build_id: str) -> None:
         update_step(build_id, "validate", "failed", "已有构建运行中")
         return
     try:
+        if build_id in CANCELLED_BUILDS:
+            raise BuildCancelled("构建已取消")
         meta = update_build(build_id, status="running")
         request = meta["request"]
         build_backend = bool(request.get("build_backend", True))
@@ -280,12 +291,14 @@ def run_direct_build(build_id: str) -> None:
         if build_backend:
             update_step(build_id, "checkout_backend", "running")
             rc = run_command(build_id, checkout_command(branch), cwd=OHR_BACK_DIR)
+            ensure_not_cancelled(build_id)
             if rc != 0:
                 raise RuntimeError("后端代码检出失败")
             update_step(build_id, "checkout_backend", "success")
 
             update_step(build_id, "build_backend", "running")
             rc = run_command(build_id, build_command(), cwd=OHR_BACK_DIR, timeout=None)
+            ensure_not_cancelled(build_id)
             if rc != 0:
                 raise RuntimeError("后端打包失败")
             update_step(build_id, "build_backend", "success")
@@ -305,6 +318,7 @@ def run_direct_build(build_id: str) -> None:
                 timeout=None,
                 extra_env=fe_env,
             )
+            ensure_not_cancelled(build_id)
             if rc != 0:
                 raise RuntimeError("前端工作区恢复失败")
             update_step(build_id, "restore_frontend", "success")
@@ -317,6 +331,7 @@ def run_direct_build(build_id: str) -> None:
                 timeout=None,
                 extra_env=fe_env,
             )
+            ensure_not_cancelled(build_id)
             if rc != 0:
                 raise RuntimeError("前端构建失败")
             update_step(build_id, "build_frontend", "success")
@@ -346,11 +361,18 @@ def run_direct_build(build_id: str) -> None:
         update_step(build_id, "collect_artifacts", "success")
         update_build(build_id, status="success")
         append_log(build_id, "构建成功。")
+    except BuildCancelled as exc:
+        append_log(build_id, f"构建已停止：{exc}")
+        cancel_running_step(build_id, str(exc))
+        update_build(build_id, status="cancelled", error=str(exc))
     except Exception as exc:
         append_log(build_id, f"构建失败：{exc}")
         fail_running_step(build_id, str(exc))
         update_build(build_id, status="failed", error=str(exc))
     finally:
+        BUILD_THREADS.pop(build_id, None)
+        BUILD_PROCS.pop(build_id, None)
+        CANCELLED_BUILDS.discard(build_id)
         BUILD_LOCK.release()
 
 
@@ -471,6 +493,46 @@ def fail_running_step(build_id: str, message: str) -> None:
     write_json(metadata_path(build_id), meta)
 
 
+def cancel_running_step(build_id: str, message: str) -> None:
+    meta = read_json(metadata_path(build_id))
+    for step in meta["steps"]:
+        if step["status"] == "running":
+            step["status"] = "cancelled"
+            step["finished_at"] = now()
+            step["message"] = message
+        elif step["status"] == "pending":
+            step["status"] = "skipped"
+            step["finished_at"] = now()
+            step["message"] = "构建已停止"
+    meta["status"] = "cancelled"
+    meta["updated_at"] = now()
+    write_json(metadata_path(build_id), meta)
+
+
+def ensure_not_cancelled(build_id: str) -> None:
+    if build_id in CANCELLED_BUILDS:
+        raise BuildCancelled("用户停止了构建")
+
+
+def cancel_build(build_id: str) -> dict[str, Any]:
+    path = metadata_path(build_id)
+    if not path.is_file():
+        raise FileNotFoundError(build_id)
+    meta = read_json(path)
+    if meta.get("status") in ("success", "failed", "cancelled"):
+        return meta
+    CANCELLED_BUILDS.add(build_id)
+    append_log(build_id, "收到停止请求，正在终止当前步骤...")
+    proc = BUILD_PROCS.get(build_id)
+    if proc and proc.poll() is None:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except Exception:
+            proc.kill()
+    cancel_running_step(build_id, "用户停止了构建")
+    return read_json(path)
+
+
 def checkout_command(branch: str) -> str:
     git_token = os.environ.get("OHR_BACK_GIT_TOKEN", "")
     set_origin = ""
@@ -563,6 +625,8 @@ fi
 cd "$BASE"
 git remote set-url origin "$GIT_SYNC_URL"
 git fetch --all --prune
+git reset --hard HEAD
+git clean -fd
 if git show-ref --verify --quiet "refs/remotes/origin/$FRONTEND_WS_BRANCH"; then
   git checkout -B "$FRONTEND_WS_BRANCH" "origin/$FRONTEND_WS_BRANCH"
 else
@@ -713,6 +777,7 @@ def run_command(
     timeout: float | None = 7200,
     extra_env: dict[str, str] | None = None,
 ) -> int:
+    ensure_not_cancelled(build_id)
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
@@ -725,16 +790,31 @@ def run_command(
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        start_new_session=True,
     )
+    BUILD_PROCS[build_id] = proc
     start = time.time()
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        append_log(build_id, redact_secrets(line))
-        if timeout is not None and time.time() - start > timeout:
-            proc.kill()
-            append_log(build_id, "命令超时，已终止。")
-            return 124
-    return proc.wait()
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            append_log(build_id, redact_secrets(line))
+            if build_id in CANCELLED_BUILDS:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except Exception:
+                    proc.kill()
+                raise BuildCancelled("用户停止了构建")
+            if timeout is not None and time.time() - start > timeout:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except Exception:
+                    proc.kill()
+                append_log(build_id, "命令超时，已终止。")
+                return 124
+        return proc.wait()
+    finally:
+        if BUILD_PROCS.get(build_id) is proc:
+            BUILD_PROCS.pop(build_id, None)
 
 
 def redact_secrets(text: str) -> str:
@@ -818,7 +898,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
-        if self.path != "/api/builds":
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        m = re.fullmatch(r"/api/builds/([^/]+)/cancel", path)
+        if m:
+            try:
+                meta = cancel_build(m.group(1))
+            except FileNotFoundError:
+                return self.send_error(HTTPStatus.NOT_FOUND)
+            except Exception as exc:
+                return self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return self.send_json(meta)
+        if path != "/api/builds":
             return self.send_error(HTTPStatus.NOT_FOUND)
         try:
             length = int(self.headers.get("Content-Length", "0") or 0)
@@ -951,7 +1042,8 @@ INDEX_HTML = """<!doctype html>
         </div>
         <div class="form-grid">
           <div class="submit-row">
-            <button type="submit">开始构建</button>
+            <button id="start-button" type="submit">开始构建</button>
+            <button id="stop-button" class="danger" type="button" hidden>停止构建</button>
           </div>
         </div>
       </form>
@@ -980,7 +1072,7 @@ INDEX_HTML = """<!doctype html>
       <pre id="log"></pre>
     </section>
   </main>
-  <script src="/app.js?v=6"></script>
+  <script src="/app.js?v=7"></script>
 </body>
 </html>
 """
@@ -996,6 +1088,7 @@ const statusText = {
   running: '运行中',
   success: '成功',
   failed: '失败',
+  cancelled: '已停止',
   pending: '等待',
   skipped: '跳过'
 };
@@ -1005,26 +1098,33 @@ const statusLabel = {
   running: 'running',
   success: 'success',
   failed: 'failed',
+  cancelled: 'cancelled',
   pending: 'pending',
   skipped: 'skipped'
 };
 
+const terminalStatuses = ['success', 'failed', 'cancelled'];
+
 document.getElementById('build-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  setFormLocked(true);
   const form = new FormData(event.target);
   const buildBackend = document.getElementById('toggle-backend').checked;
   const buildFrontend = document.getElementById('toggle-frontend').checked;
   const backendBranch = (form.get('backend_branch') || '').trim();
   const ws = getFrontendWorkspaceBranch();
   if (!buildBackend && !buildFrontend) {
+    setFormLocked(false);
     alert('请至少选择一个构建目标');
     return;
   }
   if (buildBackend && !backendBranch) {
+    setFormLocked(false);
     alert('请选择或填写后端分支');
     return;
   }
   if (buildFrontend && !ws) {
+    setFormLocked(false);
     alert('请选择或填写前端版本分支');
     return;
   }
@@ -1038,24 +1138,55 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const res = await fetch('/api/builds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await res.json();
   if (!res.ok) {
+    setFormLocked(false);
     alert(data.error || '创建构建失败');
     return;
   }
   selectBuild(data.id);
 });
 
-(function wireBuildTargetToggles() {
+document.getElementById('stop-button').addEventListener('click', async () => {
+  if (!currentBuild) return;
+  const btn = document.getElementById('stop-button');
+  btn.disabled = true;
+  btn.textContent = '正在停止...';
+  try {
+    await fetch(`/api/builds/${currentBuild}/cancel`, { method: 'POST' });
+    await refreshCurrent();
+  } finally {
+    btn.textContent = '停止构建';
+  }
+});
+
+function setFormLocked(locked) {
+  document.querySelectorAll('#build-form input, #build-form button').forEach(el => {
+    if (el.id !== 'stop-button') el.disabled = locked;
+  });
+  document.getElementById('start-button').hidden = locked;
+  document.getElementById('stop-button').hidden = !locked;
+  document.getElementById('stop-button').disabled = false;
+  if (!locked) syncBuildTargetInputs();
+}
+
+function syncBuildTargetInputs() {
   const backendToggle = document.getElementById('toggle-backend');
   const frontendToggle = document.getElementById('toggle-frontend');
   const backendInput = document.getElementById('input-backend-branch');
   const frontendInput = document.getElementById('input-frontend-release');
-  function sync() {
-    backendInput.disabled = !backendToggle.checked;
-    frontendInput.disabled = !frontendToggle.checked;
+  backendInput.disabled = !backendToggle.checked;
+  frontendInput.disabled = !frontendToggle.checked;
+}
+
+(function wireBuildTargetToggles() {
+  const backendToggle = document.getElementById('toggle-backend');
+  const frontendToggle = document.getElementById('toggle-frontend');
+  function syncIfEditable() {
+    if (document.getElementById('start-button').hidden) return;
+    syncBuildTargetInputs();
   }
-  backendToggle.addEventListener('change', sync);
-  frontendToggle.addEventListener('change', sync);
-  sync();
+  backendToggle.addEventListener('change', syncIfEditable);
+  frontendToggle.addEventListener('change', syncIfEditable);
+  syncBuildTargetInputs();
 })();
 
 function getFrontendWorkspaceBranch() {
@@ -1127,6 +1258,7 @@ async function refreshCurrent() {
   if (!res.ok) return;
   const build = await res.json();
   renderDetail(build);
+  setFormLocked(!terminalStatuses.includes(build.status));
   const logRes = await fetch(`/api/builds/${currentBuild}/log?offset=${logOffset}`);
   const logData = await logRes.json();
   logOffset = logData.offset;
@@ -1135,7 +1267,7 @@ async function refreshCurrent() {
     pre.textContent += logData.text;
     pre.scrollTop = pre.scrollHeight;
   }
-  if (['success', 'failed'].includes(build.status) && timer) {
+  if (terminalStatuses.includes(build.status) && timer) {
     clearInterval(timer);
     timer = null;
   }
@@ -1380,6 +1512,16 @@ button {
   transition: transform .14s ease, box-shadow .14s ease, filter .14s ease;
 }
 button:hover { transform: translateY(-1px); filter: brightness(1.03); box-shadow: 0 16px 28px rgba(37, 99, 235, .26); }
+button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+  transform: none;
+  filter: none;
+}
+button.danger {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  box-shadow: 0 12px 24px rgba(220, 38, 38, .20);
+}
 .build-item {
   width: 100%;
   display: flex;
@@ -1405,6 +1547,7 @@ button:hover { transform: translateY(-1px); filter: brightness(1.03); box-shadow
 }
 .build-item.success { background: var(--green-soft); border-color: #bbf7d0; }
 .build-item.failed { background: var(--red-soft); border-color: #fecaca; }
+.build-item.cancelled { background: #f8fafc; border-color: #cbd5e1; }
 .build-item.running, .build-item.queued { background: var(--blue-soft); border-color: #bfdbfe; }
 .summary-panel {
   display: grid;
@@ -1429,6 +1572,7 @@ button:hover { transform: translateY(-1px); filter: brightness(1.03); box-shadow
 .pill.running, .pill.queued { color: #1d4ed8; background: #dbeafe; }
 .pill.success { color: #15803d; background: #dcfce7; }
 .pill.failed { color: #b91c1c; background: #fee2e2; }
+.pill.cancelled { color: #475569; background: #e2e8f0; }
 .artifact-link {
   color: #1d4ed8;
   font-weight: 900;
@@ -1464,6 +1608,8 @@ button:hover { transform: translateY(-1px); filter: brightness(1.03); box-shadow
 .steps li.success .step-index { color: #15803d; background: #dcfce7; }
 .steps li.failed { border-color: #fecaca; background: var(--red-soft); }
 .steps li.failed .step-index { color: #b91c1c; background: #fee2e2; }
+.steps li.cancelled { border-color: #cbd5e1; background: #f8fafc; }
+.steps li.cancelled .step-index { color: #475569; background: #e2e8f0; }
 .steps li.skipped { border-color: #fde68a; background: var(--amber-soft); }
 .steps li.skipped .step-index { color: var(--amber); background: #fef3c7; }
 .empty-state {
