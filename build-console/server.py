@@ -44,6 +44,9 @@ FRONTEND_CHILD_REPOS = {
     ),
 }
 FRONTEND_WORKSPACE_BRANCH = os.environ.get("FRONTEND_WORKSPACE_BRANCH", "master")
+HELP_DOCS_GIT_URL = os.environ.get("HELP_DOCS_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-help-docs.git")
+HELP_DOCS_BRANCH = os.environ.get("HELP_DOCS_BRANCH", "release_ci")
+HELP_DOCS_DIR = Path(os.environ.get("HELP_DOCS_DIR", "/opt/ohr-help-docs-src"))
 HOST = os.environ.get("BUILD_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUILD_CONSOLE_PORT", "8090"))
 CONFIG_FILE = Path(os.environ.get("BUILD_CONSOLE_ENV", ROOT / "build-console.env"))
@@ -197,6 +200,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         or payload.get("frontend_bootstrap_branch")
         or ""
     ).strip()
+    help_docs_branch = str(payload.get("help_docs_branch") or HELP_DOCS_BRANCH).strip()
     note = str(payload.get("note") or "").strip()
 
     if not build_backend and not build_frontend:
@@ -209,6 +213,10 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("请填写前端版本分支")
     if frontend_release_branch and not BRANCH_RE.fullmatch(frontend_release_branch):
         raise ValueError("前端版本分支名仅允许字母、数字、._/-")
+    if build_frontend and not help_docs_branch:
+        raise ValueError("请填写 Help 文档分支")
+    if help_docs_branch and not BRANCH_RE.fullmatch(help_docs_branch):
+        raise ValueError("Help 文档分支名仅允许字母、数字、._/-")
     # ohr-workspace 不跟随 release_*；它固定使用配置分支。用户选择的是四个子项目共同存在的版本分支。
     frontend_workspace_branch = FRONTEND_WORKSPACE_BRANCH
     frontend_feelin_branch = frontend_release_branch
@@ -242,6 +250,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
             "frontend_lowcode_engine_branch": frontend_lowcode_engine_branch,
             "frontend_micro_frontends_branch": frontend_micro_frontends_branch,
             "frontend_nocode_engine_branch": frontend_nocode_engine_branch,
+            "help_docs_branch": help_docs_branch,
             "build_backend": build_backend,
             "build_frontend": build_frontend,
             "note": note,
@@ -692,7 +701,45 @@ npm config set registry https://registry.smartcompany.cn/repository/npm-group/
 npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
 npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
 npm i -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
-apt-get update -qy && apt-get install -y zip
+apt-get update -qy && apt-get install -y zip unzip
+HELP_DIR="$HELP_DOCS_WORKDIR"
+mkdir -p "$(dirname "$HELP_DIR")"
+if [ -d "$HELP_DIR/.git" ]; then
+  echo "[sync ohr-help-docs] fetch $HELP_DOCS_BRANCH"
+  git -C "$HELP_DIR" remote set-url origin "$HELP_DOCS_GIT_URL"
+  git -C "$HELP_DIR" fetch origin "$HELP_DOCS_BRANCH" --prune
+  git -C "$HELP_DIR" checkout -B "$HELP_DOCS_BRANCH" "origin/$HELP_DOCS_BRANCH"
+  git -C "$HELP_DIR" reset --hard "origin/$HELP_DOCS_BRANCH"
+  git -C "$HELP_DIR" clean -fd
+else
+  rm -rf "$HELP_DIR"
+  echo "[sync ohr-help-docs] clone $HELP_DOCS_BRANCH"
+  git clone -b "$HELP_DOCS_BRANCH" "$HELP_DOCS_GIT_URL" "$HELP_DIR"
+fi
+cd "$HELP_DIR"
+find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -delete
+find . -maxdepth 1 -type d -name 'ohr_help_docs_release_*' -exec rm -rf {} +
+pnpm config set store-dir /opt/pnpm-cache || true
+pnpm i
+if [ -d markdowns ]; then
+  echo "使用 ohr-help-docs 仓库内 markdowns 构建 Help。"
+  rm -rf build
+  npm run copy-images
+  npm run build
+elif [ -d build ]; then
+  echo "未发现 markdowns，使用 ohr-help-docs 仓库内 build 目录打包 Help。"
+else
+  echo "Help 文档内容不存在：ohr-help-docs 仓库内未找到 markdowns 或 build"
+  echo "请确认 $HELP_DOCS_BRANCH 分支是否包含可构建文档内容或已构建的 build 目录。"
+  exit 4
+fi
+npm run bundle
+help_zip="$(find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
+if [ -z "$help_zip" ] || [ ! -f "$help_zip" ]; then
+  echo "Help 发布包生成失败：npm run bundle 未生成 ohr_help_docs_release_*.zip"
+  exit 5
+fi
+cd "$OHR_FRONTEND_WORKDIR"
 find . -maxdepth 1 -type f -name 'release_*.zip' -delete
 find . -maxdepth 1 -type d -name 'release_*' -exec rm -rf {} +
 npm run build
@@ -712,15 +759,11 @@ trap cleanup_publish_root EXIT
 mkdir -p "$publish_root/ohr-cicd/web_prod" "$publish_root/ohr-cicd/conf_prod"
 unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
 mkdir -p "$publish_root/ohr-cicd/web_prod/help"
+unzip -q "$HELP_DIR/$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
 cat > "$publish_root/ohr-cicd/conf_prod/TODO.md" <<'TODO'
 # TODO
 
 conf_prod deployment resources are pending a confirmed source.
-TODO
-cat > "$publish_root/ohr-cicd/web_prod/help/TODO.md" <<'TODO'
-# TODO
-
-help static site resources are pending a confirmed source.
 TODO
 (
   cd "$publish_root"
@@ -728,6 +771,8 @@ TODO
 )
 bundle_dir="${bundle_zip%.zip}"
 rm -rf "$bundle_zip" "$bundle_dir"
+help_dir="$HELP_DIR/${help_zip%.zip}"
+rm -rf "$HELP_DIR/$help_zip" "$help_dir"
 ls -lh "$OUT_WEB_ZIP"
 """
 
@@ -748,6 +793,9 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "FRONTEND_LOWCODE_BRANCH": req.get("frontend_lowcode_engine_branch") or rel,
         "FRONTEND_MF_BRANCH": req.get("frontend_micro_frontends_branch") or rel,
         "FRONTEND_NOCODE_BRANCH": req.get("frontend_nocode_engine_branch") or rel,
+        "HELP_DOCS_GIT_URL": git_url_with_token(HELP_DOCS_GIT_URL),
+        "HELP_DOCS_BRANCH": req.get("help_docs_branch") or HELP_DOCS_BRANCH,
+        "HELP_DOCS_WORKDIR": str(HELP_DOCS_DIR),
         "OHR_BUILD_ID": build_id,
         "OUT_WEB_ZIP": str(ARTIFACT_ROOT / build_id / "web.zip"),
     }
@@ -1076,7 +1124,7 @@ INDEX_HTML = """<!doctype html>
           <label class="toggle-option"><input id="toggle-backend" type="checkbox" checked> 构建后端 package.zip</label>
           <label class="toggle-option"><input id="toggle-frontend" type="checkbox" checked> 构建前端 web.zip</label>
         </div>
-        <div class="form-grid">
+        <div class="form-grid three">
           <div class="field-block">
             <label for="input-backend-branch">后端分支</label>
             <input id="input-backend-branch" name="backend_branch" list="backend-branches" placeholder="例如 release_20260129" autocomplete="off">
@@ -1086,6 +1134,10 @@ INDEX_HTML = """<!doctype html>
             <label for="input-frontend-release">前端版本分支（四个子项目共同存在）</label>
             <input id="input-frontend-release" list="frontend-branches" placeholder="例如 release_20260325" autocomplete="off">
             <datalist id="frontend-branches"></datalist>
+          </div>
+          <div class="field-block">
+            <label for="input-help-docs-branch">Help 文档分支</label>
+            <input id="input-help-docs-branch" name="help_docs_branch" value="release_ci" autocomplete="off">
           </div>
         </div>
         <details class="sync-hint">
@@ -1167,6 +1219,7 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const buildFrontend = document.getElementById('toggle-frontend').checked;
   const backendBranch = (form.get('backend_branch') || '').trim();
   const ws = getFrontendWorkspaceBranch();
+  const helpDocsBranch = (form.get('help_docs_branch') || '').trim();
   if (!buildBackend && !buildFrontend) {
     setFormLocked(false);
     alert('请至少选择一个构建目标');
@@ -1182,12 +1235,18 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
     alert('请选择或填写前端版本分支');
     return;
   }
+  if (buildFrontend && !helpDocsBranch) {
+    setFormLocked(false);
+    alert('请填写 Help 文档分支');
+    return;
+  }
   setFormLocked(true);
   const payload = {
     build_backend: buildBackend,
     build_frontend: buildFrontend,
     backend_branch: backendBranch,
     frontend_release_branch: ws,
+    help_docs_branch: helpDocsBranch,
     note: form.get('note')
   };
   const res = await fetch('/api/builds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -1228,8 +1287,10 @@ function syncBuildTargetInputs() {
   const frontendToggle = document.getElementById('toggle-frontend');
   const backendInput = document.getElementById('input-backend-branch');
   const frontendInput = document.getElementById('input-frontend-release');
+  const helpDocsInput = document.getElementById('input-help-docs-branch');
   backendInput.disabled = !backendToggle.checked;
   frontendInput.disabled = !frontendToggle.checked;
+  helpDocsInput.disabled = !frontendToggle.checked;
 }
 
 (function wireBuildTargetToggles() {
@@ -1350,6 +1411,10 @@ function renderDetail(build) {
       <div>
         <div class="muted">workspace 分支</div>
         <strong>${build.request.frontend_workspace_branch || ''}</strong>
+      </div>
+      <div>
+        <div class="muted">Help 文档分支</div>
+        <strong>${build.request.help_docs_branch || ''}</strong>
       </div>
       <div>
         <div class="muted">执行器</div>
@@ -1479,6 +1544,7 @@ h2 { font-size: 19px; }
 .section-title p { margin: 7px 0 0; }
 .section-title.compact { align-items: center; margin-bottom: 14px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .field-block {
   display: flex;
   flex-direction: column;

@@ -90,6 +90,7 @@ def test_create_build_allows_frontend_only_without_backend_branch(tmp_path, monk
 
     assert meta["request"]["build_backend"] is False
     assert meta["request"]["build_frontend"] is True
+    assert meta["request"]["help_docs_branch"] == "release_ci"
     assert meta["request"]["backend_branch"] == ""
 
 
@@ -152,6 +153,7 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
     assert meta["request"]["backend_branch"] == "release_20260129"
     assert meta["request"]["frontend_workspace_branch"] == "master"
     assert meta["request"]["frontend_release_branch"] == "release_front"
+    assert meta["request"]["help_docs_branch"] == "release_ci"
     assert (tmp_path / meta["id"] / "metadata.json").is_file()
     assert [step["id"] for step in meta["steps"]] == list(server.DIRECT_STEP_IDS)
 
@@ -228,7 +230,10 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "ohr-cicd/web_prod" in script
     assert "ohr-cicd/conf_prod" in script
     assert "web_prod/help" in script
-    assert "TODO.md" in script
+    assert "ohr-help-docs" in script
+    assert "仓库内 markdowns" in script
+    assert "仓库内 build" in script
+    assert "ohr_help_docs_release_*.zip" in script
     assert "前端发布包生成失败" in script
     assert 'zip -r "$OUT_WEB_ZIP" .' not in script
     assert "node_modules/*" not in script

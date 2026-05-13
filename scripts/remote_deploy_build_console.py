@@ -59,6 +59,9 @@ def render_env() -> str:
         "FRONTEND_LOWCODE_ENGINE_GIT_URL": base.get("FRONTEND_LOWCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-lowcode-engine.git"),
         "FRONTEND_MICRO_FRONTENDS_GIT_URL": base.get("FRONTEND_MICRO_FRONTENDS_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-micro-frontends.git"),
         "FRONTEND_NOCODE_ENGINE_GIT_URL": base.get("FRONTEND_NOCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-nocode-engine.git"),
+        "HELP_DOCS_GIT_URL": base.get("HELP_DOCS_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-help-docs.git"),
+        "HELP_DOCS_BRANCH": base.get("HELP_DOCS_BRANCH", "release_ci"),
+        "HELP_DOCS_DIR": base.get("HELP_DOCS_DIR", "/opt/ohr-help-docs-src"),
         "FRONTEND_GIT_TOKEN": base.get("FRONTEND_GIT_TOKEN", git.get("OHR_BACK_GIT_TOKEN", "")),
         "NPM_AUTH_B64": base.get("NPM_AUTH_B64", ""),
     }
