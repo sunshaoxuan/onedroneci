@@ -871,17 +871,14 @@ INDEX_HTML = """<!doctype html>
             <datalist id="backend-branches"></datalist>
           </div>
           <div class="field-block">
-            <label for="select-frontend-workspace">前端分支（workspace）</label>
-            <select id="select-frontend-workspace" autocomplete="off" required></select>
-            <div id="fe-manual-wrap" class="fe-manual-wrap" hidden>
-              <label for="input-frontend-manual" class="sub-label">手输 workspace 分支名</label>
-              <input id="input-frontend-manual" type="text" placeholder="例如 release_20260129" autocomplete="off">
-            </div>
+            <label for="input-frontend-workspace">前端分支（workspace）</label>
+            <input id="input-frontend-workspace" list="frontend-branches" placeholder="例如 release_20260129" autocomplete="off" required>
+            <datalist id="frontend-branches"></datalist>
           </div>
         </div>
         <details class="sync-hint">
           <summary>发版线与子工程分支（已自动与 workspace 一致）</summary>
-          <p class="muted">无需再单独填写「前端默认发版」及各子仓。选择上方 workspace 后，服务端会将前端发版分支、feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends 全部设为同一分支。若候选列表不全，可在前端控件中选「其他（手输）…」。</p>
+          <p class="muted">无需再单独填写「前端默认发版」及各子仓。选择上方 workspace 后，服务端会将前端发版分支、feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends 全部设为同一分支。若候选列表不全，可直接在前端分支输入框中手输。</p>
         </details>
         <div class="form-grid">
           <label>备注 <input name="note" placeholder="例如：测试环境首次打包"></label>
@@ -917,7 +914,7 @@ INDEX_HTML = """<!doctype html>
       <pre id="log"></pre>
     </section>
   </main>
-  <script src="/app.js?v=3"></script>
+  <script src="/app.js?v=4"></script>
 </body>
 </html>
 """
@@ -969,29 +966,9 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
 });
 
 function getFrontendWorkspaceBranch() {
-  const sel = document.getElementById('select-frontend-workspace');
-  if (!sel) return '';
-  if (sel.value === '__other__') {
-    return (document.getElementById('input-frontend-manual').value || '').trim();
-  }
-  return (sel.value || '').trim();
+  const input = document.getElementById('input-frontend-workspace');
+  return input ? (input.value || '').trim() : '';
 }
-
-(function wireFrontendSelect() {
-  const sel = document.getElementById('select-frontend-workspace');
-  const wrap = document.getElementById('fe-manual-wrap');
-  const manual = document.getElementById('input-frontend-manual');
-  if (!sel || !wrap || !manual) return;
-  sel.addEventListener('change', () => {
-    if (sel.value === '__other__') {
-      wrap.hidden = false;
-      manual.focus();
-    } else {
-      wrap.hidden = true;
-      manual.value = '';
-    }
-  });
-})();
 
 function fillDatalist(id, branches) {
   const list = document.getElementById(id);
@@ -1004,45 +981,6 @@ function fillDatalist(id, branches) {
   });
 }
 
-function fillFrontendSelect(branches) {
-  const sel = document.getElementById('select-frontend-workspace');
-  const wrap = document.getElementById('fe-manual-wrap');
-  const manual = document.getElementById('input-frontend-manual');
-  if (!sel) return;
-  const previous = sel.value === '__other__' ? '__other__' : sel.value;
-  sel.innerHTML = '';
-  const ph = document.createElement('option');
-  ph.value = '';
-  ph.disabled = true;
-  ph.selected = true;
-  ph.textContent = '请选择前端分支';
-  sel.appendChild(ph);
-  (branches || []).forEach(branch => {
-    const o = document.createElement('option');
-    o.value = branch;
-    o.textContent = branch;
-    sel.appendChild(o);
-  });
-  const other = document.createElement('option');
-  other.value = '__other__';
-  other.textContent = '其他（手输）…';
-  sel.appendChild(other);
-  if (previous === '__other__') {
-    ph.selected = false;
-    sel.value = '__other__';
-    if (wrap) wrap.hidden = false;
-  } else if (previous && (branches || []).includes(previous)) {
-    ph.selected = false;
-    sel.value = previous;
-    if (wrap) wrap.hidden = true;
-  } else {
-    if (wrap) {
-      wrap.hidden = true;
-      if (manual) manual.value = '';
-    }
-  }
-}
-
 async function loadBranchLists() {
   try {
     const [be, fe] = await Promise.all([
@@ -1050,7 +988,7 @@ async function loadBranchLists() {
       fetch('/api/frontend-branches').then(r => r.json())
     ]);
     fillDatalist('backend-branches', be.branches);
-    fillFrontendSelect(fe.branches);
+    fillDatalist('frontend-branches', fe.branches);
   } catch (error) {
     console.warn('failed to load branch lists', error);
   }
@@ -1307,14 +1245,6 @@ details.sync-hint summary {
   user-select: none;
 }
 details.sync-hint p { margin: 10px 0 0; line-height: 1.6; }
-.fe-manual-wrap { margin-top: 4px; }
-.sub-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-  margin: 0 0 6px;
-}
 .submit-row { display: flex; align-items: flex-end; justify-content: flex-end; padding-bottom: 16px; }
 button {
   border: 0;
