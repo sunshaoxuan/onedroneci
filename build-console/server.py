@@ -616,6 +616,7 @@ def npm_auth_b64_value() -> str:
 
 DIRECT_FRONTEND_RESTORE_SCRIPT = r"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+export HOME="${HOME:-/root}"
 BASE="$OHR_FRONTEND_WORKDIR"
 mkdir -p "$(dirname "$BASE")"
 if [ ! -d "$BASE/.git" ]; then
@@ -660,6 +661,7 @@ npm run setup:rm-yalc
 
 DIRECT_FRONTEND_BUILD_SCRIPT = r"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+export HOME="${HOME:-/root}"
 cd "$OHR_FRONTEND_WORKDIR"
 npm i -g pnpm@10.22.0 --registry=https://registry.npmmirror.com/
 npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
