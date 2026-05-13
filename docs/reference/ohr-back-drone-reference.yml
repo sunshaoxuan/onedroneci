@@ -1,0 +1,155 @@
+# Sanitized reference copied from a previous OHR Drone build environment.
+# Keep this file as architecture reference only. Do not paste real runtime
+# parameters, passwords, tokens, or private endpoint secrets here.
+
+kind: pipeline
+type: docker
+name: standalone in docker
+
+platform:
+  os: linux
+  arch: amd64
+
+clone:
+  depth: 1
+
+services:
+  - name: Docker in Docker
+    image: docker:19.03.12-dind
+    privileged: true
+
+steps:
+  - name: Build Code
+    image: maven:3.9.9-eclipse-temurin-24
+    environment:
+      BASE_DIR: /drone/src
+    volumes:
+      - name: javas
+        path: /root/javas
+      - name: m2-cache
+        path: /root/.m2
+    commands:
+      - cd $BASE_DIR
+      - ./collect-standalone.sh
+      - mkdir -p "/root/javas/${CICD_ENV}" && echo "directory ensured."
+      - cp -r ./package/* /root/javas/${CICD_ENV}
+      - echo "Build code finished!"
+
+  - name: Start Java
+    image: docker:28.1.1
+    environment:
+      BASE_DIR: /drone/src
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - name: javas
+        path: /root/javas
+      - name: data
+        path: /root/data
+      - name: docker-socket
+        path: /var/run/docker.sock
+    commands:
+      - cd /root/javas/${CICD_ENV}/
+      - docker ps -aq --filter "name=java-standalone-${CICD_ENV}" | xargs -r docker rm -f
+      - >
+        docker run -d --network host
+        --name java-standalone-${CICD_ENV}
+        -v /etc/localtime:/etc/localtime:ro
+        -v /opt/ohr-backend/javas/${CICD_ENV}/:/app/
+        -v /opt/ohr-backend/data/:/opt/ohr-backend/data/
+        -e OHR_DATA_DIR=/opt/ohr-backend/data/${CICD_ENV}
+        -e OHR_SERVICE_PORT=${OHR_SERVICE_PORT}
+        -e OHR_HOST_ADDRESS=${OHR_HOST_ADDRESS}
+        -e INFRA_POSTGRESQL_HOST=${INFRA_POSTGRESQL_HOST}
+        -e INFRA_POSTGRESQL_PORT=${INFRA_POSTGRESQL_PORT}
+        -e INFRA_POSTGRESQL_USER=${INFRA_POSTGRESQL_USER}
+        -e INFRA_POSTGRESQL_PASS=${INFRA_POSTGRESQL_PASS}
+        -e INFRA_POSTGRESQL_DATABASE_TENANT=${INFRA_POSTGRESQL_DATABASE_TENANT}
+        -e INFRA_POSTGRESQL_DATABASE_OHR=${INFRA_POSTGRESQL_DATABASE_OHR}
+        -e INFRA_MINIO_HOST=${INFRA_MINIO_HOST}
+        -e INFRA_MINIO_PORT=${INFRA_MINIO_PORT}
+        -e INFRA_MINIO_ACCESS_KEY=${INFRA_MINIO_ACCESS_KEY}
+        -e INFRA_MINIO_SECRET_KEY=${INFRA_MINIO_SECRET_KEY}
+        -e INFRA_REDIS_HOST=${INFRA_REDIS_HOST}
+        -e INFRA_REDIS_PORT=${INFRA_REDIS_PORT}
+        openjdk:24
+        java -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:8599
+        -jar /app/standalone.jar
+        --ohr.initialize.collect-resource=true
+      - echo "Start java finished!"
+
+volumes:
+  - name: javas
+    host:
+      path: /opt/ohr-backend/javas
+  - name: data
+    host:
+      path: /opt/ohr-backend/data
+  - name: m2-cache
+    host:
+      path: /opt/ohr-backend/.m2
+  - name: docker-socket
+    host:
+      path: /var/run/docker.sock
+
+trigger:
+  event:
+    - custom
+  branch:
+    only:
+      - /^release_.*/i
+
+# Runtime parameters in the source environment included:
+# OHR_SERVICE_PORT, OHR_HOST_ADDRESS, INFRA_POSTGRESQL_*, INFRA_MINIO_*,
+# INFRA_REDIS_*, CICD_ENV, RUNNER.
+# Values were intentionally removed.
+
+---
+
+kind: pipeline
+type: exec
+name: standalone in windows
+
+platform:
+  os: windows
+  arch: amd64
+
+clone:
+  disable: true
+
+steps:
+  - name: pull
+    commands:
+      - cd ${SOURCE_PAH}
+      - git reset --hard
+      - git pull
+      - echo "finished"
+
+  - name: build
+    commands:
+      - cd ${SOURCE_PAH}
+      - $env:JAVA_HOME = '${EXEC_PAH}\WebServer\jdk'
+      - $env:PATH = ("$env:JAVA_HOME\bin" + ';' + $env:PATH)
+      - mvn clean package "-Dmaven.test.skip"
+      - echo "finished"
+
+  - name: copy
+    commands:
+      - cd ${SOURCE_PAH}
+      - Copy-Item .\standalone\target\standalone-1.0.0.jar ${EXEC_PAH}\WebServer\package\standalone.jar -Force -ErrorAction SilentlyContinue
+      - echo "finished"
+
+  - name: restart
+    commands:
+      - cd ${EXEC_PAH}\bin\standalone
+      - powershell.exe -ExecutionPolicy RemoteSigned -File package.restart.ps1
+      - echo "finished"
+
+trigger:
+  event:
+    - custom
+  branch:
+    only:
+      - /^release_.*/i
+
+# Runtime parameters in the source environment included SOURCE_PAH, EXEC_PAH,
+# and RUNNER. Values were intentionally removed.
