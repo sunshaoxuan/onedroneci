@@ -17,6 +17,7 @@ deploy/drone/drone.env
 build-console/build-console.env
 build-console/builds/
 .repo-git/
+.standalone-template/
 
 # 远端/本机一次性诊断与构建日志，可能包含 token、私服凭据或内部环境信息。
 _*.txt
