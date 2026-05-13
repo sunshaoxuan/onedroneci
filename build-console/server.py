@@ -30,6 +30,19 @@ FRONTEND_WORKSPACE_DIR = Path(os.environ.get("FRONTEND_WORKSPACE_DIR", "/opt/ohr
 FRONTEND_WORKSPACE_GIT_URL = os.environ.get(
     "FRONTEND_WORKSPACE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-workspace.git"
 )
+FRONTEND_CHILD_REPOS = {
+    "frontend_feelin_branch": os.environ.get("FRONTEND_FEELIN_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-feelin.git"),
+    "frontend_lowcode_engine_branch": os.environ.get(
+        "FRONTEND_LOWCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-lowcode-engine.git"
+    ),
+    "frontend_micro_frontends_branch": os.environ.get(
+        "FRONTEND_MICRO_FRONTENDS_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-micro-frontends.git"
+    ),
+    "frontend_nocode_engine_branch": os.environ.get(
+        "FRONTEND_NOCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-nocode-engine.git"
+    ),
+}
+FRONTEND_WORKSPACE_BRANCH = os.environ.get("FRONTEND_WORKSPACE_BRANCH", "main")
 HOST = os.environ.get("BUILD_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUILD_CONSOLE_PORT", "8090"))
 CONFIG_FILE = Path(os.environ.get("BUILD_CONSOLE_ENV", ROOT / "build-console.env"))
@@ -166,23 +179,29 @@ def update_step(build_id: str, step_id: str, status: str, message: str | None = 
 
 def create_build(payload: dict[str, Any]) -> dict[str, Any]:
     backend_branch = str(payload.get("backend_branch") or "").strip()
-    frontend_workspace_branch = str(payload.get("frontend_workspace_branch") or payload.get("frontend_bootstrap_branch") or "").strip()
+    frontend_release_branch = str(
+        payload.get("frontend_release_branch")
+        or payload.get("frontend_version_branch")
+        or payload.get("frontend_workspace_branch")
+        or payload.get("frontend_bootstrap_branch")
+        or ""
+    ).strip()
     note = str(payload.get("note") or "").strip()
 
     if not backend_branch:
         raise ValueError("请填写后端分支")
     if not BRANCH_RE.fullmatch(backend_branch):
         raise ValueError("后端分支名仅允许字母、数字、._/-")
-    if not frontend_workspace_branch:
-        raise ValueError("请填写前端 workspace 分支")
-    if not BRANCH_RE.fullmatch(frontend_workspace_branch):
-        raise ValueError("前端 workspace 分支名仅允许字母、数字、._/-")
-    # 与页面一致：发版线及各子工程分支统一为 workspace 分支
-    frontend_release_branch = frontend_workspace_branch
-    frontend_feelin_branch = frontend_workspace_branch
-    frontend_lowcode_engine_branch = frontend_workspace_branch
-    frontend_micro_frontends_branch = frontend_workspace_branch
-    frontend_nocode_engine_branch = frontend_workspace_branch
+    if not frontend_release_branch:
+        raise ValueError("请填写前端版本分支")
+    if not BRANCH_RE.fullmatch(frontend_release_branch):
+        raise ValueError("前端版本分支名仅允许字母、数字、._/-")
+    # ohr-workspace 不跟随 release_*；它固定使用 main。用户选择的是四个子项目共同存在的版本分支。
+    frontend_workspace_branch = FRONTEND_WORKSPACE_BRANCH
+    frontend_feelin_branch = frontend_release_branch
+    frontend_lowcode_engine_branch = frontend_release_branch
+    frontend_micro_frontends_branch = frontend_release_branch
+    frontend_nocode_engine_branch = frontend_release_branch
 
     if EXECUTOR == "drone":
         if not DRONE_CONTROL_REPO or not DRONE_TOKEN:
@@ -485,8 +504,11 @@ sha256sum package.zip | head -1
 
 
 def workspace_git_url_with_token() -> str:
+    return git_url_with_token(FRONTEND_WORKSPACE_GIT_URL)
+
+
+def git_url_with_token(base: str) -> str:
     token = os.environ.get("FRONTEND_GIT_TOKEN") or os.environ.get("OHR_BACK_GIT_TOKEN", "")
-    base = FRONTEND_WORKSPACE_GIT_URL
     if not token:
         return base
     u = urllib.parse.urlparse(base)
@@ -614,14 +636,12 @@ def list_backend_release_branches(limit: int = 200) -> list[str]:
     return branches[:limit]
 
 
-def list_frontend_workspace_branches(limit: int = 200) -> list[str]:
-    """列出前端 monorepo（FRONTEND_WORKSPACE_GIT_URL，默认 ohr/ohr-workspace）上的 release_* 分支。"""
-    url = workspace_git_url_with_token()
+def list_release_branches_for_url(url: str, limit: int = 500) -> list[str]:
     if not url:
         return []
     try:
         proc = subprocess.run(
-            ["git", "ls-remote", "--heads", url, "release_*"],
+            ["git", "ls-remote", "--heads", git_url_with_token(url), "release_*"],
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -642,6 +662,19 @@ def list_frontend_workspace_branches(limit: int = 200) -> list[str]:
             branches.append(branch)
     branches = sorted(set(branches), reverse=True)
     return branches[:limit]
+
+
+def list_frontend_release_branches(limit: int = 200) -> list[str]:
+    """列出四个前端子项目共同存在的 release_* 分支；ohr-workspace 固定使用 main。"""
+    branch_sets = [set(list_release_branches_for_url(url)) for url in FRONTEND_CHILD_REPOS.values()]
+    if not branch_sets:
+        return []
+    common = set.intersection(*branch_sets)
+    return sorted(common, reverse=True)[:limit]
+
+
+def list_frontend_workspace_branches(limit: int = 200) -> list[str]:
+    return list_frontend_release_branches(limit)
 
 
 def run_command(
@@ -860,7 +893,7 @@ INDEX_HTML = """<!doctype html>
       <div class="section-title">
         <div>
           <h2>构建参数</h2>
-          <p class="muted">后端与前端分支均可从对应仓库的 release_* 候选中选择或手输；前端仅需选择 workspace 分支，发版与子工程在服务端自动与之统一。</p>
+          <p class="muted">后端分支来自后端仓库；前端版本分支来自 feelin、lowcode、micro-frontends、nocode 四个子项目共同存在的 release_* 分支。ohr-workspace 固定使用 main。</p>
         </div>
       </div>
       <form id="build-form">
@@ -871,14 +904,14 @@ INDEX_HTML = """<!doctype html>
             <datalist id="backend-branches"></datalist>
           </div>
           <div class="field-block">
-            <label for="input-frontend-workspace">前端分支（workspace）</label>
-            <input id="input-frontend-workspace" list="frontend-branches" placeholder="例如 release_20260129" autocomplete="off" required>
+            <label for="input-frontend-release">前端版本分支（四个子项目共同存在）</label>
+            <input id="input-frontend-release" list="frontend-branches" placeholder="例如 release_20260325" autocomplete="off" required>
             <datalist id="frontend-branches"></datalist>
           </div>
         </div>
         <details class="sync-hint">
-          <summary>发版线与子工程分支（已自动与 workspace 一致）</summary>
-          <p class="muted">无需再单独填写「前端默认发版」及各子仓。选择上方 workspace 后，服务端会将前端发版分支、feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends 全部设为同一分支。若候选列表不全，可直接在前端分支输入框中手输。</p>
+          <summary>前端分支规则</summary>
+          <p class="muted">ohr-workspace 不使用 release_* 分支，构建时固定检出 main；上方选择的版本分支会同时用于 ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends。若候选列表不全，可直接手输。</p>
         </details>
         <div class="form-grid">
           <label>备注 <input name="note" placeholder="例如：测试环境首次打包"></label>
@@ -914,7 +947,7 @@ INDEX_HTML = """<!doctype html>
       <pre id="log"></pre>
     </section>
   </main>
-  <script src="/app.js?v=4"></script>
+  <script src="/app.js?v=5"></script>
 </body>
 </html>
 """
@@ -948,12 +981,12 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const form = new FormData(event.target);
   const ws = getFrontendWorkspaceBranch();
   if (!ws) {
-    alert('请选择或填写前端 workspace 分支');
+    alert('请选择或填写前端版本分支');
     return;
   }
   const payload = {
     backend_branch: form.get('backend_branch'),
-    frontend_workspace_branch: ws,
+    frontend_release_branch: ws,
     note: form.get('note')
   };
   const res = await fetch('/api/builds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -966,7 +999,7 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
 });
 
 function getFrontendWorkspaceBranch() {
-  const input = document.getElementById('input-frontend-workspace');
+  const input = document.getElementById('input-frontend-release');
   return input ? (input.value || '').trim() : '';
 }
 
@@ -1009,7 +1042,7 @@ async function loadBuilds() {
     item.innerHTML = `
       <span>
         <strong>${build.request.backend_branch}</strong>
-        <small>${build.request.frontend_workspace_branch || ''} · ${build.id}</small>
+        <small>${build.request.frontend_release_branch || build.request.frontend_workspace_branch || ''} · ${build.id}</small>
       </span>
       <em>${statusText[build.status] || build.status}</em>
     `;
@@ -1064,7 +1097,11 @@ function renderDetail(build) {
         <strong>${build.request.backend_branch}</strong>
       </div>
       <div>
-        <div class="muted">前端分支（workspace，已统一子工程）</div>
+        <div class="muted">前端版本分支</div>
+        <strong>${build.request.frontend_release_branch || build.request.frontend_workspace_branch || ''}</strong>
+      </div>
+      <div>
+        <div class="muted">workspace 分支</div>
         <strong>${build.request.frontend_workspace_branch || ''}</strong>
       </div>
       <div>
@@ -1286,7 +1323,7 @@ button:hover { transform: translateY(-1px); filter: brightness(1.03); box-shadow
 .build-item.running, .build-item.queued { background: var(--blue-soft); border-color: #bfdbfe; }
 .summary-panel {
   display: grid;
-  grid-template-columns: 1fr 1fr .7fr auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   align-items: center;
   padding: 16px;

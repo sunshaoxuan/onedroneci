@@ -53,7 +53,12 @@ def render_env() -> str:
         "DRONE_CONTROL_REPO": base.get("DRONE_CONTROL_REPO", ""),
         "DRONE_CONTROL_BRANCH": base.get("DRONE_CONTROL_BRANCH", "master"),
         "FRONTEND_WORKSPACE_GIT_URL": base.get("FRONTEND_WORKSPACE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-workspace.git"),
+        "FRONTEND_WORKSPACE_BRANCH": base.get("FRONTEND_WORKSPACE_BRANCH", "main"),
         "FRONTEND_WORKSPACE_DIR": base.get("FRONTEND_WORKSPACE_DIR", "/opt/ohr-workspace-src"),
+        "FRONTEND_FEELIN_GIT_URL": base.get("FRONTEND_FEELIN_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-feelin.git"),
+        "FRONTEND_LOWCODE_ENGINE_GIT_URL": base.get("FRONTEND_LOWCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-lowcode-engine.git"),
+        "FRONTEND_MICRO_FRONTENDS_GIT_URL": base.get("FRONTEND_MICRO_FRONTENDS_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-micro-frontends.git"),
+        "FRONTEND_NOCODE_ENGINE_GIT_URL": base.get("FRONTEND_NOCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-nocode-engine.git"),
         "FRONTEND_GIT_TOKEN": base.get("FRONTEND_GIT_TOKEN", git.get("OHR_BACK_GIT_TOKEN", "")),
         "NPM_AUTH_B64": base.get("NPM_AUTH_B64", ""),
     }

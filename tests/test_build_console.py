@@ -26,17 +26,17 @@ def test_create_build_validates_backend_branch(tmp_path, monkeypatch):
         raise AssertionError("invalid branch should fail")
 
 
-def test_create_build_validates_frontend_workspace_branch(tmp_path, monkeypatch):
+def test_create_build_validates_frontend_release_branch(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)
     monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
 
     try:
         server.create_build(
-            {"backend_branch": "release_20260129", "frontend_workspace_branch": "bad;branch"}
+            {"backend_branch": "release_20260129", "frontend_release_branch": "bad;branch"}
         )
     except ValueError as exc:
-        assert "前端 workspace" in str(exc)
+        assert "前端版本分支" in str(exc)
     else:
         raise AssertionError("invalid frontend branch should fail")
 
@@ -54,7 +54,7 @@ def test_create_build_requires_backend_branch(tmp_path, monkeypatch):
         raise AssertionError("empty branch should fail")
 
 
-def test_create_build_requires_frontend_workspace(tmp_path, monkeypatch):
+def test_create_build_requires_frontend_release_branch(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)
     monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
@@ -64,16 +64,16 @@ def test_create_build_requires_frontend_workspace(tmp_path, monkeypatch):
         server.create_build(
             {
                 "backend_branch": "release_20260129",
-                "frontend_workspace_branch": "",
+                "frontend_release_branch": "",
             }
         )
     except ValueError as exc:
-        assert "workspace" in str(exc)
+        assert "前端版本分支" in str(exc)
     else:
         raise AssertionError("missing workspace branch should fail")
 
 
-def test_create_build_unifies_frontend_branches_to_workspace(tmp_path, monkeypatch):
+def test_create_build_uses_release_for_child_repos_and_main_for_workspace(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)
     monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
@@ -82,16 +82,16 @@ def test_create_build_unifies_frontend_branches_to_workspace(tmp_path, monkeypat
     meta = server.create_build(
         {
             "backend_branch": "release_20260129",
-            "frontend_workspace_branch": "release_ws_only",
+            "frontend_release_branch": "release_front",
         }
     )
     req = meta["request"]
-    assert req["frontend_workspace_branch"] == "release_ws_only"
-    assert req["frontend_release_branch"] == "release_ws_only"
-    assert req["frontend_feelin_branch"] == "release_ws_only"
-    assert req["frontend_lowcode_engine_branch"] == "release_ws_only"
-    assert req["frontend_micro_frontends_branch"] == "release_ws_only"
-    assert req["frontend_nocode_engine_branch"] == "release_ws_only"
+    assert req["frontend_workspace_branch"] == "main"
+    assert req["frontend_release_branch"] == "release_front"
+    assert req["frontend_feelin_branch"] == "release_front"
+    assert req["frontend_lowcode_engine_branch"] == "release_front"
+    assert req["frontend_micro_frontends_branch"] == "release_front"
+    assert req["frontend_nocode_engine_branch"] == "release_front"
 
 
 def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
@@ -103,15 +103,15 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
     meta = server.create_build(
         {
             "backend_branch": "release_20260129",
-            "frontend_workspace_branch": "release_workspace",
+            "frontend_release_branch": "release_front",
             "note": "smoke",
         }
     )
 
     assert meta["executor"] == "direct"
     assert meta["request"]["backend_branch"] == "release_20260129"
-    assert meta["request"]["frontend_workspace_branch"] == "release_workspace"
-    assert meta["request"]["frontend_release_branch"] == "release_workspace"
+    assert meta["request"]["frontend_workspace_branch"] == "main"
+    assert meta["request"]["frontend_release_branch"] == "release_front"
     assert (tmp_path / meta["id"] / "metadata.json").is_file()
     assert [step["id"] for step in meta["steps"]] == list(server.DIRECT_STEP_IDS)
 
@@ -127,7 +127,7 @@ def test_create_build_requires_drone_config_when_drone_executor(tmp_path, monkey
         server.create_build(
             {
                 "backend_branch": "release_back",
-                "frontend_workspace_branch": "release_workspace",
+                "frontend_release_branch": "release_front",
             }
         )
     except ValueError as exc:
@@ -136,20 +136,28 @@ def test_create_build_requires_drone_config_when_drone_executor(tmp_path, monkey
         raise AssertionError("missing Drone config should fail")
 
 
-def test_list_frontend_workspace_branches_parses_refs(monkeypatch):
+def test_list_frontend_release_branches_intersects_child_repos(monkeypatch):
     server = load_server()
 
-    class Result:
-        returncode = 0
-        stdout = (
-            "a\trefs/heads/release_20260101\n"
-            "b\trefs/heads/release_20260102\n"
-        )
-        stderr = ""
+    outputs = [
+        "a\trefs/heads/release_20260101\nb\trefs/heads/release_20260102\n",
+        "c\trefs/heads/release_20260102\nd\trefs/heads/release_20260103\n",
+        "e\trefs/heads/release_20260102\nf\trefs/heads/release_20260104\n",
+        "g\trefs/heads/release_20260102\nh\trefs/heads/release_20260105\n",
+    ]
 
-    monkeypatch.setattr(server.subprocess, "run", lambda *args, **kwargs: Result())
+    def fake_run(*args, **kwargs):
+        class Result:
+            returncode = 0
+            stderr = ""
 
-    assert server.list_frontend_workspace_branches() == ["release_20260102", "release_20260101"]
+        result = Result()
+        result.stdout = outputs.pop(0)
+        return result
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+
+    assert server.list_frontend_release_branches() == ["release_20260102"]
 
 
 def test_list_backend_release_branches_parses_refs(monkeypatch, tmp_path):

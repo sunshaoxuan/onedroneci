@@ -142,9 +142,9 @@ build-console 在 **drone** 模式下展示的步骤标签与上述 id 对齐（
 | `branch` | 控制仓库分支，来自环境变量 `DRONE_CONTROL_BRANCH`（默认 `master`） |
 | `BUILD_ID` | build-console 生成的构建号（与产物子目录名一致） |
 | `OHR_BACK_BRANCH` | 后端分支 |
-| `FRONTEND_WORKSPACE_BRANCH` | 前端 workspace 分支 |
-| `FRONTEND_RELEASE_BRANCH` | 与 workspace 相同（由服务端统一） |
-| `FRONTEND_*_BRANCH` | feelin / lowcode / micro-frontends / nocode，当前实现均与 workspace 相同 |
+| `FRONTEND_WORKSPACE_BRANCH` | 前端 workspace 分支，当前固定为 `main` |
+| `FRONTEND_RELEASE_BRANCH` | 四个前端子项目共同存在的 `release_*` 版本分支 |
+| `FRONTEND_*_BRANCH` | feelin / lowcode / micro-frontends / nocode，当前实现均与 `FRONTEND_RELEASE_BRANCH` 相同 |
 
 产物路径：
 

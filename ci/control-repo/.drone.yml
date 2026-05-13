@@ -114,7 +114,7 @@ steps:
           git reset --hard HEAD
           git clean -fd
           git fetch --all --prune
-          git checkout "$FRONTEND_WORKSPACE_BRANCH"
+          git checkout "${FRONTEND_WORKSPACE_BRANCH:-main}"
           pnpm i
           npm run setup:reset-git
           cd ./ohr-feelin && git fetch --all --prune && git checkout "$FEELIN_BRANCH" && git pull
@@ -125,7 +125,7 @@ steps:
         else
           echo "Cache not found, clean install."
           git fetch --all --prune
-          git checkout "$FRONTEND_WORKSPACE_BRANCH"
+          git checkout "${FRONTEND_WORKSPACE_BRANCH:-main}"
           pnpm i
           npx cross-env RELEASE_BRANCH="$FRONTEND_RELEASE_BRANCH" ohr-cli run-tasks --task clone-ohr
         fi

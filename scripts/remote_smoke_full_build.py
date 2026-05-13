@@ -35,7 +35,7 @@ def load_branches_for_build() -> tuple[str, str]:
     g = load_git_access()
     default = "release_20260129"
     back = g.get("OHR_BACK_BRANCH") or default
-    fws = g.get("FRONTEND_WORKSPACE_BRANCH") or g.get("FRONTEND_DEFAULT_WORKSPACE_BRANCH") or back or default
+    frel = g.get("FRONTEND_RELEASE_BRANCH") or g.get("FRONTEND_VERSION_BRANCH") or g.get("FRONTEND_WORKSPACE_BRANCH") or back or default
     return back, fws
 
 
@@ -44,7 +44,7 @@ def main() -> int:
     body = json.dumps(
         {
             "backend_branch": back,
-            "frontend_workspace_branch": fws,
+            "frontend_release_branch": frel,
             "note": "remote_smoke_full_build",
         },
         ensure_ascii=False,
