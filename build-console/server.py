@@ -653,8 +653,27 @@ export FEELIN_BRANCH="${FRONTEND_FEELIN_BRANCH:-$FRONTEND_REL_BRANCH}"
 export LOWCODE_ENGINE_BRANCH="${FRONTEND_LOWCODE_BRANCH:-$FRONTEND_REL_BRANCH}"
 export MICRO_FRONTENDS_BRANCH="${FRONTEND_MF_BRANCH:-$FRONTEND_REL_BRANCH}"
 export NOCODE_ENGINE_BRANCH="${FRONTEND_NOCODE_BRANCH:-$FRONTEND_REL_BRANCH}"
-rm -rf ohr-feelin ohr-lowcode-engine ohr-micro-frontends ohr-nocode-engine
-npx cross-env RELEASE_BRANCH="$FRONTEND_REL_BRANCH" ohr-cli run-tasks --task clone-ohr
+sync_frontend_repo() {
+  repo_dir="$1"
+  repo_url="$2"
+  repo_branch="$3"
+  if [ -d "$repo_dir/.git" ]; then
+    echo "[sync $repo_dir] fetch $repo_branch"
+    git -C "$repo_dir" remote set-url origin "$repo_url"
+    git -C "$repo_dir" fetch origin "$repo_branch" --prune
+    git -C "$repo_dir" checkout -B "$repo_branch" "origin/$repo_branch"
+    git -C "$repo_dir" reset --hard "origin/$repo_branch"
+    git -C "$repo_dir" clean -fd
+  else
+    rm -rf "$repo_dir"
+    echo "[sync $repo_dir] clone $repo_branch"
+    git clone -b "$repo_branch" "$repo_url" "$repo_dir"
+  fi
+}
+sync_frontend_repo ohr-feelin "https://${FRONTEND_GIT_HOST}/ohr/ohr-feelin.git" "$FEELIN_BRANCH"
+sync_frontend_repo ohr-lowcode-engine "https://${FRONTEND_GIT_HOST}/ohr/ohr-lowcode-engine.git" "$LOWCODE_ENGINE_BRANCH"
+sync_frontend_repo ohr-micro-frontends "https://${FRONTEND_GIT_HOST}/ohr/ohr-micro-frontends.git" "$MICRO_FRONTENDS_BRANCH"
+sync_frontend_repo ohr-nocode-engine "https://${FRONTEND_GIT_HOST}/ohr/ohr-nocode-engine.git" "$NOCODE_ENGINE_BRANCH"
 ohr-cli run-tasks --task install-modules-ohr
 npm run setup:rm-yalc
 """
