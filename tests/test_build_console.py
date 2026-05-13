@@ -231,8 +231,10 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "ohr-cicd/conf_prod" in script
     assert "web_prod/help" in script
     assert "ohr-help-docs" in script
-    assert "仓库内 markdowns" in script
-    assert "仓库内 build" in script
+    assert "svn checkout" in script
+    assert "svn update" in script
+    assert "使用 SVN 文档源构建 Help" in script
+    assert "HELP_DOCS_SVN_WORKDIR" in script
     assert "ohr_help_docs_release_*.zip" in script
     assert "前端发布包生成失败" in script
     assert 'zip -r "$OUT_WEB_ZIP" .' not in script

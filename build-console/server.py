@@ -47,6 +47,13 @@ FRONTEND_WORKSPACE_BRANCH = os.environ.get("FRONTEND_WORKSPACE_BRANCH", "master"
 HELP_DOCS_GIT_URL = os.environ.get("HELP_DOCS_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-help-docs.git")
 HELP_DOCS_BRANCH = os.environ.get("HELP_DOCS_BRANCH", "release_ci")
 HELP_DOCS_DIR = Path(os.environ.get("HELP_DOCS_DIR", "/opt/ohr-help-docs-src"))
+HELP_DOCS_SVN_URL = os.environ.get(
+    "HELP_DOCS_SVN_URL",
+    "http://192.168.21.111/svn/PHR1.5/30.マニュアル/マニュアル(日本語版)",
+)
+HELP_DOCS_SVN_DIR = Path(os.environ.get("HELP_DOCS_SVN_DIR", "/opt/ohr-help-docs-svn"))
+HELP_DOCS_SVN_USERNAME = os.environ.get("HELP_DOCS_SVN_USERNAME", "")
+HELP_DOCS_SVN_PASSWORD = os.environ.get("HELP_DOCS_SVN_PASSWORD", "")
 HOST = os.environ.get("BUILD_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUILD_CONSOLE_PORT", "8090"))
 CONFIG_FILE = Path(os.environ.get("BUILD_CONSOLE_ENV", ROOT / "build-console.env"))
@@ -701,7 +708,7 @@ npm config set registry https://registry.smartcompany.cn/repository/npm-group/
 npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
 npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
 npm i -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
-apt-get update -qy && apt-get install -y zip unzip
+apt-get update -qy && apt-get install -y zip unzip subversion
 HELP_DIR="$HELP_DOCS_WORKDIR"
 mkdir -p "$(dirname "$HELP_DIR")"
 if [ -d "$HELP_DIR/.git" ]; then
@@ -719,20 +726,41 @@ fi
 cd "$HELP_DIR"
 find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -delete
 find . -maxdepth 1 -type d -name 'ohr_help_docs_release_*' -exec rm -rf {} +
-pnpm config set store-dir /opt/pnpm-cache || true
-pnpm i
-if [ -d markdowns ]; then
-  echo "使用 ohr-help-docs 仓库内 markdowns 构建 Help。"
-  rm -rf build
-  npm run copy-images
-  npm run build
-elif [ -d build ]; then
-  echo "未发现 markdowns，使用 ohr-help-docs 仓库内 build 目录打包 Help。"
+SVN_AUTH_ARGS=()
+if [ -n "${HELP_DOCS_SVN_USERNAME:-}" ]; then
+  SVN_AUTH_ARGS+=(--username "$HELP_DOCS_SVN_USERNAME")
+fi
+if [ -n "${HELP_DOCS_SVN_PASSWORD:-}" ]; then
+  SVN_AUTH_ARGS+=(--password "$HELP_DOCS_SVN_PASSWORD")
+fi
+mkdir -p "$(dirname "$HELP_DOCS_SVN_WORKDIR")"
+if [ -d "$HELP_DOCS_SVN_WORKDIR/.svn" ]; then
+  echo "[sync help svn] update $HELP_DOCS_SVN_WORKDIR"
+  svn cleanup "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert || true
+  svn update "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert
 else
-  echo "Help 文档内容不存在：ohr-help-docs 仓库内未找到 markdowns 或 build"
-  echo "请确认 $HELP_DOCS_BRANCH 分支是否包含可构建文档内容或已构建的 build 目录。"
+  rm -rf "$HELP_DOCS_SVN_WORKDIR"
+  echo "[sync help svn] checkout $HELP_DOCS_SVN_URL"
+  svn checkout "$HELP_DOCS_SVN_URL" "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert
+fi
+rm -rf markdowns
+mkdir -p markdowns
+shopt -s dotglob nullglob
+for item in "$HELP_DOCS_SVN_WORKDIR"/*; do
+  [ "$(basename "$item")" = ".svn" ] && continue
+  cp -a "$item" markdowns/
+done
+shopt -u dotglob nullglob
+if [ -z "$(find markdowns -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+  echo "Help SVN 文档内容为空：$HELP_DOCS_SVN_URL"
   exit 4
 fi
+pnpm config set store-dir /opt/pnpm-cache || true
+pnpm i
+echo "使用 SVN 文档源构建 Help：$HELP_DOCS_SVN_URL"
+rm -rf build
+npm run copy-images
+npm run build
 npm run bundle
 help_zip="$(find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
 if [ -z "$help_zip" ] || [ ! -f "$help_zip" ]; then
@@ -796,6 +824,10 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "HELP_DOCS_GIT_URL": git_url_with_token(HELP_DOCS_GIT_URL),
         "HELP_DOCS_BRANCH": req.get("help_docs_branch") or HELP_DOCS_BRANCH,
         "HELP_DOCS_WORKDIR": str(HELP_DOCS_DIR),
+        "HELP_DOCS_SVN_URL": HELP_DOCS_SVN_URL,
+        "HELP_DOCS_SVN_WORKDIR": str(HELP_DOCS_SVN_DIR),
+        "HELP_DOCS_SVN_USERNAME": HELP_DOCS_SVN_USERNAME,
+        "HELP_DOCS_SVN_PASSWORD": HELP_DOCS_SVN_PASSWORD,
         "OHR_BUILD_ID": build_id,
         "OUT_WEB_ZIP": str(ARTIFACT_ROOT / build_id / "web.zip"),
     }

@@ -62,6 +62,13 @@ def render_env() -> str:
         "HELP_DOCS_GIT_URL": base.get("HELP_DOCS_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-help-docs.git"),
         "HELP_DOCS_BRANCH": base.get("HELP_DOCS_BRANCH", "release_ci"),
         "HELP_DOCS_DIR": base.get("HELP_DOCS_DIR", "/opt/ohr-help-docs-src"),
+        "HELP_DOCS_SVN_URL": base.get(
+            "HELP_DOCS_SVN_URL",
+            "http://192.168.21.111/svn/PHR1.5/30.マニュアル/マニュアル(日本語版)",
+        ),
+        "HELP_DOCS_SVN_DIR": base.get("HELP_DOCS_SVN_DIR", "/opt/ohr-help-docs-svn"),
+        "HELP_DOCS_SVN_USERNAME": base.get("HELP_DOCS_SVN_USERNAME", ""),
+        "HELP_DOCS_SVN_PASSWORD": base.get("HELP_DOCS_SVN_PASSWORD", ""),
         "FRONTEND_GIT_TOKEN": base.get("FRONTEND_GIT_TOKEN", git.get("OHR_BACK_GIT_TOKEN", "")),
         "NPM_AUTH_B64": base.get("NPM_AUTH_B64", ""),
     }
@@ -89,7 +96,7 @@ def main() -> int:
         timeout=45,
     )
     try:
-        _run(client, f"mkdir -p {REMOTE_DIR}/builds /opt/ohr-build-artifacts /opt/pnpm-cache /opt/workspace-cache-ohr /opt/ohr-backend/.m2 /opt/ohr-workspace-src && chmod 700 {REMOTE_DIR}")
+        _run(client, f"mkdir -p {REMOTE_DIR}/builds /opt/ohr-build-artifacts /opt/pnpm-cache /opt/workspace-cache-ohr /opt/ohr-backend/.m2 /opt/ohr-workspace-src /opt/ohr-help-docs-src /opt/ohr-help-docs-svn && chmod 700 {REMOTE_DIR}")
         with client.open_sftp() as sftp:
             sftp.put(str(ROOT / "build-console" / "server.py"), f"{REMOTE_DIR}/server.py")
             sftp.put(str(ROOT / "build-console" / "drone_adapter.py"), f"{REMOTE_DIR}/drone_adapter.py")
