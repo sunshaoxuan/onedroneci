@@ -653,6 +653,7 @@ export FEELIN_BRANCH="${FRONTEND_FEELIN_BRANCH:-$FRONTEND_REL_BRANCH}"
 export LOWCODE_ENGINE_BRANCH="${FRONTEND_LOWCODE_BRANCH:-$FRONTEND_REL_BRANCH}"
 export MICRO_FRONTENDS_BRANCH="${FRONTEND_MF_BRANCH:-$FRONTEND_REL_BRANCH}"
 export NOCODE_ENGINE_BRANCH="${FRONTEND_NOCODE_BRANCH:-$FRONTEND_REL_BRANCH}"
+rm -rf ohr-feelin ohr-lowcode-engine ohr-micro-frontends ohr-nocode-engine
 npx cross-env RELEASE_BRANCH="$FRONTEND_REL_BRANCH" ohr-cli run-tasks --task clone-ohr
 ohr-cli run-tasks --task install-modules-ohr
 npm run setup:rm-yalc
@@ -662,6 +663,7 @@ npm run setup:rm-yalc
 DIRECT_FRONTEND_BUILD_SCRIPT = r"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export HOME="${HOME:-/root}"
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 cd "$OHR_FRONTEND_WORKDIR"
 npm i -g pnpm@10.22.0 --registry=https://registry.npmmirror.com/
 npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
