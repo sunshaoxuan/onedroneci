@@ -682,7 +682,7 @@ cd "$BASE"
 git remote set-url origin "$GIT_SYNC_URL"
 git fetch --all --prune
 git reset --hard HEAD
-git clean -fd
+git clean -fd -e node_modules -e .ci-cache -e .cache -e .turbo -e .vite
 if git show-ref --verify --quiet "refs/remotes/origin/$FRONTEND_WS_BRANCH"; then
   git checkout -B "$FRONTEND_WS_BRANCH" "origin/$FRONTEND_WS_BRANCH"
 else
@@ -702,7 +702,25 @@ npm i -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-grou
 if [ -n "${FRONTEND_GIT_TOKEN:-}" ]; then
   git config --global url."https://oauth2:${FRONTEND_GIT_TOKEN}@${FRONTEND_GIT_HOST}/".insteadOf "https://${FRONTEND_GIT_HOST}/"
 fi
-pnpm i
+pnpm_install_cached() {
+  local dir="${1:-.}"
+  local name="${2:-$dir}"
+  (
+    cd "$dir"
+    mkdir -p .ci-cache
+    local hash_file=".ci-cache/pnpm-install.hash"
+    local input_hash
+    input_hash="$( { [ -f package.json ] && sha256sum package.json; [ -f pnpm-lock.yaml ] && sha256sum pnpm-lock.yaml; } | sha256sum | awk '{print $1}' )"
+    if [ -d node_modules ] && [ -f "$hash_file" ] && [ "$(cat "$hash_file")" = "$input_hash" ]; then
+      echo "[cache pnpm] $name unchanged; skip pnpm i"
+      return 0
+    fi
+    echo "[cache pnpm] install $name"
+    pnpm i --frozen-lockfile --prefer-offline || pnpm i --prefer-offline || pnpm i
+    echo "$input_hash" > "$hash_file"
+  )
+}
+pnpm_install_cached . ohr-workspace
 export RELEASE_BRANCH="$FRONTEND_REL_BRANCH"
 export FEELIN_BRANCH="${FRONTEND_FEELIN_BRANCH:-$FRONTEND_REL_BRANCH}"
 export LOWCODE_ENGINE_BRANCH="${FRONTEND_LOWCODE_BRANCH:-$FRONTEND_REL_BRANCH}"
@@ -718,7 +736,7 @@ sync_frontend_repo() {
     git -C "$repo_dir" fetch origin "$repo_branch" --prune
     git -C "$repo_dir" checkout -B "$repo_branch" "origin/$repo_branch"
     git -C "$repo_dir" reset --hard "origin/$repo_branch"
-    git -C "$repo_dir" clean -fd
+    git -C "$repo_dir" clean -fd -e node_modules -e .ci-cache -e .cache -e .turbo -e .vite
   else
     rm -rf "$repo_dir"
     echo "[sync $repo_dir] clone $repo_branch"
@@ -760,14 +778,27 @@ if [ -d "$CICD_DIR/.git" ]; then
   git -C "$CICD_DIR" fetch origin "$OHR_CICD_BRANCH" --prune
   git -C "$CICD_DIR" checkout -B "$OHR_CICD_BRANCH" "origin/$OHR_CICD_BRANCH"
   git -C "$CICD_DIR" reset --hard "origin/$OHR_CICD_BRANCH"
-  git -C "$CICD_DIR" clean -fd -e node_modules
+  git -C "$CICD_DIR" clean -fd -e node_modules -e .ci-cache -e .cache -e .yarn-cache
 else
   rm -rf "$CICD_DIR"
   echo "[sync ohr-cicd] clone $OHR_CICD_BRANCH"
   git clone -b "$OHR_CICD_BRANCH" "$OHR_CICD_GIT_URL" "$CICD_DIR"
 fi
 cd "$CICD_DIR"
-yarn install --frozen-lockfile --cache-folder /opt/yarn-cache || yarn install --cache-folder /opt/yarn-cache
+yarn_install_cached() {
+  mkdir -p .ci-cache
+  local hash_file=".ci-cache/yarn-install.hash"
+  local input_hash
+  input_hash="$( { [ -f package.json ] && sha256sum package.json; [ -f yarn.lock ] && sha256sum yarn.lock; } | sha256sum | awk '{print $1}' )"
+  if [ -d node_modules ] && [ -f "$hash_file" ] && [ "$(cat "$hash_file")" = "$input_hash" ]; then
+    echo "[cache yarn] ohr-cicd unchanged; skip yarn install"
+    return 0
+  fi
+  echo "[cache yarn] install ohr-cicd"
+  yarn install --frozen-lockfile --cache-folder /opt/yarn-cache || yarn install --cache-folder /opt/yarn-cache
+  echo "$input_hash" > "$hash_file"
+}
+yarn_install_cached
 cat > "config.$OHR_CICD_ENV.js" <<'JS'
 const getSharedConfig = require('./sharedConfig');
 
@@ -815,15 +846,13 @@ if [ -d "$HELP_DIR/.git" ]; then
   git -C "$HELP_DIR" fetch origin "$HELP_DOCS_BRANCH" --prune
   git -C "$HELP_DIR" checkout -B "$HELP_DOCS_BRANCH" "origin/$HELP_DOCS_BRANCH"
   git -C "$HELP_DIR" reset --hard "origin/$HELP_DOCS_BRANCH"
-  git -C "$HELP_DIR" clean -fd -e node_modules
+  git -C "$HELP_DIR" clean -fd -e node_modules -e .ci-cache -e .cache
 else
   rm -rf "$HELP_DIR"
   echo "[sync ohr-help-docs] clone $HELP_DOCS_BRANCH"
   git clone -b "$HELP_DOCS_BRANCH" "$HELP_DOCS_GIT_URL" "$HELP_DIR"
 fi
 cd "$HELP_DIR"
-find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -delete
-find . -maxdepth 1 -type d -name 'ohr_help_docs_release_*' -exec rm -rf {} +
 SVN_AUTH_ARGS=()
 if [ -n "${HELP_DOCS_SVN_USERNAME:-}" ]; then
   SVN_AUTH_ARGS+=(--username "$HELP_DOCS_SVN_USERNAME")
@@ -853,9 +882,34 @@ if [ -z "$(find markdowns -mindepth 1 -maxdepth 1 -print -quit)" ]; then
   echo "Help SVN 文档内容为空：$HELP_DOCS_SVN_URL"
   exit 4
 fi
+HELP_GIT_REV="$(git rev-parse HEAD)"
+HELP_SVN_REV="$(svn info --show-item revision "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert 2>/dev/null || svn info "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert | awk -F': ' '/^Revision:/ {print $2; exit}')"
+HELP_LOCK_HASH="$( { [ -f package.json ] && sha256sum package.json; [ -f pnpm-lock.yaml ] && sha256sum pnpm-lock.yaml; } | sha256sum | awk '{print $1}' )"
+HELP_CACHE_DIR="$HELP_DIR/.ci-cache/help"
+HELP_CACHE_KEY="$(printf '%s\n%s\n%s\n%s\n' "$HELP_DOCS_BRANCH" "$HELP_GIT_REV" "$HELP_SVN_REV" "$HELP_LOCK_HASH" | sha256sum | awk '{print $1}')"
+HELP_CACHED_ZIP="$HELP_CACHE_DIR/$HELP_CACHE_KEY.zip"
+mkdir -p "$HELP_CACHE_DIR"
+if [ -f "$HELP_CACHED_ZIP" ]; then
+  echo "[cache help] reuse help bundle git=$HELP_GIT_REV svn=$HELP_SVN_REV"
+  help_zip="$HELP_CACHED_ZIP"
+else
 pnpm config set store-dir /opt/pnpm-cache || true
-pnpm i
+pnpm_install_cached() {
+  mkdir -p .ci-cache
+  local hash_file=".ci-cache/pnpm-install.hash"
+  local input_hash="$HELP_LOCK_HASH"
+  if [ -d node_modules ] && [ -f "$hash_file" ] && [ "$(cat "$hash_file")" = "$input_hash" ]; then
+    echo "[cache pnpm] ohr-help-docs unchanged; skip pnpm i"
+    return 0
+  fi
+  echo "[cache pnpm] install ohr-help-docs"
+  pnpm i --frozen-lockfile --prefer-offline || pnpm i --prefer-offline || pnpm i
+  echo "$input_hash" > "$hash_file"
+}
+pnpm_install_cached
 echo "使用 SVN 文档源构建 Help：$HELP_DOCS_SVN_URL"
+find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -delete
+find . -maxdepth 1 -type d -name 'ohr_help_docs_release_*' -exec rm -rf {} +
 rm -rf build
 npm run copy-images
 npm run build
@@ -864,6 +918,9 @@ help_zip="$(find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -prin
 if [ -z "$help_zip" ] || [ ! -f "$help_zip" ]; then
   echo "Help 发布包生成失败：npm run bundle 未生成 ohr_help_docs_release_*.zip"
   exit 5
+fi
+help_zip="$(readlink -f "$help_zip")"
+cp "$help_zip" "$HELP_CACHED_ZIP"
 fi
 cd "$OHR_FRONTEND_WORKDIR"
 find . -maxdepth 1 -type f -name 'release_*.zip' -delete
@@ -885,7 +942,7 @@ trap cleanup_publish_root EXIT
 mkdir -p "$publish_root/ohr-cicd/web_prod" "$publish_root/ohr-cicd/conf_prod"
 unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
 mkdir -p "$publish_root/ohr-cicd/web_prod/help"
-unzip -q "$HELP_DIR/$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
+unzip -q "$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
 conf_dir="$publish_root/ohr-cicd/conf_prod"
 rm -rf "$conf_dir"
 cp -a "$CICD_DIR/conf_$OHR_CICD_ENV" "$conf_dir"
@@ -896,8 +953,10 @@ rm -f "$conf_dir"/*.crt "$conf_dir"/*.key "$conf_dir"/TODO.md
 )
 bundle_dir="${bundle_zip%.zip}"
 rm -rf "$bundle_zip" "$bundle_dir"
-help_dir="$HELP_DIR/${help_zip%.zip}"
-rm -rf "$HELP_DIR/$help_zip" "$help_dir"
+if [[ "$help_zip" == "$HELP_DIR"/ohr_help_docs_release_*.zip ]]; then
+  help_dir="${help_zip%.zip}"
+  rm -rf "$help_zip" "$help_dir"
+fi
 ls -lh "$OUT_WEB_ZIP"
 """
 

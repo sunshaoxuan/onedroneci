@@ -322,9 +322,22 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "使用 SVN 文档源构建 Help" in script
     assert "HELP_DOCS_SVN_WORKDIR" in script
     assert "ohr_help_docs_release_*.zip" in script
+    assert "HELP_CACHE_KEY" in script
+    assert "[cache help] reuse help bundle" in script
+    assert "svn info --show-item revision" in script
+    assert "pnpm i --frozen-lockfile --prefer-offline" in script
+    assert "git -C \"$CICD_DIR\" clean -fd -e node_modules" in script
+    assert "-e .ci-cache" in script
+    assert "[cache yarn] ohr-cicd unchanged; skip yarn install" in script
     assert "前端发布包生成失败" in script
     assert 'zip -r "$OUT_WEB_ZIP" .' not in script
     assert "node_modules/*" not in script
+
+    restore_script = server.DIRECT_FRONTEND_RESTORE_SCRIPT
+    assert "pnpm_install_cached . ohr-workspace" in restore_script
+    assert "[cache pnpm] $name unchanged; skip pnpm i" in restore_script
+    assert "git clean -fd -e node_modules" in restore_script
+    assert "-e .ci-cache" in restore_script
 
 
 def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):

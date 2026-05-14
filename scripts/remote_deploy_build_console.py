@@ -106,7 +106,7 @@ def main() -> int:
         timeout=45,
     )
     try:
-        _run(client, f"mkdir -p {REMOTE_DIR}/builds /opt/ohr-build-artifacts /opt/pnpm-cache /opt/workspace-cache-ohr /opt/ohr-backend/.m2 /opt/ohr-workspace-src /opt/ohr-help-docs-src /opt/ohr-help-docs-svn && rm -rf {REMOTE_DIR}/conf_prod_template && mkdir -p {REMOTE_DIR}/conf_prod_template && chmod 700 {REMOTE_DIR}")
+        _run(client, f"mkdir -p {REMOTE_DIR}/builds /opt/ohr-build-artifacts /opt/pnpm-cache /opt/yarn-cache /opt/workspace-cache-ohr /opt/ohr-backend/.m2 /opt/ohr-workspace-src /opt/ohr-help-docs-src /opt/ohr-help-docs-svn && rm -rf {REMOTE_DIR}/conf_prod_template && mkdir -p {REMOTE_DIR}/conf_prod_template && chmod 700 {REMOTE_DIR}")
         with client.open_sftp() as sftp:
             sftp.put(str(ROOT / "build-console" / "server.py"), f"{REMOTE_DIR}/server.py")
             sftp.put(str(ROOT / "build-console" / "drone_adapter.py"), f"{REMOTE_DIR}/drone_adapter.py")
