@@ -216,6 +216,27 @@ def test_data_sync_git_url_uses_existing_git_token(monkeypatch):
     )
 
 
+def test_git_errors_include_stderr_without_credentials(monkeypatch):
+    import subprocess
+    import standalone_packager as packager
+
+    class FakeProcess:
+        returncode = 128
+
+        def communicate(self, timeout=None):
+            return "", "fatal: https://oauth2:secret@example.test/repo.git failed"
+
+    monkeypatch.setattr(packager.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    try:
+        packager._run_git(["git", "clone", "https://example.test/repo.git"], timeout=1)
+    except subprocess.CalledProcessError as exc:
+        assert "<redacted>" in exc.stderr
+        assert "secret" not in exc.stderr
+    else:
+        raise AssertionError("git failure should raise")
+
+
 def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
     import standalone_packager as packager
 

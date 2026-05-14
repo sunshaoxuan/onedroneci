@@ -307,9 +307,9 @@ def _run_git(cmd: list[str], timeout: int) -> None:
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GCM_INTERACTIVE"] = "Never"
-    proc = subprocess.Popen(cmd, env=env, **popen_kwargs)
+    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", **popen_kwargs)
     try:
-        rc = proc.wait(timeout=timeout)
+        stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -319,8 +319,13 @@ def _run_git(cmd: list[str], timeout: int) -> None:
             except Exception:
                 proc.kill()
         raise subprocess.TimeoutExpired(cmd, timeout) from exc
+    rc = proc.returncode
     if rc:
-        raise subprocess.CalledProcessError(rc, cmd)
+        raise subprocess.CalledProcessError(rc, cmd, output=stdout, stderr=redact_url_credentials(stderr.strip()))
+
+
+def redact_url_credentials(text: str) -> str:
+    return re.sub(r"https://([^:@/\s]+):([^@/\s]+)@", r"https://\1:<redacted>@", text)
 
 
 def sync_git_tree(repo_url: str, branch: str, workdir: Path, timeout: int = DEFAULT_DATA_SYNC_GIT_TIMEOUT, sparse_path: str | None = None) -> None:
@@ -340,28 +345,24 @@ def sync_git_tree(repo_url: str, branch: str, workdir: Path, timeout: int = DEFA
     if workdir.exists():
         shutil.rmtree(workdir)
     if sparse_path:
-        try:
-            _run_git(
-                [
-                    "git",
-                    "clone",
-                    "--depth",
-                    "1",
-                    "--single-branch",
-                    "--filter=blob:none",
-                    "--sparse",
-                    "--branch",
-                    branch,
-                    repo_url,
-                    str(workdir),
-                ],
-                timeout,
-            )
-            _run_git(["git", "-C", str(workdir), "sparse-checkout", "set", sparse_path], timeout)
-            return
-        except Exception:
-            if workdir.exists():
-                shutil.rmtree(workdir)
+        _run_git(
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--single-branch",
+                "--filter=blob:none",
+                "--sparse",
+                "--branch",
+                branch,
+                repo_url,
+                str(workdir),
+            ],
+            timeout,
+        )
+        _run_git(["git", "-C", str(workdir), "sparse-checkout", "set", sparse_path], timeout)
+        return
     _run_git(["git", "clone", "--depth", "1", "--single-branch", "--branch", branch, repo_url, str(workdir)], timeout)
 
 
