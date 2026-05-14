@@ -379,6 +379,8 @@ def delete_job(job_id: str) -> dict[str, Any]:
         candidate = product_path.parent if product_path.name == "製品" else product_path
         remove_path_inside(candidate, output_root)
     remove_path_inside(output_root / job_id, output_root)
+    if remote_id:
+        remove_path_inside(output_root / str(remote_id), output_root)
 
     with LOCK:
         JOBS.pop(job_id, None)

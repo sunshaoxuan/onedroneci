@@ -258,6 +258,35 @@ def test_delete_running_job_is_rejected(tmp_path, monkeypatch):
     assert console.job_metadata_path(job_id).is_file()
 
 
+def test_delete_failed_job_removes_partial_remote_id_output_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path / "jobs")
+    monkeypatch.setattr(console, "JOBS", {})
+    monkeypatch.setattr(console, "CANCELLED", set())
+    output_root = tmp_path / "dist"
+    monkeypatch.setattr(console, "configured_output_dir", lambda: output_root)
+    monkeypatch.setattr(console, "remote_delete", lambda path: {"ok": True})
+
+    job_id = "20260514111113"
+    remote_id = "20260514100855"
+    partial_dir = output_root / remote_id / "製品"
+    partial_dir.mkdir(parents=True)
+    (partial_dir / "partial.txt").write_text("partial", encoding="utf-8")
+    console.write_job(
+        {
+            "id": job_id,
+            "status": "failed",
+            "created_at": 1,
+            "updated_at": 1,
+            "remote_build_id": remote_id,
+            "request": {},
+            "outputs": {},
+        }
+    )
+
+    assert console.delete_job(job_id)["ok"] is True
+    assert not (output_root / remote_id).exists()
+
+
 def test_resume_unfinished_jobs_restarts_monitor_thread(tmp_path, monkeypatch):
     monkeypatch.setattr(console, "DATA_DIR", tmp_path)
     console.JOBS.clear()
