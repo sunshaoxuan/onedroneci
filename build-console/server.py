@@ -1738,7 +1738,7 @@ function selectBuild(id) {
 }
 
 async function refreshCurrent() {
-  await loadBuilds();
+  if (!embeddedMode) await loadBuilds();
   if (!currentBuild) return;
   const res = await fetch(`/api/builds/${currentBuild}`);
   if (!res.ok) return;
@@ -1822,9 +1822,11 @@ function renderDetail(build) {
 
 applyI18n();
 loadBranchLists();
-loadBuilds();
 applyEmbeddedMode();
-setInterval(loadBuilds, 5000);
+if (!embeddedMode) {
+  loadBuilds();
+  setInterval(loadBuilds, 5000);
+}
 """
 
 

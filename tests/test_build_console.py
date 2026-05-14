@@ -74,6 +74,8 @@ def test_build_console_embedded_mode_is_read_only_current_build_view():
     assert "embeddedBuildId" in server.APP_JS
     assert "document.body.classList.add('embedded')" in server.APP_JS
     assert "data.builds.filter(build => build.id === embeddedBuildId)" in server.APP_JS
+    assert "if (!embeddedMode) await loadBuilds();" in server.APP_JS
+    assert "if (!embeddedMode) {" in server.APP_JS
     assert "if (embeddedMode) return;" in server.APP_JS
     assert "body.embedded .hero" in server.STYLE_CSS
     assert "body.embedded .form-card" in server.STYLE_CSS
