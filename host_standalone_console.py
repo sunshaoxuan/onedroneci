@@ -1321,7 +1321,7 @@ function renderProgress(job) {
   if (!progress.length) return '';
   const items = progress.map((step, index) => {
     const status = step.status || 'pending';
-    const icon = status === 'success' ? '✓' : status === 'running' ? '▶' : status === 'failed' ? '!' : status === 'cancelled' ? '×' : '◷';
+    const icon = status === 'success' ? '✓' : status === 'failed' ? '!' : status === 'cancelled' ? '×' : status === 'pending' ? '◷' : '';
     return `<li class="${escapeHtml(status)}">
       <span class="progress-icon">${icon}</span>
       <span class="progress-name">${escapeHtml(progressLabel(step.id))}</span>
@@ -1617,12 +1617,29 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .overall-progress li.success { border-color: #9ce7ba; background: #ecfdf3; }
 .overall-progress li.success .progress-icon { background: #d7f8e4; color: var(--success); }
 .overall-progress li.running { border-color: #8ac8da; background: #edf8fb; }
-.overall-progress li.running .progress-icon { background: #1677ff; color: #fff; animation: spin 1.1s infinite linear; }
+.overall-progress li.running .progress-icon {
+  position: relative;
+  background: #1677ff;
+  color: transparent;
+  animation: none;
+}
+.overall-progress li.running .progress-icon::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #fff;
+  top: 3px;
+  left: 8px;
+  transform-origin: 4px 9px;
+  animation: orbit 1s infinite linear;
+}
 .overall-progress li.failed { border-color: #ffc7c1; background: #fff4f2; }
 .overall-progress li.failed .progress-icon { background: #fff1f0; color: var(--danger); }
 .overall-progress li.cancelled,
 .overall-progress li.skipped { opacity: .72; }
-@keyframes spin {
+@keyframes orbit {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
