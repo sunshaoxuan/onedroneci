@@ -21,6 +21,10 @@ from standalone_packager import (
     ProductSqlConfig,
     StandaloneConfig,
     build_product_package,
+    configured_data_sync_branch,
+    configured_data_sync_dir,
+    configured_data_sync_git_url,
+    configured_data_sync_subdir,
     configured_output_dir,
     configured_sql_template_dir,
     configured_sql_svn_url,
@@ -413,6 +417,10 @@ def run_job(job_id: str) -> None:
                 organisation_dstart=req.get("organisation_dstart") or default_organisation_dstart(),
             ),
             sql_svn_url=configured_sql_svn_url(),
+            data_sync_git_url=configured_data_sync_git_url(),
+            data_sync_branch=configured_data_sync_branch(),
+            data_sync_dir=configured_data_sync_dir(),
+            data_sync_subdir=configured_data_sync_subdir(),
         )
         outputs.update(partial_outputs)
         update_job(job_id, status="success", outputs=outputs)

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import urllib.error
 import urllib.parse
@@ -22,6 +23,10 @@ DEFAULT_TEMPLATE_ROOT = ROOT / ".standalone-template"
 DEFAULT_TEMPLATE_ZIP = DEFAULT_TEMPLATE_ROOT / "OneHrStandalone.zip"
 DEFAULT_SQL_TEMPLATE_DIR = DEFAULT_TEMPLATE_ROOT / "sql"
 DEFAULT_SQL_SVN_URL = "http://192.168.21.111/svn/PHR1.5/98.環境構築手順書/1.構築製品共通"
+DEFAULT_DATA_SYNC_GIT_URL = "https://upds7.ujob100.com/ohr/data-synchronization.git"
+DEFAULT_DATA_SYNC_BRANCH = "master"
+DEFAULT_DATA_SYNC_DIR = DEFAULT_TEMPLATE_ROOT / "data-synchronization"
+DEFAULT_DATA_SYNC_SUBDIR = "updsv7phr/PHR"
 HELP_SQL_IN_WEB_ZIP = "ohr-cicd/web_prod/help/insert_ohr_help.sql"
 CONFIG_IN_STANDALONE_ZIP = "OneHrStandalone/bin/kernel/config.ini"
 PACKAGE_IN_STANDALONE_ZIP = "OneHrStandalone/software/package.zip"
@@ -65,6 +70,22 @@ def configured_sql_template_dir() -> Path:
 
 def configured_sql_svn_url() -> str:
     return os.environ.get("STANDALONE_SQL_SVN_URL", DEFAULT_SQL_SVN_URL)
+
+
+def configured_data_sync_git_url() -> str:
+    return os.environ.get("DATA_SYNC_GIT_URL", DEFAULT_DATA_SYNC_GIT_URL)
+
+
+def configured_data_sync_branch() -> str:
+    return os.environ.get("DATA_SYNC_BRANCH", DEFAULT_DATA_SYNC_BRANCH)
+
+
+def configured_data_sync_dir() -> Path:
+    return Path(os.environ.get("DATA_SYNC_DIR", str(DEFAULT_DATA_SYNC_DIR)))
+
+
+def configured_data_sync_subdir() -> str:
+    return os.environ.get("DATA_SYNC_SUBDIR", DEFAULT_DATA_SYNC_SUBDIR)
 
 
 def default_organisation_dstart(today: date | None = None) -> str:
@@ -241,6 +262,37 @@ def patch_account_sql(text: str, config: ProductSqlConfig) -> str:
     return patched
 
 
+def sync_git_tree(repo_url: str, branch: str, workdir: Path) -> None:
+    workdir.parent.mkdir(parents=True, exist_ok=True)
+    if (workdir / ".git").is_dir():
+        subprocess.run(["git", "-C", str(workdir), "remote", "set-url", "origin", repo_url], check=True)
+        subprocess.run(["git", "-C", str(workdir), "fetch", "origin", branch, "--prune"], check=True)
+        subprocess.run(["git", "-C", str(workdir), "checkout", "-B", branch, f"origin/{branch}"], check=True)
+        subprocess.run(["git", "-C", str(workdir), "reset", "--hard", f"origin/{branch}"], check=True)
+        subprocess.run(["git", "-C", str(workdir), "clean", "-fd"], check=True)
+        return
+    if workdir.exists():
+        shutil.rmtree(workdir)
+    subprocess.run(["git", "clone", "--branch", branch, repo_url, str(workdir)], check=True)
+
+
+def copy_data_sync_assets(
+    *,
+    repo_url: str,
+    branch: str,
+    workdir: Path,
+    subdir: str,
+    target_dir: Path,
+) -> None:
+    sync_git_tree(repo_url, branch, workdir)
+    source = workdir / Path(subdir)
+    if not source.is_dir():
+        raise FileNotFoundError(f"missing data synchronization directory: {source}")
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    shutil.copytree(source, target_dir)
+
+
 def build_product_package(
     *,
     template_zip: Path,
@@ -252,6 +304,10 @@ def build_product_package(
     config: StandaloneConfig,
     sql_config: ProductSqlConfig,
     sql_svn_url: str | None = None,
+    data_sync_git_url: str | None = None,
+    data_sync_branch: str = DEFAULT_DATA_SYNC_BRANCH,
+    data_sync_dir: Path | None = None,
+    data_sync_subdir: str = DEFAULT_DATA_SYNC_SUBDIR,
 ) -> dict[str, Any]:
     if not template_zip.is_file():
         raise FileNotFoundError(f"missing standalone template: {template_zip}")
@@ -267,13 +323,23 @@ def build_product_package(
         if not (effective_sql_dir / "1.tenant").is_dir() or not (effective_sql_dir / "2.ohr").is_dir():
             raise FileNotFoundError(f"missing SQL templates under: {effective_sql_dir}")
 
-        product_dir = output_root / "製品"
-        if product_dir.exists():
-            shutil.rmtree(product_dir)
+        delivery_root = output_root / version.build_id
+        product_dir = delivery_root / "製品"
+        data_sync_target = delivery_root / "データ連携"
+        if delivery_root.exists():
+            shutil.rmtree(delivery_root)
         product_dir.mkdir(parents=True, exist_ok=True)
 
         shutil.copytree(effective_sql_dir / "1.tenant", product_dir / "1.tenant")
         shutil.copytree(effective_sql_dir / "2.ohr", product_dir / "2.ohr")
+        if data_sync_git_url:
+            copy_data_sync_assets(
+                repo_url=data_sync_git_url,
+                branch=data_sync_branch,
+                workdir=data_sync_dir or configured_data_sync_dir(),
+                subdir=data_sync_subdir,
+                target_dir=data_sync_target,
+            )
         account_sql = product_dir / "2.ohr" / "4.account.sql"
         account_sql.write_text(
             patch_account_sql(account_sql.read_text(encoding="utf-8"), sql_config),
@@ -285,7 +351,7 @@ def build_product_package(
         final_zip = product_dir / "OneHrStandalone.zip"
         _rebuild_standalone_zip(template_zip, final_zip, package_zip, web_zip, config)
         return {
-            "product_dir": str(product_dir),
+            "product_dir": str(delivery_root),
             "standalone_zip": str(final_zip),
             "version_txt": str(product_dir / "version.txt"),
             "size": final_zip.stat().st_size,

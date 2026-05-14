@@ -86,8 +86,19 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     package_zip = tmp_path / "package.zip"
     web_zip = tmp_path / "web.zip"
     output = tmp_path / "out"
+    data_sync_repo = tmp_path / "data-sync-repo"
+    data_sync_work = tmp_path / "data-sync-work"
     make_template(template)
     make_sql_templates(sql_dir)
+    (data_sync_repo / "updsv7phr" / "PHR").mkdir(parents=True)
+    (data_sync_repo / "updsv7phr" / "PHR" / "00_all_updsv7tophr.sql").write_text("data sync", encoding="utf-8")
+    import subprocess
+
+    subprocess.run(["git", "init", "-b", "master"], cwd=data_sync_repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.local"], cwd=data_sync_repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=data_sync_repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=data_sync_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=data_sync_repo, check=True)
     package_zip.write_bytes(b"new-package")
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", "new help sql")
@@ -102,10 +113,15 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
         version=BuildVersion("build-1", "release_back", "release_front"),
         config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
         sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
+        data_sync_git_url=str(data_sync_repo),
+        data_sync_dir=data_sync_work,
     )
 
-    product_dir = Path(result["product_dir"])
-    assert product_dir == output / "製品"
+    delivery_root = Path(result["product_dir"])
+    product_dir = delivery_root / "製品"
+    assert delivery_root == output / "build-1"
+    assert product_dir.is_dir()
+    assert (delivery_root / "データ連携" / "00_all_updsv7tophr.sql").read_text(encoding="utf-8") == "data sync"
     assert (product_dir / "version.txt").read_text(encoding="utf-8") == (
         "資材:build-1\n前台分支：release_front\n后台分支：release_back\n"
     )
