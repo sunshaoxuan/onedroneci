@@ -351,3 +351,13 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
     assert env["OHR_CICD_BRANCH"] == "master"
     assert env["OHR_CICD_ENV"] == "direct_prod"
     assert env["CONF_SERVER_HOST"] == "customer.local"
+
+
+def test_build_console_log_rendering_keeps_fixed_line_window():
+    server = load_server()
+
+    assert "const MAX_LOG_LINES = embeddedMode ? 900 : 1600" in server.APP_JS
+    assert "function appendLogText(text)" in server.APP_JS
+    assert "logLines = logLines.slice(logLines.length - MAX_LOG_LINES)" in server.APP_JS
+    assert "shouldStickToBottom" in server.APP_JS
+    assert "pre.textContent += translateLogText" not in server.APP_JS

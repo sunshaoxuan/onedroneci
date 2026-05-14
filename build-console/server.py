@@ -1588,10 +1588,12 @@ function translateLogText(text) {
 
 let currentBuild = null;
 let logOffset = 0;
+let logLines = [];
 let timer = null;
 const params = new URLSearchParams(window.location.search);
 const embeddedMode = params.get('embedded') === '1';
 const embeddedBuildId = params.get('build_id') || '';
+const MAX_LOG_LINES = embeddedMode ? 900 : 1600;
 
 const statusLabel = {
   queued: 'queued',
@@ -1808,10 +1810,29 @@ async function loadBuilds() {
 function selectBuild(id) {
   currentBuild = id;
   logOffset = 0;
+  logLines = [];
   document.getElementById('log').textContent = '';
   if (timer) clearInterval(timer);
   refreshCurrent();
   timer = setInterval(refreshCurrent, 2000);
+}
+
+function appendLogText(text) {
+  if (!text) return;
+  const normalized = translateLogText(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const incoming = normalized.split('\n');
+  if (incoming.length && incoming[incoming.length - 1] === '') incoming.pop();
+  logLines.push(...incoming);
+  if (logLines.length > MAX_LOG_LINES) {
+    logLines = logLines.slice(logLines.length - MAX_LOG_LINES);
+  }
+}
+
+function renderLog() {
+  const pre = document.getElementById('log');
+  const shouldStickToBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
+  pre.textContent = logLines.join('\n');
+  if (shouldStickToBottom) pre.scrollTop = pre.scrollHeight;
 }
 
 async function refreshCurrent() {
@@ -1826,9 +1847,8 @@ async function refreshCurrent() {
   const logData = await logRes.json();
   logOffset = logData.offset;
   if (logData.text) {
-    const pre = document.getElementById('log');
-    pre.textContent += translateLogText(logData.text);
-    pre.scrollTop = pre.scrollHeight;
+    appendLogText(logData.text);
+    renderLog();
   }
   if (terminalStatuses.includes(build.status) && timer) {
     clearInterval(timer);

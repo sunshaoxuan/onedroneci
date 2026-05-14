@@ -325,7 +325,10 @@ def test_running_status_uses_single_animated_heartbeat_not_log_spam():
     assert "const phase = heartbeatTick % 72" in console.APP_JS
     assert "const indent = Math.floor(phase / 6)" in console.APP_JS
     assert "'.'.repeat(dots)" in console.APP_JS
-    assert "logBody + (heartbeat ?" in console.APP_JS
+    assert "logLines.join('\\n')" in console.APP_JS
+    assert "const MAX_LOG_LINES = 1600" in console.APP_JS
+    assert "logLines = logLines.slice(logLines.length - MAX_LOG_LINES)" in console.APP_JS
+    assert "shouldStickToBottom" in console.APP_JS
     assert console.filter_display_log("a\nremote_build_status: running\nb") == "a\nb"
 
 

@@ -711,10 +711,11 @@ let lang = localStorage.getItem('hostConsoleLang') || 'ja-JP';
 let selected = null;
 let timer = null;
 let logOffset = 0;
-let logBody = '';
+let logLines = [];
 let selectedJob = null;
 let heartbeatTick = 0;
 let lastTerminalStatus = 'unknown';
+const MAX_LOG_LINES = 1600;
 
 function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N['ja-JP'][key] || key; }
 function token() {
@@ -811,9 +812,22 @@ function heartbeatLine(job) {
 
 function renderLog() {
   const log = document.getElementById('log');
+  const shouldStickToBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
   const heartbeat = heartbeatLine(selectedJob);
-  log.textContent = logBody + (heartbeat ? `${logBody ? '\n' : ''}${heartbeat}` : '');
-  log.scrollTop = log.scrollHeight;
+  const body = logLines.join('\n');
+  log.textContent = body + (heartbeat ? `${body ? '\n' : ''}${heartbeat}` : '');
+  if (shouldStickToBottom) log.scrollTop = log.scrollHeight;
+}
+
+function appendLogText(text) {
+  if (!text) return;
+  const normalized = translateLogText(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const incoming = normalized.split('\n');
+  if (incoming.length && incoming[incoming.length - 1] === '') incoming.pop();
+  logLines.push(...incoming);
+  if (logLines.length > MAX_LOG_LINES) {
+    logLines = logLines.slice(logLines.length - MAX_LOG_LINES);
+  }
 }
 
 function applyI18n() {
@@ -914,6 +928,7 @@ document.getElementById('form').addEventListener('submit', async (event) => {
   }
   selected = job.id;
   logOffset = 0;
+  logLines = [];
   setFormLocked(true);
   refresh();
   if (!timer) timer = setInterval(refresh, 3000);
@@ -932,7 +947,7 @@ async function refresh() {
     const btn = document.createElement('button');
     btn.className = job.id === selected ? 'job active' : 'job';
     btn.innerHTML = `<strong>${job.id}</strong><span>${job.status}${job.remote_build_id ? ' · ' + job.remote_build_id : ''}</span>`;
-    btn.onclick = () => { selected = job.id; logOffset = 0; logBody = ''; render(job); fetchJobLog(true); };
+    btn.onclick = () => { selected = job.id; logOffset = 0; logLines = []; render(job); fetchJobLog(true); };
     jobs.appendChild(btn);
     if (job.id === selected) render(job);
   });
@@ -943,14 +958,14 @@ async function fetchJobLog(reset) {
   if (!selected) return;
   if (reset) {
     logOffset = 0;
-    logBody = '';
+    logLines = [];
   }
   const res = await fetch(`/api/jobs/${selected}/log?offset=${logOffset}`);
   if (!res.ok) return;
   const data = await res.json();
   logOffset = data.next_offset;
   if (data.text) {
-    logBody += translateLogText(data.text);
+    appendLogText(data.text);
   }
   renderLog();
 }
