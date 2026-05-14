@@ -255,7 +255,10 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "const pathList = outputs.product_dir ? pathRow(t('productDir'), outputs.product_dir)" in console.APP_JS
     assert "${pathRow(t('standaloneZip'), outputs.standalone_zip)}" not in console.APP_JS
     assert "${pathRow(t('versionTxt'), outputs.version_txt)}" not in console.APP_JS
+    assert "async function copyText(text)" in console.APP_JS
     assert "navigator.clipboard.writeText" in console.APP_JS
+    assert "document.execCommand('copy')" in console.APP_JS
+    assert "copyFailed" in console.APP_JS
     assert ".workbench" in console.STYLE_CSS
     assert ".log-panel" in console.STYLE_CSS
     assert "min-height: 560px" in console.STYLE_CSS

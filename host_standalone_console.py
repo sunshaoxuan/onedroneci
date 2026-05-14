@@ -594,6 +594,7 @@ const I18N = {
     versionTxt: 'version.txt',
     copy: 'コピー',
     copied: 'コピーしました',
+    copyFailed: 'コピー失敗',
     remoteBuild: 'ビルド端末番号',
     error: 'エラー',
     terminalFirst: 'ビルド端末を起動してから開始してください。',
@@ -647,6 +648,7 @@ const I18N = {
     versionTxt: 'version.txt',
     copy: '复制',
     copied: '已复制',
+    copyFailed: '复制失败',
     remoteBuild: '构建终端编号',
     error: '错误',
     terminalFirst: '请先启动构建终端再开始。',
@@ -700,6 +702,7 @@ const I18N = {
     versionTxt: 'version.txt',
     copy: 'Copy',
     copied: 'Copied',
+    copyFailed: 'Copy failed',
     remoteBuild: 'Build terminal ID',
     error: 'Error',
     terminalFirst: 'Start the build terminal first.',
@@ -1023,6 +1026,28 @@ function pathRow(label, value) {
   return `<div class="path-row"><span>${label}</span><code>${safe}</code><button type="button" class="copy-path" data-path="${safe}">${t('copy')}</button></div>`;
 }
 
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    const ok = document.execCommand('copy');
+    if (!ok) throw new Error('execCommand copy returned false');
+  } finally {
+    textarea.remove();
+  }
+}
+
 function renderResult(job) {
   const outputs = job.outputs || {};
   const box = document.getElementById('result');
@@ -1043,8 +1068,13 @@ function renderResult(job) {
   `;
   box.querySelectorAll('.copy-path').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await navigator.clipboard.writeText(btn.dataset.path || '');
-      btn.textContent = t('copied');
+      try {
+        await copyText(btn.dataset.path || '');
+        btn.textContent = t('copied');
+      } catch (error) {
+        console.warn('copy failed', error);
+        btn.textContent = t('copyFailed');
+      }
       setTimeout(() => { btn.textContent = t('copy'); }, 1200);
     });
   });
