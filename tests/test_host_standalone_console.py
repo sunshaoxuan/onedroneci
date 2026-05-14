@@ -374,6 +374,7 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "document.execCommand('copy')" in console.APP_JS
     assert "copyFailed" in console.APP_JS
     assert ".workbench" in console.STYLE_CSS
+    assert ".workbench { display: grid; grid-template-columns: 1fr;" in console.STYLE_CSS
     assert ".log-panel" in console.STYLE_CSS
     assert "min-height: 560px" in console.STYLE_CSS
 

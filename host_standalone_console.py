@@ -1510,7 +1510,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .danger, .danger-lite { background: var(--danger); }
 .danger-lite { background: #fff1f0; color: var(--danger); border: 1px solid #ffd1cc; }
 .danger-lite:hover { background: #ffe4e0; }
-.workbench { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 18px; align-items: start; }
+.workbench { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
 .jobs { display: grid; gap: 8px; max-height: 360px; overflow: auto; }
 .job {
   display: flex;
