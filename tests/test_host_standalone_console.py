@@ -341,6 +341,9 @@ def test_embedded_build_terminal_unlocks_only_after_remote_build_starts():
     assert "event.target.open = false" in console.APP_JS
     assert "embedded=1&build_id=" in console.APP_JS
     assert "job.remote_build_id" in console.APP_JS
+    assert "function unloadTerminalFrame()" in console.APP_JS
+    assert "frame.cloneNode(false)" in console.APP_JS
+    assert "frame.replaceWith(replacement)" in console.APP_JS
 
 
 def test_form_is_locked_unless_build_terminal_is_running():

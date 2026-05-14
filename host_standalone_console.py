@@ -884,7 +884,11 @@ document.getElementById('terminalConsoleDetails').addEventListener('toggle', eve
     event.target.open = false;
     return;
   }
-  if (event.target.open && !frame.src) frame.src = frame.dataset.src;
+  if (event.target.open) {
+    if (!frame.src) frame.src = frame.dataset.src;
+  } else {
+    unloadTerminalFrame();
+  }
 });
 document.getElementById('stopJob').addEventListener('click', async () => {
   if (!selected) return;
@@ -960,17 +964,26 @@ function render(job) {
   renderResult(job);
 }
 
+function unloadTerminalFrame() {
+  const frame = document.getElementById('terminalFrame');
+  if (!frame) return null;
+  const replacement = frame.cloneNode(false);
+  replacement.removeAttribute('src');
+  frame.replaceWith(replacement);
+  return replacement;
+}
+
 function syncTerminalConsole(job) {
   const details = document.getElementById('terminalConsoleDetails');
-  const frame = document.getElementById('terminalFrame');
+  let frame = document.getElementById('terminalFrame');
   const summary = details.querySelector('summary');
   const remoteId = job && job.remote_build_id;
   if (!remoteId) {
     details.open = false;
     details.classList.add('disabled');
-    frame.removeAttribute('src');
     frame.dataset.ready = '';
     frame.dataset.src = '/build-terminal/';
+    unloadTerminalFrame();
     summary.textContent = `${t('terminalConsole')} · ${t('terminalConsoleLocked')}`;
     return;
   }
@@ -981,6 +994,7 @@ function syncTerminalConsole(job) {
     frame.dataset.src = nextSrc;
     if (details.open) frame.src = nextSrc;
   }
+  if (!details.open && frame.src) frame = unloadTerminalFrame() || frame;
   summary.textContent = `${t('terminalConsole')} · ${remoteId}`;
 }
 
