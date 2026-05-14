@@ -1187,11 +1187,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 INDEX_HTML = """<!doctype html>
-<html lang="zh-CN">
+<html lang="ja-JP">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OHR 构建入口</title>
+  <title>OHR Build Console</title>
   <link rel="stylesheet" href="/style.css?v=4">
 </head>
 <body>
@@ -1199,57 +1199,65 @@ INDEX_HTML = """<!doctype html>
     <section class="hero">
       <div>
         <div class="eyebrow">OHR Build Console</div>
-        <h1>统一构建入口</h1>
-        <p class="muted">填写前后端分支参数，触发 CI 机上的本机构建流程，并在这里查看构建状态与实时日志。</p>
+        <h1 data-i18n="title">OHR ビルドコンソール</h1>
+        <p class="muted" data-i18n="subtitle">前後端の分岐と顧客設定を指定し、ビルド端末で package.zip と web.zip を生成します。</p>
+      </div>
+      <div class="language-box">
+        <label for="language" data-i18n="language">表示言語</label>
+        <select id="language">
+          <option value="ja-JP">日本語</option>
+          <option value="zh-CN">中文</option>
+          <option value="en-US">English</option>
+        </select>
       </div>
       <div class="hero-panel">
         <span class="status-dot"></span>
         <div>
-          <strong>本机构建模式</strong>
-          <small>当前为 direct：由 8090 所在机器直接构建并产出 package.zip + web.zip</small>
+          <strong data-i18n="modeTitle">ローカルビルドモード</strong>
+          <small data-i18n="modeDesc">direct：ビルド端末上で package.zip と web.zip を生成します</small>
         </div>
       </div>
     </section>
     <section class="card form-card">
       <div class="section-title">
         <div>
-          <h2>构建参数</h2>
-          <p class="muted">后端分支来自后端仓库；前端版本分支来自 feelin、lowcode、micro-frontends、nocode 四个子项目共同存在的 release_* 分支。ohr-workspace 固定使用 master。</p>
+          <h2 data-i18n="paramsTitle">ビルドパラメータ</h2>
+          <p class="muted" data-i18n="paramsDesc">バックエンド分岐はバックエンドリポジトリから取得し、フロントエンド版本分岐は四つの子プロジェクトに共通する release_* 分岐を使用します。ohr-workspace は master 固定です。</p>
         </div>
       </div>
       <form id="build-form">
         <div class="target-row">
-          <label class="toggle-option"><input id="toggle-backend" type="checkbox" checked> 构建后端 package.zip</label>
-          <label class="toggle-option"><input id="toggle-frontend" type="checkbox" checked> 构建前端 web.zip</label>
+          <label class="toggle-option"><input id="toggle-backend" type="checkbox" checked> <span data-i18n="buildBackend">バックエンド package.zip を構築</span></label>
+          <label class="toggle-option"><input id="toggle-frontend" type="checkbox" checked> <span data-i18n="buildFrontend">フロントエンド web.zip を構築</span></label>
         </div>
         <div class="form-grid three">
           <div class="field-block">
-            <label for="input-backend-branch">后端分支</label>
+            <label for="input-backend-branch" data-i18n="backendBranch">バックエンドブランチ</label>
             <input id="input-backend-branch" name="backend_branch" list="backend-branches" placeholder="例如 release_20260129" autocomplete="off">
             <datalist id="backend-branches"></datalist>
           </div>
           <div class="field-block">
-            <label for="input-frontend-release">前端版本分支（四个子项目共同存在）</label>
+            <label for="input-frontend-release" data-i18n="frontendBranch">フロントエンド版本分岐（四つの子プロジェクト共通）</label>
             <input id="input-frontend-release" list="frontend-branches" placeholder="例如 release_20260325" autocomplete="off">
             <datalist id="frontend-branches"></datalist>
           </div>
           <div class="field-block">
-            <label for="input-help-docs-branch">Help 文档分支</label>
+            <label for="input-help-docs-branch" data-i18n="helpBranch">Help 文書ブランチ</label>
             <input id="input-help-docs-branch" name="help_docs_branch" value="release_ci" autocomplete="off">
           </div>
         </div>
         <details class="sync-hint">
-          <summary>前端分支规则</summary>
-          <p class="muted">ohr-workspace 不使用 release_* 分支，构建时固定检出 master；上方选择的版本分支会同时用于 ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends。若候选列表不全，可直接手输。</p>
+          <summary data-i18n="frontendRuleTitle">フロントエンド分岐ルール</summary>
+          <p class="muted" data-i18n="frontendRuleDesc">ohr-workspace は release_* 分岐を使用せず、構築時は master 固定です。選択した版本分岐は ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends に使用します。</p>
         </details>
-        <div class="subsection-title">客户配置区</div>
+        <div class="subsection-title" data-i18n="customerConfig">顧客設定</div>
         <div class="form-grid four">
           <div class="field-block">
-            <label for="input-conf-server-host">客户访问地址</label>
+            <label for="input-conf-server-host" data-i18n="customerHost">顧客アクセスアドレス</label>
             <input id="input-conf-server-host" name="conf_server_host" placeholder="例如 192.168.70.136" autocomplete="off">
           </div>
           <div class="field-block">
-            <label for="input-conf-web-port">Web 端口</label>
+            <label for="input-conf-web-port" data-i18n="webPort">Web ポート</label>
             <input id="input-conf-web-port" name="conf_web_port" type="number" min="1" max="65535" value="80" autocomplete="off">
           </div>
           <div class="field-block">
@@ -1262,12 +1270,12 @@ INDEX_HTML = """<!doctype html>
           </div>
         </div>
         <div class="form-grid">
-          <label>备注 <input name="note" placeholder="例如：测试环境首次打包"></label>
+          <label><span data-i18n="note">備考</span> <input name="note" data-i18n-placeholder="notePlaceholder" placeholder="例：検証環境初回構築"></label>
         </div>
         <div class="form-grid">
           <div class="submit-row">
-            <button id="start-button" type="submit">开始构建</button>
-            <button id="stop-button" class="danger" type="button" hidden>停止构建</button>
+            <button id="start-button" type="submit" data-i18n="startBuild">ビルド開始</button>
+            <button id="stop-button" class="danger" type="button" hidden data-i18n="stopBuild">ビルド停止</button>
           </div>
         </div>
       </form>
@@ -1275,23 +1283,23 @@ INDEX_HTML = """<!doctype html>
     <section class="grid">
       <div class="card">
         <div class="section-title compact">
-          <h2>构建记录</h2>
-          <span class="muted">最近任务</span>
+          <h2 data-i18n="historyTitle">ビルド履歴</h2>
+          <span class="muted" data-i18n="recentTasks">最近のタスク</span>
         </div>
         <div id="build-list"></div>
       </div>
       <div class="card">
         <div class="section-title compact">
-          <h2>构建步骤</h2>
-          <span class="muted">状态追踪</span>
+          <h2 data-i18n="stepsTitle">ビルドステップ</h2>
+          <span class="muted" data-i18n="statusTrace">状態追跡</span>
         </div>
-        <div id="build-detail" class="empty-state">请选择或启动一个构建。</div>
+        <div id="build-detail" class="empty-state" data-i18n="selectBuild">ビルドを選択または開始してください。</div>
       </div>
     </section>
     <section class="card">
       <div class="section-title compact">
-        <h2>实时日志</h2>
-        <span class="muted">自动滚动</span>
+        <h2 data-i18n="logTitle">リアルタイムログ</h2>
+        <span class="muted" data-i18n="autoScroll">自動スクロール</span>
       </div>
       <pre id="log"></pre>
     </section>
@@ -1303,19 +1311,207 @@ INDEX_HTML = """<!doctype html>
 
 
 APP_JS = r"""
+const I18N = {
+  'ja-JP': {
+    title: 'OHR ビルドコンソール',
+    subtitle: '前後端の分岐と顧客設定を指定し、ビルド端末で package.zip と web.zip を生成します。',
+    language: '表示言語',
+    modeTitle: 'ローカルビルドモード',
+    modeDesc: 'direct：ビルド端末上で package.zip と web.zip を生成します',
+    paramsTitle: 'ビルドパラメータ',
+    paramsDesc: 'バックエンド分岐はバックエンドリポジトリから取得し、フロントエンド版本分岐は四つの子プロジェクトに共通する release_* 分岐を使用します。ohr-workspace は master 固定です。',
+    buildBackend: 'バックエンド package.zip を構築',
+    buildFrontend: 'フロントエンド web.zip を構築',
+    backendBranch: 'バックエンドブランチ',
+    frontendBranch: 'フロントエンド版本分岐（四つの子プロジェクト共通）',
+    helpBranch: 'Help 文書ブランチ',
+    frontendRuleTitle: 'フロントエンド分岐ルール',
+    frontendRuleDesc: 'ohr-workspace は release_* 分岐を使用せず、構築時は master 固定です。選択した版本分岐は ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends に使用します。',
+    customerConfig: '顧客設定',
+    customerHost: '顧客アクセスアドレス',
+    webPort: 'Web ポート',
+    note: '備考',
+    notePlaceholder: '例：検証環境初回構築',
+    startBuild: 'ビルド開始',
+    stopBuild: 'ビルド停止',
+    stopping: '停止中...',
+    historyTitle: 'ビルド履歴',
+    recentTasks: '最近のタスク',
+    stepsTitle: 'ビルドステップ',
+    statusTrace: '状態追跡',
+    selectBuild: 'ビルドを選択または開始してください。',
+    noBuilds: 'ビルド履歴はありません。',
+    logTitle: 'リアルタイムログ',
+    autoScroll: '自動スクロール',
+    createFailed: 'ビルド作成に失敗しました',
+    needTarget: '少なくとも一つの構築対象を選択してください',
+    needBackend: 'バックエンドブランチを入力してください',
+    needFrontend: 'フロントエンド版本分岐を入力してください',
+    needHelp: 'Help 文書ブランチを入力してください',
+    needCustomer: '顧客アクセスアドレスを入力してください',
+    badPort: 'Web ポートは 1-65535 の範囲で入力してください',
+    badWorker: 'worker 設定は 1 以上の整数で入力してください',
+    download: 'ダウンロード',
+    buildId: 'ビルド番号',
+    executor: '実行方式',
+    workspaceBranch: 'workspace ブランチ',
+    worker: 'worker',
+    status: {queued:'待機中', running:'実行中', success:'成功', failed:'失敗', cancelled:'停止済み', pending:'待機', skipped:'スキップ'},
+    steps: {validate:'パラメータ検証', checkout_backend:'バックエンド取得', build_backend:'バックエンド package.zip', restore_frontend:'フロントエンド作業区復元', build_frontend:'フロントエンド web.zip', collect_artifacts:'成果物収集'}
+  },
+  'zh-CN': {
+    title: 'OHR 构建入口',
+    subtitle: '填写前后端分支参数，在构建终端生成 package.zip 和 web.zip。',
+    language: '显示语言',
+    modeTitle: '本机构建模式',
+    modeDesc: 'direct：由构建终端直接构建并产出 package.zip + web.zip',
+    paramsTitle: '构建参数',
+    paramsDesc: '后端分支来自后端仓库；前端版本分支来自四个子项目共同存在的 release_* 分支。ohr-workspace 固定使用 master。',
+    buildBackend: '构建后端 package.zip',
+    buildFrontend: '构建前端 web.zip',
+    backendBranch: '后端分支',
+    frontendBranch: '前端版本分支（四个子项目共同存在）',
+    helpBranch: 'Help 文档分支',
+    frontendRuleTitle: '前端分支规则',
+    frontendRuleDesc: 'ohr-workspace 不使用 release_* 分支，构建时固定检出 master；上方选择的版本分支会同时用于四个子项目。',
+    customerConfig: '客户配置区',
+    customerHost: '客户访问地址',
+    webPort: 'Web 端口',
+    note: '备注',
+    notePlaceholder: '例如：测试环境首次打包',
+    startBuild: '开始构建',
+    stopBuild: '停止构建',
+    stopping: '正在停止...',
+    historyTitle: '构建记录',
+    recentTasks: '最近任务',
+    stepsTitle: '构建步骤',
+    statusTrace: '状态追踪',
+    selectBuild: '请选择或启动一个构建。',
+    noBuilds: '还没有构建记录。',
+    logTitle: '实时日志',
+    autoScroll: '自动滚动',
+    createFailed: '创建构建失败',
+    needTarget: '请至少选择一个构建目标',
+    needBackend: '请选择或填写后端分支',
+    needFrontend: '请选择或填写前端版本分支',
+    needHelp: '请填写 Help 文档分支',
+    needCustomer: '请填写客户访问地址',
+    badPort: 'Web 端口必须在 1-65535 之间',
+    badWorker: 'worker 配置必须是大于 0 的整数',
+    download: '下载',
+    buildId: '构建编号',
+    executor: '执行器',
+    workspaceBranch: 'workspace 分支',
+    worker: 'worker',
+    status: {queued:'排队中', running:'运行中', success:'成功', failed:'失败', cancelled:'已停止', pending:'等待', skipped:'跳过'},
+    steps: {validate:'参数校验', checkout_backend:'拉取后端代码', build_backend:'后端打包', restore_frontend:'恢复前端工作区', build_frontend:'前端 web.zip', collect_artifacts:'收集产物'}
+  },
+  'en-US': {
+    title: 'OHR Build Console',
+    subtitle: 'Provide backend/frontend branches and customer settings to generate package.zip and web.zip on the build terminal.',
+    language: 'Language',
+    modeTitle: 'Local build mode',
+    modeDesc: 'direct: package.zip and web.zip are built on the build terminal',
+    paramsTitle: 'Build parameters',
+    paramsDesc: 'The backend branch comes from the backend repository; the frontend release branch must exist in the four frontend child projects. ohr-workspace uses master.',
+    buildBackend: 'Build backend package.zip',
+    buildFrontend: 'Build frontend web.zip',
+    backendBranch: 'Backend branch',
+    frontendBranch: 'Frontend release branch',
+    helpBranch: 'Help docs branch',
+    frontendRuleTitle: 'Frontend branch rule',
+    frontendRuleDesc: 'ohr-workspace does not use release_* branches and stays on master. The selected release branch is used for the four frontend child projects.',
+    customerConfig: 'Customer configuration',
+    customerHost: 'Customer access address',
+    webPort: 'Web port',
+    note: 'Note',
+    notePlaceholder: 'Example: first test build',
+    startBuild: 'Start build',
+    stopBuild: 'Stop build',
+    stopping: 'Stopping...',
+    historyTitle: 'Build history',
+    recentTasks: 'Recent tasks',
+    stepsTitle: 'Build steps',
+    statusTrace: 'Status tracking',
+    selectBuild: 'Select or start a build.',
+    noBuilds: 'No builds yet.',
+    logTitle: 'Live log',
+    autoScroll: 'Auto scroll',
+    createFailed: 'Failed to create build',
+    needTarget: 'Select at least one build target',
+    needBackend: 'Enter a backend branch',
+    needFrontend: 'Enter a frontend release branch',
+    needHelp: 'Enter a Help docs branch',
+    needCustomer: 'Enter a customer access address',
+    badPort: 'Web port must be between 1 and 65535',
+    badWorker: 'Worker settings must be integers greater than 0',
+    download: 'Download',
+    buildId: 'Build ID',
+    executor: 'Executor',
+    workspaceBranch: 'Workspace branch',
+    worker: 'worker',
+    status: {queued:'Queued', running:'Running', success:'Success', failed:'Failed', cancelled:'Stopped', pending:'Pending', skipped:'Skipped'},
+    steps: {validate:'Validate parameters', checkout_backend:'Checkout backend', build_backend:'Backend package.zip', restore_frontend:'Restore frontend workspace', build_frontend:'Frontend web.zip', collect_artifacts:'Collect artifacts'}
+  }
+};
+
+let lang = localStorage.getItem('buildConsoleLang') || 'ja-JP';
+function t(key) {
+  const parts = key.split('.');
+  let value = I18N[lang] || I18N['ja-JP'];
+  for (const part of parts) value = value && value[part];
+  return value || key;
+}
+function applyI18n() {
+  document.documentElement.lang = lang;
+  document.title = t('title');
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  const selector = document.getElementById('language');
+  if (selector) selector.value = lang;
+}
+function translateLogText(text) {
+  const maps = {
+    'ja-JP': {
+      '构建开始': '構築開始',
+      '参数校验': 'パラメータ検証',
+      '拉取后端代码': 'バックエンド取得',
+      '后端打包': 'バックエンド package.zip',
+      '恢复前端工作区': 'フロントエンド作業区復元',
+      '前端 web.zip': 'フロントエンド web.zip',
+      '收集产物': '成果物収集',
+      '产物已收集': '成果物を収集しました',
+      '构建成功': '構築成功',
+      '构建失败': '構築失敗',
+      '构建已停止': '構築を停止しました',
+      '收到停止请求': '停止要求を受け付けました',
+      '另一个构建正在运行': '別の構築が実行中です'
+    },
+    'en-US': {
+      '构建开始': 'Build started',
+      '参数校验': 'Validate parameters',
+      '拉取后端代码': 'Checkout backend',
+      '后端打包': 'Backend package.zip',
+      '恢复前端工作区': 'Restore frontend workspace',
+      '前端 web.zip': 'Frontend web.zip',
+      '收集产物': 'Collect artifacts',
+      '产物已收集': 'Artifacts collected',
+      '构建成功': 'Build succeeded',
+      '构建失败': 'Build failed',
+      '构建已停止': 'Build stopped',
+      '收到停止请求': 'Stop requested',
+      '另一个构建正在运行': 'Another build is running'
+    }
+  };
+  const map = maps[lang] || {};
+  let result = text || '';
+  Object.entries(map).forEach(([from, to]) => { result = result.split(from).join(to); });
+  return result;
+}
+
 let currentBuild = null;
 let logOffset = 0;
 let timer = null;
-
-const statusText = {
-  queued: '排队中',
-  running: '运行中',
-  success: '成功',
-  failed: '失败',
-  cancelled: '已停止',
-  pending: '等待',
-  skipped: '跳过'
-};
 
 const statusLabel = {
   queued: 'queued',
@@ -1343,37 +1539,37 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const confWorkerConnections = Number(form.get('conf_worker_connections') || 1024);
   if (!buildBackend && !buildFrontend) {
     setFormLocked(false);
-    alert('请至少选择一个构建目标');
+    alert(t('needTarget'));
     return;
   }
   if (buildBackend && !backendBranch) {
     setFormLocked(false);
-    alert('请选择或填写后端分支');
+    alert(t('needBackend'));
     return;
   }
   if (buildFrontend && !ws) {
     setFormLocked(false);
-    alert('请选择或填写前端版本分支');
+    alert(t('needFrontend'));
     return;
   }
   if (buildFrontend && !helpDocsBranch) {
     setFormLocked(false);
-    alert('请填写 Help 文档分支');
+    alert(t('needHelp'));
     return;
   }
   if (buildFrontend && !confServerHost) {
     setFormLocked(false);
-    alert('请填写客户访问地址');
+    alert(t('needCustomer'));
     return;
   }
   if (buildFrontend && (!Number.isInteger(confWebPort) || confWebPort < 1 || confWebPort > 65535)) {
     setFormLocked(false);
-    alert('Web 端口必须在 1-65535 之间');
+    alert(t('badPort'));
     return;
   }
   if (buildFrontend && (!Number.isInteger(confWorkerProcesses) || confWorkerProcesses < 1 || !Number.isInteger(confWorkerConnections) || confWorkerConnections < 1)) {
     setFormLocked(false);
-    alert('worker 配置必须是大于 0 的整数');
+    alert(t('badWorker'));
     return;
   }
   setFormLocked(true);
@@ -1393,7 +1589,7 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const data = await res.json();
   if (!res.ok) {
     setFormLocked(false);
-    alert(data.error || '创建构建失败');
+    alert(data.error || t('createFailed'));
     return;
   }
   selectBuild(data.id);
@@ -1403,13 +1599,21 @@ document.getElementById('stop-button').addEventListener('click', async () => {
   if (!currentBuild) return;
   const btn = document.getElementById('stop-button');
   btn.disabled = true;
-  btn.textContent = '正在停止...';
+  btn.textContent = t('stopping');
   try {
     await fetch(`/api/builds/${currentBuild}/cancel`, { method: 'POST' });
     await refreshCurrent();
   } finally {
-    btn.textContent = '停止构建';
+    btn.textContent = t('stopBuild');
   }
+});
+
+document.getElementById('language').addEventListener('change', event => {
+  lang = event.target.value;
+  localStorage.setItem('buildConsoleLang', lang);
+  applyI18n();
+  loadBuilds();
+  if (currentBuild) refreshCurrent();
 });
 
 function setFormLocked(locked) {
@@ -1487,7 +1691,7 @@ async function loadBuilds() {
   const list = document.getElementById('build-list');
   list.innerHTML = '';
   if (!data.builds.length) {
-    list.innerHTML = '<div class="empty-state small">还没有构建记录。</div>';
+    list.innerHTML = `<div class="empty-state small">${t('noBuilds')}</div>`;
     return;
   }
   data.builds.forEach(build => {
@@ -1498,7 +1702,7 @@ async function loadBuilds() {
         <strong>${build.request.backend_branch}</strong>
         <small>${build.request.frontend_release_branch || build.request.frontend_workspace_branch || ''} · ${build.id}</small>
       </span>
-      <em>${statusText[build.status] || build.status}</em>
+      <em>${t('status.' + build.status) || build.status}</em>
     `;
     item.onclick = () => selectBuild(build.id);
     list.appendChild(item);
@@ -1527,7 +1731,7 @@ async function refreshCurrent() {
   logOffset = logData.offset;
   if (logData.text) {
     const pre = document.getElementById('log');
-    pre.textContent += logData.text;
+    pre.textContent += translateLogText(logData.text);
     pre.scrollTop = pre.scrollHeight;
   }
   if (terminalStatuses.includes(build.status) && timer) {
@@ -1539,47 +1743,47 @@ async function refreshCurrent() {
 function renderDetail(build) {
   const box = document.getElementById('build-detail');
   const artifactLinks = (build.artifacts || (build.artifact ? [build.artifact] : [])).map(item => (
-    `<a class="artifact-link" href="/api/builds/${build.id}/artifact/${item.name}">下载 ${item.name}</a>`
+    `<a class="artifact-link" href="/api/builds/${build.id}/artifact/${item.name}">${t('download')} ${item.name}</a>`
   )).join('');
   box.innerHTML = `
     <div class="summary-panel">
       <div>
-        <div class="muted">构建编号</div>
+        <div class="muted">${t('buildId')}</div>
         <strong>${build.id}</strong>
       </div>
       <div>
-        <div class="muted">后端分支</div>
+        <div class="muted">${t('backendBranch')}</div>
         <strong>${build.request.backend_branch}</strong>
       </div>
       <div>
-        <div class="muted">前端版本分支</div>
+        <div class="muted">${t('frontendBranch')}</div>
         <strong>${build.request.frontend_release_branch || build.request.frontend_workspace_branch || ''}</strong>
       </div>
       <div>
-        <div class="muted">workspace 分支</div>
+        <div class="muted">${t('workspaceBranch')}</div>
         <strong>${build.request.frontend_workspace_branch || ''}</strong>
       </div>
       <div>
-        <div class="muted">Help 文档分支</div>
+        <div class="muted">${t('helpBranch')}</div>
         <strong>${build.request.help_docs_branch || ''}</strong>
       </div>
       <div>
-        <div class="muted">客户访问地址</div>
+        <div class="muted">${t('customerHost')}</div>
         <strong>${build.request.conf_server_host || ''}</strong>
       </div>
       <div>
-        <div class="muted">Web 端口</div>
+        <div class="muted">${t('webPort')}</div>
         <strong>${build.request.conf_web_port || ''}</strong>
       </div>
       <div>
-        <div class="muted">worker</div>
+        <div class="muted">${t('worker')}</div>
         <strong>${build.request.conf_worker_processes || ''}/${build.request.conf_worker_connections || ''}</strong>
       </div>
       <div>
-        <div class="muted">执行器</div>
+        <div class="muted">${t('executor')}</div>
         <strong>${build.executor}</strong>
       </div>
-      <span class="pill ${build.status}">${statusText[build.status] || build.status}</span>
+      <span class="pill ${build.status}">${t('status.' + build.status) || build.status}</span>
       ${artifactLinks}
     </div>
     <ol class="steps">
@@ -1587,16 +1791,17 @@ function renderDetail(build) {
         <li class="${step.status}">
           <span class="step-index">${index + 1}</span>
           <span class="step-main">
-            <strong>${step.label}</strong>
+            <strong>${t('steps.' + step.id) || step.label}</strong>
             <small>${step.message || statusLabel[step.status] || step.status}</small>
           </span>
-          <em>${statusText[step.status] || step.status}</em>
+          <em>${t('status.' + step.status) || step.status}</em>
         </li>
       `).join('')}
     </ol>
   `;
 }
 
+applyI18n();
 loadBranchLists();
 loadBuilds();
 setInterval(loadBuilds, 5000);
@@ -1673,6 +1878,23 @@ h2 { font-size: 19px; }
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255,255,255,.8);
+}
+.language-box {
+  min-width: 150px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255,255,255,.8);
+}
+.language-box label { color: var(--muted); font-size: 12px; font-weight: 800; }
+.language-box select {
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: #fff;
 }
 .hero-panel small { display: block; margin-top: 4px; color: var(--muted); }
 .status-dot {

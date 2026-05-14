@@ -93,8 +93,61 @@ def test_i18n_contains_terminal_controls_and_statuses():
 
 
 def test_console_uses_commercial_delivery_package_naming():
-    assert "OHR Delivery Package Console" in console.INDEX_HTML
-    assert "OHR 製品パッケージ生成" in console.APP_JS
-    assert "OHR 产品交付包生成" in console.APP_JS
+    assert "庶務事務システム构造器" in console.INDEX_HTML
+    assert "庶务事务系统构造器" in console.APP_JS
+    assert "Shomu Jimu System Builder" in console.APP_JS
     assert "最终安装包" not in console.APP_JS
     assert "最終インストールパッケージ" not in console.APP_JS
+
+
+def test_create_job_persists_metadata_and_log(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(console, "run_job", lambda job_id: None)
+    console.JOBS.clear()
+
+    job = console.create_job(
+        {
+            "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+            "conf_server_host": "example.local",
+            "postgresql_host": "db.local",
+            "ui_language": "zh-CN",
+        }
+    )
+    console.append_log(job["id"], "hello")
+
+    assert (tmp_path / job["id"] / "metadata.json").is_file()
+    assert (tmp_path / job["id"] / "job.log").read_text(encoding="utf-8").strip().endswith("hello")
+    console.JOBS.clear()
+    jobs = console.list_jobs()
+    assert jobs[0]["id"] == job["id"]
+    assert jobs[0]["request"]["backend_branch"] == "release_back"
+
+
+def test_host_console_renders_outputs_and_bottom_log_layout():
+    assert "product_dir" in console.APP_JS
+    assert "standalone_zip" in console.APP_JS
+    assert "version_txt" in console.APP_JS
+    assert "navigator.clipboard.writeText" in console.APP_JS
+    assert ".workbench" in console.STYLE_CSS
+    assert ".log-panel" in console.STYLE_CSS
+    assert "min-height: 560px" in console.STYLE_CSS
+
+
+def test_build_terminal_iframe_uses_host_proxy_not_direct_url():
+    assert 'data-src="/build-terminal/"' in console.INDEX_HTML
+    assert "/build-terminal/" in console.APP_JS or "/build-terminal/" in console.INDEX_HTML
+    assert "REMOTE_BUILD_CONSOLE_URL" not in console.INDEX_HTML
+
+
+def test_build_terminal_proxy_rewrites_absolute_assets():
+    class Dummy(console.Handler):
+        def __init__(self):
+            pass
+
+    body = b'<link href="/style.css?v=4"><script src="/app.js?v=9"></script><script>fetch(`/api/builds`);</script>'
+    rewritten = Dummy().rewrite_build_terminal_asset(body, "text/html; charset=utf-8").decode("utf-8")
+
+    assert 'href="/build-terminal/style.css?v=4"' in rewritten
+    assert 'src="/build-terminal/app.js?v=9"' in rewritten
+    assert "fetch(`/build-terminal/api/builds`)" in rewritten

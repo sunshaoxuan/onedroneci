@@ -40,7 +40,7 @@ TERMINAL_LABELS = {
 }
 
 JOBS: dict[str, dict[str, Any]] = {}
-LOCK = threading.Lock()
+LOCK = threading.RLock()
 CANCELLED: set[str] = set()
 
 
@@ -54,6 +54,54 @@ def now() -> int:
 
 def new_job_id() -> str:
     return time.strftime("%Y%m%d%H%M%S")
+
+
+def job_dir(job_id: str) -> Path:
+    return DATA_DIR / job_id
+
+
+def job_metadata_path(job_id: str) -> Path:
+    return job_dir(job_id) / "metadata.json"
+
+
+def job_log_path(job_id: str) -> Path:
+    return job_dir(job_id) / "job.log"
+
+
+def read_job(job_id: str) -> dict[str, Any]:
+    with LOCK:
+        if job_id in JOBS:
+            return dict(JOBS[job_id])
+    path = job_metadata_path(job_id)
+    if not path.is_file():
+        raise FileNotFoundError(job_id)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_job(job: dict[str, Any]) -> None:
+    path = job_metadata_path(str(job["id"]))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def list_jobs() -> list[dict[str, Any]]:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    jobs: dict[str, dict[str, Any]] = {}
+    for path in DATA_DIR.iterdir():
+        mp = path / "metadata.json"
+        if not mp.is_file():
+            continue
+        try:
+            job = json.loads(mp.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        jobs[str(job["id"])] = job
+    with LOCK:
+        for job_id, job in JOBS.items():
+            jobs[job_id] = dict(job)
+    return sorted(jobs.values(), key=lambda item: item.get("created_at", 0), reverse=True)
 
 
 def remote_base_host() -> str:
@@ -78,7 +126,7 @@ def redact_build_terminal(text: str, lang: str = "ja-JP") -> str:
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
     job_id = new_job_id()
     with LOCK:
-        while job_id in JOBS:
+        while job_id in JOBS or job_metadata_path(job_id).exists():
             job_id = f"{new_job_id()}-{len(JOBS) + 1}"
         job = {
             "id": job_id,
@@ -91,7 +139,10 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
             "log": [],
             "outputs": {},
         }
+        job_dir(job_id).mkdir(parents=True, exist_ok=True)
+        job_log_path(job_id).write_text("", encoding="utf-8")
         JOBS[job_id] = job
+        write_job(job)
     thread = threading.Thread(target=run_job, args=(job_id,), daemon=True)
     thread.start()
     return public_job(job)
@@ -105,17 +156,24 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
 
 def append_log(job_id: str, message: str) -> None:
     with LOCK:
-        job = JOBS[job_id]
+        job = JOBS.get(job_id) or read_job(job_id)
         lang = str((job.get("request") or {}).get("ui_language") or "ja-JP")
-        job["log"].append(f"{time.strftime('%H:%M:%S')} {redact_build_terminal(message, lang)}")
+        line = f"{time.strftime('%H:%M:%S')} {redact_build_terminal(message, lang)}"
+        job.setdefault("log", []).append(line)
         job["updated_at"] = now()
+        JOBS[job_id] = job
+        write_job(job)
+    with job_log_path(job_id).open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 
 def update_job(job_id: str, **updates: Any) -> None:
     with LOCK:
-        job = JOBS[job_id]
+        job = JOBS.get(job_id) or read_job(job_id)
         job.update(updates)
         job["updated_at"] = now()
+        JOBS[job_id] = job
+        write_job(job)
 
 
 def check_cancelled(job_id: str) -> None:
@@ -139,7 +197,10 @@ def fetch_remote_log(job_id: str, remote_id: str) -> None:
             if line.strip():
                 append_log(job_id, line)
     with LOCK:
-        JOBS[job_id]["remote_log_offset"] = int(data.get("next_offset") or data.get("offset") or offset + len(text))
+        job = JOBS.get(job_id) or read_job(job_id)
+        job["remote_log_offset"] = int(data.get("next_offset") or data.get("offset") or offset + len(text))
+        JOBS[job_id] = job
+        write_job(job)
 
 
 def remote_post(path: str) -> dict[str, Any]:
@@ -196,9 +257,11 @@ def build_terminal_action(action: str) -> dict[str, Any]:
 
 def cancel_job(job_id: str) -> dict[str, Any]:
     with LOCK:
-        job = JOBS.get(job_id)
-        if not job:
+        try:
+            job = JOBS.get(job_id) or read_job(job_id)
+        except FileNotFoundError:
             return {"ok": False, "error": "not_found"}
+        JOBS[job_id] = job
         CANCELLED.add(job_id)
         remote_id = job.get("remote_build_id")
         status = job.get("status")
@@ -215,7 +278,7 @@ def cancel_job(job_id: str) -> dict[str, Any]:
 def run_job(job_id: str) -> None:
     with LOCK:
         req = dict(JOBS[job_id]["request"])
-    work_dir = DATA_DIR / job_id
+    work_dir = job_dir(job_id)
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
         update_job(job_id, status="running")
@@ -296,16 +359,16 @@ INDEX_HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OHR Delivery Package Console</title>
+  <title>庶務事務システム构造器</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <main class="shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">OHR Delivery Package Console</p>
-        <h1 data-i18n="title">OHR 製品パッケージ生成</h1>
-        <p class="subcopy" data-i18n="subtitle">固定資材を宿主機に保持し、ビルド端末の成果物を組み込んだ正式な納品パッケージを生成します。</p>
+        <p class="eyebrow">SHOMU JIMU SYSTEM BUILDER</p>
+        <h1 data-i18n="title">庶務事務システム构造器</h1>
+        <p class="subcopy" data-i18n="subtitle">構築成果物と固定資材を組み合わせ、正式な製品交付パッケージを生成します。</p>
       </div>
       <div class="hero-actions">
         <label class="lang-label" for="language" data-i18n="language">表示言語</label>
@@ -330,44 +393,71 @@ INDEX_HTML = """<!doctype html>
       </div>
     </section>
 
-    <section class="workspace">
-      <form id="form" class="panel">
-        <div class="panel-heading">
-          <div>
-            <p class="section-kicker" data-i18n="formKicker">パッケージ設定</p>
-            <h2 data-i18n="formTitle">構成パラメータ</h2>
-          </div>
-          <div class="run-actions">
-            <button id="stopJob" class="danger" type="button" disabled data-i18n="stopJob">停止</button>
-            <button id="startJob" type="submit" data-i18n="startJob">交付包生成を開始</button>
-          </div>
+    <form id="form" class="panel form-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker" data-i18n="formKicker">構造設定</p>
+          <h2 data-i18n="formTitle">構成パラメータ</h2>
         </div>
-        <div class="grid">
-          <label><span data-i18n="backendBranch">バックエンドブランチ</span><input name="backend_branch" required placeholder="release_20260325"></label>
-          <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><input name="frontend_release_branch" required placeholder="release_20260325"></label>
-          <label><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
-          <label><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
-          <label><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
-          <label><span data-i18n="postgresHost">PostgreSQL Host</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
-          <label><span data-i18n="postgresPort">PostgreSQL Port</span><input name="postgresql_port" type="number" value="5432"></label>
-          <label><span data-i18n="postgresUser">PostgreSQL User</span><input name="postgresql_user" value="postgres"></label>
-          <label><span data-i18n="postgresPassword">PostgreSQL Password</span><input name="postgresql_password" value="password"></label>
-          <label><span data-i18n="appHostName">アプリケーションサービスホスト名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
-          <label><span data-i18n="ohrServicePort">OHR Service Port</span><input name="ohr_service_port" type="number" value="3198"></label>
+        <div class="run-actions">
+          <button id="stopJob" class="danger" type="button" disabled data-i18n="stopJob">停止</button>
+          <button id="startJob" type="submit" data-i18n="startJob">構造を開始</button>
         </div>
-      </form>
+      </div>
+      <div class="grid">
+        <label><span data-i18n="backendBranch">バックエンドブランチ</span><input name="backend_branch" required placeholder="release_20260325"></label>
+        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><input name="frontend_release_branch" required placeholder="release_20260325"></label>
+        <label><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
+        <label><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
+        <label><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
+        <label><span data-i18n="postgresHost">PostgreSQL Host</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
+        <label><span data-i18n="postgresPort">PostgreSQL Port</span><input name="postgresql_port" type="number" value="5432"></label>
+        <label><span data-i18n="postgresUser">PostgreSQL User</span><input name="postgresql_user" value="postgres"></label>
+        <label><span data-i18n="postgresPassword">PostgreSQL Password</span><input name="postgresql_password" value="password"></label>
+        <label><span data-i18n="appHostName">アプリケーションサービスホスト名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
+        <label><span data-i18n="ohrServicePort">OHR Service Port</span><input name="ohr_service_port" type="number" value="3198"></label>
+      </div>
+    </form>
 
-      <section class="panel log-panel">
+    <section class="workbench">
+      <section class="panel history-panel">
         <div class="panel-heading">
           <div>
-            <p class="section-kicker" data-i18n="tasksKicker">進行状況</p>
-            <h2 data-i18n="tasksTitle">タスクとログ</h2>
+            <p class="section-kicker" data-i18n="historyKicker">履歴</p>
+            <h2 data-i18n="historyTitle">構造履歴</h2>
           </div>
           <div id="jobBadge" class="badge" data-i18n="noTask">タスク未選択</div>
         </div>
         <div id="jobs" class="jobs"></div>
-        <pre id="log"></pre>
       </section>
+
+      <section class="panel result-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker" data-i18n="resultKicker">結果</p>
+            <h2 data-i18n="resultTitle">成果物</h2>
+          </div>
+        </div>
+        <div id="result" class="empty-state" data-i18n="selectTask">タスクを選択してください。</div>
+      </section>
+    </section>
+
+    <section class="panel terminal-frame-panel">
+      <details id="terminalConsoleDetails">
+        <summary data-i18n="terminalConsole">ビルド端末コンソール</summary>
+        <iframe id="terminalFrame" title="build terminal console" data-src="/build-terminal/"></iframe>
+      </details>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker" data-i18n="logKicker">ログ</p>
+          <h2 data-i18n="logTitle">実行ログ</h2>
+        </div>
+        <span class="muted" data-i18n="autoScroll">自動スクロール</span>
+      </div>
+      <pre id="log"></pre>
     </section>
   </main>
   <script src="/app.js"></script>
@@ -379,8 +469,8 @@ INDEX_HTML = """<!doctype html>
 APP_JS = r"""
 const I18N = {
   'ja-JP': {
-    title: 'OHR 製品パッケージ生成',
-    subtitle: '固定資材を宿主機に保持し、ビルド端末の成果物を組み込んだ正式な納品パッケージを生成します。',
+    title: '庶務事務システム构造器',
+    subtitle: '構築成果物と固定資材を組み合わせ、正式な製品交付パッケージを生成します。',
     language: '表示言語',
     terminalTitle: 'ビルド端末',
     terminalUnknown: '状態不明',
@@ -393,10 +483,10 @@ const I18N = {
     refreshStatus: '状態更新',
     startTerminal: 'ビルド端末を起動',
     stopTerminal: 'ビルド端末を停止',
-    formKicker: 'パッケージ設定',
+    formKicker: '構造設定',
     formTitle: '構成パラメータ',
     stopJob: '停止',
-    startJob: '交付包生成を開始',
+    startJob: '構造を開始',
     backendBranch: 'バックエンドブランチ',
     frontendBranch: 'フロントエンドブランチ',
     helpBranch: 'ヘルプブランチ',
@@ -409,17 +499,29 @@ const I18N = {
     appHostName: 'アプリケーションサービスホスト名',
     appHostPlaceholder: '顧客アクセスアドレスを使用',
     ohrServicePort: 'OHR Service Port',
-    tasksKicker: '進行状況',
-    tasksTitle: 'タスクとログ',
+    historyKicker: '履歴',
+    historyTitle: '構造履歴',
+    resultKicker: '結果',
+    resultTitle: '成果物',
+    logKicker: 'ログ',
+    logTitle: '実行ログ',
+    terminalConsole: 'ビルド端末コンソール',
+    autoScroll: '自動スクロール',
+    selectTask: 'タスクを選択してください。',
     noTask: 'タスク未選択',
-    outputDir: '出力ディレクトリ',
+    productDir: '交付ディレクトリ',
+    standaloneZip: 'OneHrStandalone.zip',
+    versionTxt: 'version.txt',
+    copy: 'コピー',
+    copied: 'コピーしました',
+    remoteBuild: 'ビルド端末番号',
     error: 'エラー',
     terminalFirst: 'ビルド端末を起動してから開始してください。',
     cancelled: '停止しました'
   },
   'zh-CN': {
-    title: 'OHR 产品交付包生成',
-    subtitle: '固定资源保留在宿主机，将构建终端产出的成果物组装为正式产品交付包。',
+    title: '庶务事务系统构造器',
+    subtitle: '组合构建成果物与固定资源，生成正式产品交付包。',
     language: '显示语言',
     terminalTitle: '构建终端',
     terminalUnknown: '状态未知',
@@ -435,7 +537,7 @@ const I18N = {
     formKicker: '打包设置',
     formTitle: '构造参数',
     stopJob: '停止',
-    startJob: '开始生成交付包',
+    startJob: '开始构造',
     backendBranch: '后端分支',
     frontendBranch: '前端分支',
     helpBranch: 'Help 分支',
@@ -448,17 +550,29 @@ const I18N = {
     appHostName: '应用服务主机名',
     appHostPlaceholder: '默认取客户访问地址',
     ohrServicePort: 'OHR Service Port',
-    tasksKicker: '执行状态',
-    tasksTitle: '任务与日志',
+    historyKicker: '历史',
+    historyTitle: '构造历史',
+    resultKicker: '结果',
+    resultTitle: '成果物',
+    logKicker: '日志',
+    logTitle: '执行日志',
+    terminalConsole: '构建终端控制台',
+    autoScroll: '自动滚动',
+    selectTask: '请选择任务。',
     noTask: '未选择任务',
-    outputDir: '输出目录',
+    productDir: '交付目录',
+    standaloneZip: 'OneHrStandalone.zip',
+    versionTxt: 'version.txt',
+    copy: '复制',
+    copied: '已复制',
+    remoteBuild: '构建终端编号',
     error: '错误',
     terminalFirst: '请先启动构建终端再开始。',
     cancelled: '已停止'
   },
   'en-US': {
-    title: 'OHR Delivery Package Console',
-    subtitle: 'Static resources stay on the host while build terminal artifacts are assembled into a formal product delivery package.',
+    title: 'Shomu Jimu System Builder',
+    subtitle: 'Assemble build artifacts and static resources into a formal product delivery package.',
     language: 'Language',
     terminalTitle: 'Build terminal',
     terminalUnknown: 'Unknown',
@@ -471,10 +585,10 @@ const I18N = {
     refreshStatus: 'Refresh status',
     startTerminal: 'Start build terminal',
     stopTerminal: 'Stop build terminal',
-    formKicker: 'Package settings',
+    formKicker: 'Build settings',
     formTitle: 'Build parameters',
     stopJob: 'Stop',
-    startJob: 'Generate delivery package',
+    startJob: 'Start build',
     backendBranch: 'Backend branch',
     frontendBranch: 'Frontend branch',
     helpBranch: 'Help branch',
@@ -487,10 +601,22 @@ const I18N = {
     appHostName: 'Application service host name',
     appHostPlaceholder: 'Use customer access address',
     ohrServicePort: 'OHR Service Port',
-    tasksKicker: 'Progress',
-    tasksTitle: 'Tasks and logs',
+    historyKicker: 'History',
+    historyTitle: 'Build history',
+    resultKicker: 'Result',
+    resultTitle: 'Artifacts',
+    logKicker: 'Log',
+    logTitle: 'Execution log',
+    terminalConsole: 'Build terminal console',
+    autoScroll: 'Auto scroll',
+    selectTask: 'Select a task.',
     noTask: 'No task selected',
-    outputDir: 'Output directory',
+    productDir: 'Delivery directory',
+    standaloneZip: 'OneHrStandalone.zip',
+    versionTxt: 'version.txt',
+    copy: 'Copy',
+    copied: 'Copied',
+    remoteBuild: 'Build terminal ID',
     error: 'Error',
     terminalFirst: 'Start the build terminal first.',
     cancelled: 'Stopped'
@@ -509,6 +635,48 @@ function token() {
   return found ? decodeURIComponent(found.split('=').slice(1).join('=')) : '';
 }
 function authHeaders(extra = {}) { return {...extra, 'X-Management-Token': token()}; }
+function translateLogText(text) {
+  const maps = {
+    'ja-JP': {
+      'build_terminal_dispatch': 'ビルド端末へ構築を依頼しました',
+      'remote_build_id': 'ビルド端末番号',
+      'remote_build_status': 'ビルド端末状態',
+      'download_artifacts': 'package.zip / web.zip を取得しています',
+      'standalone_packaging': '製品交付パッケージを生成しています',
+      'standalone_package_done': '製品交付パッケージの生成が完了しました',
+      'cancelled': '停止しました',
+      'failed': '失敗',
+      '构建开始': '構築開始',
+      '参数校验': 'パラメータ検証',
+      '恢复前端工作区': 'フロントエンド作業区復元',
+      '收集产物': '成果物収集',
+      '构建成功': '構築成功',
+      '构建失败': '構築失敗',
+      '构建已停止': '構築を停止しました'
+    },
+    'en-US': {
+      'build_terminal_dispatch': 'Build terminal dispatched',
+      'remote_build_id': 'Build terminal ID',
+      'remote_build_status': 'Build terminal status',
+      'download_artifacts': 'Downloading package.zip / web.zip',
+      'standalone_packaging': 'Generating delivery package',
+      'standalone_package_done': 'Delivery package generated',
+      'cancelled': 'Stopped',
+      'failed': 'Failed',
+      '构建开始': 'Build started',
+      '参数校验': 'Validate parameters',
+      '恢复前端工作区': 'Restore frontend workspace',
+      '收集产物': 'Collect artifacts',
+      '构建成功': 'Build succeeded',
+      '构建失败': 'Build failed',
+      '构建已停止': 'Build stopped'
+    }
+  };
+  const map = maps[lang] || {};
+  let result = text || '';
+  Object.entries(map).forEach(([from, to]) => { result = result.split(from).join(to); });
+  return result;
+}
 
 function applyI18n() {
   document.documentElement.lang = lang;
@@ -564,6 +732,10 @@ document.getElementById('language').addEventListener('change', event => {
 document.getElementById('refreshTerminal').addEventListener('click', refreshTerminal);
 document.getElementById('startTerminal').addEventListener('click', () => terminalAction('start'));
 document.getElementById('stopTerminal').addEventListener('click', () => terminalAction('stop'));
+document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
+  const frame = document.getElementById('terminalFrame');
+  if (event.target.open && !frame.src) frame.src = frame.dataset.src;
+});
 document.getElementById('stopJob').addEventListener('click', async () => {
   if (!selected) return;
   await fetch(`/api/jobs/${selected}/cancel`, {method: 'POST', headers: authHeaders({'Content-Type': 'application/json'}), body: '{}'});
@@ -598,10 +770,14 @@ async function refresh() {
   const data = await res.json();
   const jobs = document.getElementById('jobs');
   jobs.innerHTML = '';
+  if (!data.jobs.length) {
+    jobs.innerHTML = `<div class="empty-state">${t('noTask')}</div>`;
+    return;
+  }
   data.jobs.forEach(job => {
     const btn = document.createElement('button');
     btn.className = job.id === selected ? 'job active' : 'job';
-    btn.textContent = `${job.id} · ${job.status} ${job.remote_build_id || ''}`;
+    btn.innerHTML = `<strong>${job.id}</strong><span>${job.status}${job.remote_build_id ? ' · ' + job.remote_build_id : ''}</span>`;
     btn.onclick = () => { selected = job.id; logOffset = 0; render(job); fetchJobLog(true); };
     jobs.appendChild(btn);
     if (job.id === selected) render(job);
@@ -621,7 +797,7 @@ async function fetchJobLog(reset) {
   logOffset = data.next_offset;
   if (data.text) {
     const log = document.getElementById('log');
-    log.textContent += data.text;
+    log.textContent += translateLogText(data.text);
     log.scrollTop = log.scrollHeight;
   }
 }
@@ -630,13 +806,42 @@ function render(job) {
   document.getElementById('jobBadge').textContent = `${job.id} · ${job.status}`;
   const running = ['queued', 'running'].includes(job.status);
   setFormLocked(running);
-  const log = document.getElementById('log');
-  if (!log.textContent) {
-    const lines = [...(job.log || [])];
-    if (job.outputs && job.outputs.product_dir) lines.push(`${t('outputDir')}: ${job.outputs.product_dir}`);
-    if (job.error) lines.push(`${t('error')}: ${job.error}`);
-    log.textContent = lines.join('\n');
-  }
+  renderResult(job);
+}
+
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function pathRow(label, value) {
+  if (!value) return '';
+  const safe = escapeHtml(value);
+  return `<div class="path-row"><span>${label}</span><code>${safe}</code><button type="button" class="copy-path" data-path="${safe}">${t('copy')}</button></div>`;
+}
+
+function renderResult(job) {
+  const outputs = job.outputs || {};
+  const box = document.getElementById('result');
+  box.innerHTML = `
+    <div class="result-summary">
+      <div><span>ID</span><strong>${escapeHtml(job.id)}</strong></div>
+      <div><span>Status</span><strong>${escapeHtml(job.status)}</strong></div>
+      <div><span>${t('remoteBuild')}</span><strong>${escapeHtml(job.remote_build_id || '-')}</strong></div>
+      <div><span>${t('error')}</span><strong>${escapeHtml(job.error || '-')}</strong></div>
+    </div>
+    <div class="path-list">
+      ${pathRow(t('productDir'), outputs.product_dir)}
+      ${pathRow(t('standaloneZip'), outputs.standalone_zip)}
+      ${pathRow(t('versionTxt'), outputs.version_txt)}
+    </div>
+  `;
+  box.querySelectorAll('.copy-path').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(btn.dataset.path || '');
+      btn.textContent = t('copied');
+      setTimeout(() => { btn.textContent = t('copy'); }, 1200);
+    });
+  });
 }
 
 applyI18n();
@@ -651,7 +856,7 @@ STYLE_CSS = """
   --ink: #111827;
   --muted: #5f6b7a;
   --line: #d9e1ea;
-  --panel: rgba(255, 255, 255, 0.92);
+  --panel: rgba(255, 255, 255, 0.94);
   --accent: #176b87;
   --accent-dark: #0f3d4c;
   --danger: #b42318;
@@ -663,19 +868,19 @@ body {
   margin: 0;
   font-family: "Segoe UI", "Noto Sans JP", "Microsoft YaHei", Arial, sans-serif;
   background:
-    linear-gradient(120deg, rgba(23, 107, 135, .16), transparent 36%),
-    linear-gradient(240deg, rgba(15, 122, 71, .12), transparent 32%),
+    linear-gradient(120deg, rgba(23, 107, 135, .14), transparent 34%),
+    linear-gradient(240deg, rgba(15, 122, 71, .11), transparent 30%),
     var(--surface);
   color: var(--ink);
 }
-.shell { max-width: 1240px; margin: 0 auto; padding: 28px 24px 42px; }
+.shell { max-width: 1180px; margin: 0 auto; padding: 24px 20px 38px; }
 .hero {
-  min-height: 210px;
+  min-height: 168px;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 28px;
-  padding: 34px 0 28px;
+  padding: 28px 0 24px;
   border-bottom: 1px solid rgba(17, 24, 39, .12);
 }
 .eyebrow, .section-kicker {
@@ -687,10 +892,10 @@ body {
   text-transform: uppercase;
 }
 h1, h2 { margin: 0; letter-spacing: 0; }
-h1 { font-size: 54px; line-height: 1.03; }
-h2 { font-size: 22px; }
-.subcopy { max-width: 690px; margin: 16px 0 0; color: var(--muted); font-size: 16px; line-height: 1.7; }
-.hero-actions { display: grid; gap: 8px; min-width: 190px; }
+h1 { font-size: 46px; line-height: 1.05; }
+h2 { font-size: 21px; }
+.subcopy { max-width: 720px; margin: 14px 0 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+.hero-actions { display: grid; gap: 8px; min-width: 180px; }
 .lang-label { color: var(--muted); font-size: 13px; font-weight: 800; }
 select, input {
   width: 100%;
@@ -698,20 +903,20 @@ select, input {
   border-radius: 8px;
   background: #fff;
   color: var(--ink);
-  padding: 12px 13px;
+  padding: 11px 12px;
   font: inherit;
 }
 input:disabled, select:disabled { background: #eef2f5; color: #7b8794; }
 .terminal-panel, .panel {
   background: var(--panel);
   border: 1px solid rgba(17, 24, 39, .1);
-  box-shadow: 0 20px 70px rgba(25, 42, 70, .12);
+  box-shadow: 0 16px 54px rgba(25, 42, 70, .1);
   backdrop-filter: blur(14px);
   border-radius: 8px;
 }
 .terminal-panel {
-  margin: 24px 0;
-  padding: 22px;
+  margin: 20px 0;
+  padding: 18px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -732,18 +937,17 @@ input:disabled, select:disabled { background: #eef2f5; color: #7b8794; }
 .terminal-panel[data-status="permission_denied"] h2::before { background: var(--danger); }
 #terminalHint { margin: 8px 0 0; color: var(--muted); }
 .terminal-actions, .run-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
-.workspace { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(420px, .92fr); gap: 20px; align-items: start; }
-.panel { padding: 22px; }
-.panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
-.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.panel { padding: 20px; margin-bottom: 18px; }
+.panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
+.form-panel .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 label { display: grid; gap: 7px; font-weight: 800; font-size: 13px; color: #273449; }
 button {
-  min-height: 42px;
+  min-height: 40px;
   border: 0;
   border-radius: 8px;
   background: var(--accent);
   color: #fff;
-  padding: 10px 15px;
+  padding: 9px 14px;
   font-weight: 900;
   cursor: pointer;
 }
@@ -754,15 +958,22 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .danger, .danger-lite { background: var(--danger); }
 .danger-lite { background: #fff1f0; color: var(--danger); border: 1px solid #ffd1cc; }
 .danger-lite:hover { background: #ffe4e0; }
-.jobs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.workbench { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 18px; align-items: start; }
+.jobs { display: grid; gap: 8px; max-height: 360px; overflow: auto; }
 .job {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
   background: #f2f6f9;
   color: #25364a;
   border: 1px solid var(--line);
-  min-height: 36px;
+  min-height: 42px;
   font-size: 12px;
 }
+.job span { color: var(--muted); }
 .job.active { background: var(--ink); color: #fff; }
+.job.active span { color: #d8e2ef; }
 .badge {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -771,9 +982,30 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   font-size: 13px;
   white-space: nowrap;
 }
+.empty-state { color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 18px; }
+.result-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.result-summary div { padding: 10px; background: #f5f8fb; border: 1px solid var(--line); border-radius: 8px; }
+.result-summary span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.result-summary strong { word-break: break-all; }
+.path-list { display: grid; gap: 10px; }
+.path-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.path-row span { color: var(--muted); font-size: 13px; font-weight: 800; }
+.path-row code { padding: 10px; background: #0d1320; color: #d8e8f6; border-radius: 8px; overflow: auto; white-space: nowrap; }
+.copy-path { min-height: 34px; padding: 7px 10px; }
+.terminal-frame-panel details { overflow: hidden; }
+.terminal-frame-panel summary { cursor: pointer; font-weight: 900; }
+iframe {
+  width: 100%;
+  height: 520px;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.log-panel { margin-top: 0; }
 pre {
-  min-height: 480px;
-  max-height: 680px;
+  min-height: 560px;
+  max-height: 760px;
   margin: 0;
   padding: 16px;
   overflow: auto;
@@ -783,10 +1015,11 @@ pre {
   border: 1px solid #1f2c42;
   line-height: 1.55;
 }
+.muted { color: var(--muted); font-size: 13px; }
 @media (max-width: 980px) {
   .hero, .terminal-panel, .panel-heading { align-items: stretch; flex-direction: column; }
-  h1 { font-size: 40px; }
-  .workspace, .grid { grid-template-columns: 1fr; }
+  h1 { font-size: 36px; }
+  .workbench, .form-panel .grid, .result-summary, .path-row { grid-template-columns: 1fr; }
   .terminal-actions, .run-actions { justify-content: flex-start; }
 }
 """
@@ -801,15 +1034,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_text(APP_JS, "application/javascript; charset=utf-8")
         if parsed.path == "/style.css":
             return self.send_text(STYLE_CSS, "text/css; charset=utf-8")
+        if parsed.path.startswith("/build-terminal"):
+            return self.proxy_build_terminal("GET", parsed)
         if parsed.path == "/api/jobs":
-            with LOCK:
-                jobs = [public_job(job) for job in sorted(JOBS.values(), key=lambda item: item["created_at"], reverse=True)]
-            return self.send_json({"jobs": jobs})
+            return self.send_json({"jobs": [public_job(job) for job in list_jobs()]})
         if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/log"):
             job_id = parsed.path.split("/")[3]
             query = urllib.parse.parse_qs(parsed.query)
             offset = int((query.get("offset") or ["0"])[0])
             return self.send_job_log(job_id, offset)
+        if parsed.path.startswith("/api/jobs/"):
+            job_id = parsed.path.split("/")[3]
+            try:
+                return self.send_json(public_job(read_job(job_id)))
+            except FileNotFoundError:
+                return self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
         if parsed.path == "/api/build-terminal/status":
             if not self.authorized():
                 return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
@@ -818,6 +1057,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith("/build-terminal"):
+            return self.proxy_build_terminal("POST", parsed)
         if parsed.path == "/api/jobs":
             return self.create_job()
         if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/cancel"):
@@ -851,25 +1092,76 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(job)
 
     def send_job_log(self, job_id: str, offset: int) -> None:
-        with LOCK:
-            job = JOBS.get(job_id)
-            if not job:
-                return self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
-            text = "\n".join(job.get("log") or [])
-            if text:
-                text += "\n"
-        chunk = text[offset:]
-        self.send_json({"text": chunk, "next_offset": offset + len(chunk)})
+        path = job_log_path(job_id)
+        if not path.is_file():
+            return self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
+        raw = path.read_bytes()
+        offset = max(0, min(offset, len(raw)))
+        chunk = raw[offset:].decode("utf-8", "replace")
+        self.send_json({"text": chunk, "next_offset": len(raw), "offset": len(raw)})
+
+    def proxy_build_terminal(self, method: str, parsed: urllib.parse.ParseResult) -> None:
+        suffix = parsed.path[len("/build-terminal") :]
+        if suffix in ("", "/"):
+            suffix = "/"
+        target = REMOTE_BUILD_CONSOLE_URL.rstrip("/") + suffix
+        if parsed.query:
+            target += "?" + parsed.query
+        data = None
+        headers = {}
+        if method == "POST":
+            length = int(self.headers.get("Content-Length") or 0)
+            data = self.rfile.read(length) if length else b""
+            content_type = self.headers.get("Content-Type")
+            if content_type:
+                headers["Content-Type"] = content_type
+        try:
+            req = urllib.request.Request(target, data=data, headers=headers, method=method)
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                body = resp.read()
+                content_type = resp.headers.get("Content-Type", "application/octet-stream")
+                body = self.rewrite_build_terminal_asset(body, content_type)
+                self.send_response(resp.status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+        except Exception:
+            self.send_text(
+                "<!doctype html><meta charset='utf-8'><body>ビルド端末コンソールを表示できません。</body>",
+                "text/html; charset=utf-8",
+                status=HTTPStatus.BAD_GATEWAY,
+            )
+
+    def rewrite_build_terminal_asset(self, body: bytes, content_type: str) -> bytes:
+        if "text/html" in content_type or "application/javascript" in content_type:
+            text = body.decode("utf-8", "replace")
+            text = text.replace('href="/style.css', 'href="/build-terminal/style.css')
+            text = text.replace('src="/app.js', 'src="/build-terminal/app.js')
+            text = text.replace("fetch('/api/", "fetch('/build-terminal/api/")
+            text = text.replace("fetch(`/api/", "fetch(`/build-terminal/api/")
+            text = text.replace('href="/api/', 'href="/build-terminal/api/')
+            text = text.replace("url('/", "url('/build-terminal/")
+            return text.encode("utf-8")
+        return body
 
     def authorized(self) -> bool:
         header = self.headers.get("X-Management-Token") or ""
         expected = MANAGEMENT_TOKEN
         return bool(header and secrets.compare_digest(header, expected))
 
-    def send_text(self, text: str, content_type: str, set_token: bool = False) -> None:
+    def send_text(
+        self,
+        text: str,
+        content_type: str,
+        set_token: bool = False,
+        status: HTTPStatus = HTTPStatus.OK,
+    ) -> None:
         data = text.encode("utf-8")
-        self.send_response(HTTPStatus.OK)
+        self.send_response(status)
         self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store, max-age=0, must-revalidate")
         self.send_header("Content-Length", str(len(data)))
         if set_token:
             self.send_header("Set-Cookie", f"host_console_token={MANAGEMENT_TOKEN}; Path=/; SameSite=Strict")

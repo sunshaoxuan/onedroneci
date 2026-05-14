@@ -54,6 +54,19 @@ def test_create_build_requires_backend_branch(tmp_path, monkeypatch):
         raise AssertionError("empty branch should fail")
 
 
+def test_build_console_page_has_i18n_without_breaking_api():
+    server = load_server()
+
+    assert "<html lang=\"ja-JP\">" in server.INDEX_HTML
+    assert "data-i18n=\"title\"" in server.INDEX_HTML
+    for lang in ("ja-JP", "zh-CN", "en-US"):
+        assert f"'{lang}'" in server.APP_JS
+    for key in ("startBuild", "stopBuild", "historyTitle", "logTitle", "needBackend"):
+        assert key in server.APP_JS
+    for step_id in ("validate", "checkout_backend", "build_backend", "restore_frontend", "build_frontend", "collect_artifacts"):
+        assert step_id in server.APP_JS
+
+
 def test_create_build_requires_frontend_release_branch_when_frontend_enabled(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)
