@@ -250,12 +250,11 @@ def test_resume_unfinished_jobs_restarts_monitor_thread(tmp_path, monkeypatch):
 
 def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "product_dir" in console.APP_JS
-    assert "standalone_zip" in console.APP_JS
-    assert "version_txt" in console.APP_JS
     assert "outputs.package_zip" in console.APP_JS
     assert "outputs.web_zip" in console.APP_JS
-    assert "const deliveryPaths" in console.APP_JS
-    assert "const intermediatePaths = deliveryPaths ? ''" in console.APP_JS
+    assert "const pathList = outputs.product_dir ? pathRow(t('productDir'), outputs.product_dir)" in console.APP_JS
+    assert "${pathRow(t('standaloneZip'), outputs.standalone_zip)}" not in console.APP_JS
+    assert "${pathRow(t('versionTxt'), outputs.version_txt)}" not in console.APP_JS
     assert "navigator.clipboard.writeText" in console.APP_JS
     assert ".workbench" in console.STYLE_CSS
     assert ".log-panel" in console.STYLE_CSS
