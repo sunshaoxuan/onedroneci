@@ -47,6 +47,33 @@ TERMINAL_LABELS = {
     "en-US": "build terminal",
 }
 
+HOST_PROGRESS_STEPS = [
+    "terminal_check",
+    "terminal_dispatch",
+    "terminal_build",
+    "download_artifacts",
+    "sql_assets",
+    "data_sync_assets",
+    "account_sql",
+    "help_sql",
+    "standalone_zip",
+    "complete",
+]
+
+PACKAGING_STEP_MAP = {
+    "sql_svn_download": "sql_assets",
+    "sql_template_copy": "sql_assets",
+    "data_sync_git_sync": "data_sync_assets",
+    "data_sync_copy": "data_sync_assets",
+    "account_sql_patch": "account_sql",
+    "help_sql_replace": "help_sql",
+    "standalone_zip_rebuild": "standalone_zip",
+}
+
+
+def make_progress() -> list[dict[str, Any]]:
+    return [{"id": step_id, "status": "pending", "started_at": None, "finished_at": None} for step_id in HOST_PROGRESS_STEPS]
+
 JOBS: dict[str, dict[str, Any]] = {}
 LOCK = threading.RLock()
 CANCELLED: set[str] = set()
@@ -179,6 +206,7 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
             "request": payload,
             "log": [],
             "outputs": {},
+            "progress": make_progress(),
         }
         job_dir(job_id).mkdir(parents=True, exist_ok=True)
         job_log_path(job_id).write_text("", encoding="utf-8")
@@ -223,6 +251,47 @@ def update_job(job_id: str, **updates: Any) -> None:
         job["updated_at"] = now()
         JOBS[job_id] = job
         write_job(job)
+
+
+def update_progress(job_id: str, step_id: str, status: str) -> None:
+    with LOCK:
+        job = JOBS.get(job_id) or read_job(job_id)
+        progress = list(job.get("progress") or make_progress())
+        known = {str(item.get("id")) for item in progress}
+        if step_id not in known:
+            progress.append({"id": step_id, "status": "pending", "started_at": None, "finished_at": None})
+        for step in progress:
+            if step.get("id") != step_id:
+                continue
+            if status == "running" and not step.get("started_at"):
+                step["started_at"] = now()
+            if status in ("success", "failed", "cancelled", "skipped"):
+                if not step.get("started_at"):
+                    step["started_at"] = now()
+                step["finished_at"] = now()
+            step["status"] = status
+        job["progress"] = progress
+        job["updated_at"] = now()
+        JOBS[job_id] = job
+        write_job(job)
+
+
+def finish_progress_before(job_id: str, step_id: str) -> None:
+    progress = (JOBS.get(job_id) or read_job(job_id)).get("progress") or make_progress()
+    for step in progress:
+        if step.get("id") == step_id:
+            break
+        if step.get("status") in ("pending", "running"):
+            update_progress(job_id, str(step.get("id")), "success")
+
+
+def fail_active_progress(job_id: str, status: str = "failed") -> None:
+    with LOCK:
+        job = JOBS.get(job_id) or read_job(job_id)
+        progress = list(job.get("progress") or make_progress())
+        active = next((step for step in progress if step.get("status") == "running"), None)
+    if active:
+        update_progress(job_id, str(active.get("id")), status)
 
 
 def check_cancelled(job_id: str) -> None:
@@ -400,13 +469,18 @@ def run_job(job_id: str) -> None:
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
         update_job(job_id, status="running")
+        update_progress(job_id, "terminal_check", "running")
         terminal = build_terminal_status()
         if terminal["status"] != "running":
             raise RuntimeError("build_terminal_unavailable")
+        update_progress(job_id, "terminal_check", "success")
 
         if remote_id:
             append_log(job_id, f"resume_remote_build: {remote_id}")
+            update_progress(job_id, "terminal_dispatch", "success")
+            update_progress(job_id, "terminal_build", "running")
         else:
+            update_progress(job_id, "terminal_dispatch", "running")
             append_log(job_id, "build_terminal_dispatch")
             remote_payload = {
                 "build_backend": build_backend,
@@ -424,6 +498,8 @@ def run_job(job_id: str) -> None:
             remote_build = remote_json(REMOTE_BUILD_CONSOLE_URL, "/api/builds", remote_payload)
             remote_id = remote_build["id"]
             update_job(job_id, remote_build_id=remote_id)
+            update_progress(job_id, "terminal_dispatch", "success")
+            update_progress(job_id, "terminal_build", "running")
             append_log(job_id, f"remote_build_id: {remote_id}")
 
         while True:
@@ -437,8 +513,10 @@ def run_job(job_id: str) -> None:
                 break
             update_job(job_id, remote_build_status=status["status"], heartbeat_at=now())
             time.sleep(5)
+        update_progress(job_id, "terminal_build", "success")
 
         check_cancelled(job_id)
+        update_progress(job_id, "download_artifacts", "running")
         append_log(job_id, "download_artifacts")
         package_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "package.zip", work_dir / "package.zip") if build_backend else None
         web_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "web.zip", work_dir / "web.zip") if build_frontend else None
@@ -446,7 +524,11 @@ def run_job(job_id: str) -> None:
             "package_zip": str(package_zip) if package_zip else "",
             "web_zip": str(web_zip) if web_zip else "",
         }
+        update_progress(job_id, "download_artifacts", "success")
         if not (build_backend and build_frontend):
+            for step_id in ("sql_assets", "data_sync_assets", "account_sql", "help_sql", "standalone_zip"):
+                update_progress(job_id, step_id, "skipped")
+            update_progress(job_id, "complete", "success")
             update_job(job_id, status="success", outputs=partial_outputs)
             append_log(job_id, "selected_artifacts_done")
             return
@@ -454,6 +536,10 @@ def run_job(job_id: str) -> None:
         check_cancelled(job_id)
         append_log(job_id, "standalone_packaging")
         def package_log(message: str) -> None:
+            step_id = PACKAGING_STEP_MAP.get(message)
+            if step_id:
+                finish_progress_before(job_id, step_id)
+                update_progress(job_id, step_id, "running")
             append_log(job_id, message)
 
         outputs = build_product_package(
@@ -487,12 +573,19 @@ def run_job(job_id: str) -> None:
             logger=package_log,
         )
         outputs.update(partial_outputs)
+        for step_id in ("sql_assets", "data_sync_assets", "account_sql", "help_sql", "standalone_zip"):
+            current = next((step for step in (read_job(job_id).get("progress") or []) if step.get("id") == step_id), {})
+            if current.get("status") in ("pending", "running"):
+                update_progress(job_id, step_id, "success")
+        update_progress(job_id, "complete", "success")
         update_job(job_id, status="success", outputs=outputs)
         append_log(job_id, "standalone_package_done")
     except JobCancelled:
+        fail_active_progress(job_id, "cancelled")
         update_job(job_id, status="cancelled")
         append_log(job_id, "cancelled")
     except Exception as exc:
+        fail_active_progress(job_id, "failed")
         update_job(job_id, status="failed", error=redact_build_terminal(str(exc)))
         append_log(job_id, f"failed: {exc}")
 
@@ -671,6 +764,19 @@ const I18N = {
     terminalConsole: 'ビルド端末コンソール',
     terminalConsoleLocked: '構造開始後に表示できます',
     terminalHeartbeat: 'ビルド端末稼働中',
+    progressTitle: '全体進捗',
+    progressSteps: {
+      terminal_check: '端末確認',
+      terminal_dispatch: '端末依頼',
+      terminal_build: '端末構築',
+      download_artifacts: '成果物取得',
+      sql_assets: 'SQL 資材',
+      data_sync_assets: 'データ連携',
+      account_sql: '4.account.sql',
+      help_sql: 'Help SQL',
+      standalone_zip: '最終 ZIP',
+      complete: '完了'
+    },
     autoScroll: '自動スクロール',
     selectTask: 'タスクを選択してください。',
     noTask: 'タスク未選択',
@@ -731,6 +837,19 @@ const I18N = {
     terminalConsole: '构建终端控制台',
     terminalConsoleLocked: '开始构造后可打开',
     terminalHeartbeat: '构建终端运行中',
+    progressTitle: '整体进度',
+    progressSteps: {
+      terminal_check: '终端确认',
+      terminal_dispatch: '终端派发',
+      terminal_build: '终端构建',
+      download_artifacts: '下载成果物',
+      sql_assets: 'SQL 资材',
+      data_sync_assets: '数据连携',
+      account_sql: '4.account.sql',
+      help_sql: 'Help SQL',
+      standalone_zip: '最终 ZIP',
+      complete: '完成'
+    },
     autoScroll: '自动滚动',
     selectTask: '请选择任务。',
     noTask: '未选择任务',
@@ -791,6 +910,19 @@ const I18N = {
     terminalConsole: 'Build terminal console',
     terminalConsoleLocked: 'Available after build starts',
     terminalHeartbeat: 'Build terminal active',
+    progressTitle: 'Overall progress',
+    progressSteps: {
+      terminal_check: 'Check terminal',
+      terminal_dispatch: 'Dispatch',
+      terminal_build: 'Terminal build',
+      download_artifacts: 'Download artifacts',
+      sql_assets: 'SQL assets',
+      data_sync_assets: 'Data sync',
+      account_sql: '4.account.sql',
+      help_sql: 'Help SQL',
+      standalone_zip: 'Final ZIP',
+      complete: 'Complete'
+    },
     autoScroll: 'Auto scroll',
     selectTask: 'Select a task.',
     noTask: 'No task selected',
@@ -1176,6 +1308,28 @@ function pathRow(label, value) {
   return `<div class="path-row"><span>${label}</span><code>${safe}</code><button type="button" class="copy-path" data-path="${safe}">${t('copy')}</button></div>`;
 }
 
+function progressLabel(id) {
+  const labels = t('progressSteps');
+  return (labels && labels[id]) || id;
+}
+
+function renderProgress(job) {
+  const progress = job.progress || [];
+  if (!progress.length) return '';
+  const items = progress.map((step, index) => {
+    const status = step.status || 'pending';
+    return `<li class="${escapeHtml(status)}">
+      <span class="progress-index">${index + 1}</span>
+      <span class="progress-name">${escapeHtml(progressLabel(step.id))}</span>
+      <span class="progress-status">${escapeHtml(status)}</span>
+    </li>`;
+  }).join('');
+  return `<section class="overall-progress">
+    <h3>${t('progressTitle')}</h3>
+    <ol>${items}</ol>
+  </section>`;
+}
+
 async function copyText(text) {
   if (navigator.clipboard && window.isSecureContext) {
     await navigator.clipboard.writeText(text);
@@ -1206,6 +1360,7 @@ function renderResult(job) {
       ${pathRow('web.zip', outputs.web_zip)}
   `;
   box.innerHTML = `
+    ${renderProgress(job)}
     <div class="result-summary">
       <div><span>ID</span><strong>${escapeHtml(job.id)}</strong></div>
       <div><span>Status</span><strong>${escapeHtml(job.status)}</strong></div>
@@ -1392,6 +1547,52 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   white-space: nowrap;
 }
 .empty-state { color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 18px; }
+.overall-progress { margin-bottom: 16px; }
+.overall-progress h3 { margin: 0 0 10px; font-size: 15px; }
+.overall-progress ol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.overall-progress li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f5f8fb;
+}
+.progress-index {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #e8f1f4;
+  color: var(--accent-dark);
+  font-weight: 900;
+  font-size: 12px;
+}
+.progress-name { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-status { color: var(--muted); font-size: 11px; }
+.overall-progress li.success { border-color: #9ce7ba; background: #ecfdf3; }
+.overall-progress li.success .progress-index { background: #d7f8e4; color: var(--success); }
+.overall-progress li.running { border-color: #8ac8da; background: #edf8fb; }
+.overall-progress li.running .progress-index { background: var(--accent); color: #fff; animation: pulse 1.2s infinite ease-in-out; }
+.overall-progress li.failed { border-color: #ffc7c1; background: #fff4f2; }
+.overall-progress li.failed .progress-index { background: #fff1f0; color: var(--danger); }
+.overall-progress li.cancelled,
+.overall-progress li.skipped { opacity: .72; }
+@keyframes pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(23, 107, 135, .32); }
+  50% { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(23, 107, 135, 0); }
+}
 .result-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .result-summary div { padding: 10px; background: #f5f8fb; border: 1px solid var(--line); border-radius: 8px; }
 .result-summary span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
@@ -1429,7 +1630,7 @@ pre {
 @media (max-width: 980px) {
   .hero, .terminal-panel, .panel-heading { align-items: stretch; flex-direction: column; }
   h1 { font-size: 36px; }
-  .workbench, .form-panel .grid, .result-summary, .path-row { grid-template-columns: 1fr; }
+  .workbench, .form-panel .grid, .result-summary, .path-row, .overall-progress ol { grid-template-columns: 1fr; }
   .terminal-actions, .run-actions { justify-content: flex-start; }
 }
 """

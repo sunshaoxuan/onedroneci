@@ -182,6 +182,8 @@ def test_create_job_persists_metadata_and_log(tmp_path, monkeypatch):
     )
     console.append_log(job["id"], "hello")
 
+    stored = console.read_job(job["id"])
+    assert [step["id"] for step in stored["progress"]] == console.HOST_PROGRESS_STEPS
     assert (tmp_path / job["id"] / "metadata.json").is_file()
     assert (tmp_path / job["id"] / "job.log").read_text(encoding="utf-8").strip().endswith("hello")
     console.JOBS.clear()
@@ -287,6 +289,34 @@ def test_delete_failed_job_removes_partial_remote_id_output_dir(tmp_path, monkey
     assert not (output_root / remote_id).exists()
 
 
+def test_progress_helpers_update_and_fail_active_step(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(console, "JOBS", {})
+    job_id = "20260514111114"
+    console.write_job(
+        {
+            "id": job_id,
+            "status": "running",
+            "created_at": 1,
+            "updated_at": 1,
+            "request": {},
+            "progress": console.make_progress(),
+        }
+    )
+
+    console.update_progress(job_id, "terminal_build", "running")
+    stored = console.read_job(job_id)
+    step = next(item for item in stored["progress"] if item["id"] == "terminal_build")
+    assert step["status"] == "running"
+    assert step["started_at"] is not None
+
+    console.fail_active_progress(job_id)
+    stored = console.read_job(job_id)
+    step = next(item for item in stored["progress"] if item["id"] == "terminal_build")
+    assert step["status"] == "failed"
+    assert step["finished_at"] is not None
+
+
 def test_resume_unfinished_jobs_restarts_monitor_thread(tmp_path, monkeypatch):
     monkeypatch.setattr(console, "DATA_DIR", tmp_path)
     console.JOBS.clear()
@@ -330,6 +360,10 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "product_dir" in console.APP_JS
     assert "outputs.package_zip" in console.APP_JS
     assert "outputs.web_zip" in console.APP_JS
+    assert "function renderProgress(job)" in console.APP_JS
+    assert "overall-progress" in console.APP_JS
+    assert "progressSteps" in console.APP_JS
+    assert "@keyframes pulse" in console.STYLE_CSS
     assert "const pathList = outputs.product_dir ? pathRow(t('productDir'), outputs.product_dir)" in console.APP_JS
     assert "${pathRow(t('standaloneZip'), outputs.standalone_zip)}" not in console.APP_JS
     assert "${pathRow(t('versionTxt'), outputs.version_txt)}" not in console.APP_JS
