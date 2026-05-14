@@ -151,6 +151,73 @@ def test_patch_account_sql_replaces_organisation_values():
     assert "国立大学法人北陸先端科学技術大学院大学" not in patched
 
 
+def test_data_sync_git_uses_shallow_clone_and_timeout(monkeypatch, tmp_path):
+    import standalone_packager as packager
+
+    calls: list[tuple[list[str], int | None]] = []
+
+    def fake_run(cmd, check, timeout=None):
+        calls.append((cmd, timeout))
+
+    monkeypatch.setattr(packager.subprocess, "run", fake_run)
+
+    packager.sync_git_tree("https://example.test/data.git", "master", tmp_path / "data-sync", timeout=123)
+
+    assert calls == [
+        (
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                "master",
+                "https://example.test/data.git",
+                str(tmp_path / "data-sync"),
+            ],
+            123,
+        )
+    ]
+
+
+def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
+    import standalone_packager as packager
+
+    template = tmp_path / "OneHrStandalone.zip"
+    sql_dir = tmp_path / "sql"
+    package_zip = tmp_path / "package.zip"
+    web_zip = tmp_path / "web.zip"
+    output = tmp_path / "out"
+    data_sync_work = tmp_path / "data-sync-work"
+    make_template(template)
+    make_sql_templates(sql_dir)
+    (data_sync_work / "updsv7phr" / "PHR").mkdir(parents=True)
+    (data_sync_work / "updsv7phr" / "PHR" / "00_all_updsv7tophr.sql").write_text("sync", encoding="utf-8")
+    package_zip.write_bytes(b"new-package")
+    with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("ohr-cicd/web_prod/meta.json", "{}")
+    monkeypatch.setattr(packager, "sync_git_tree", lambda repo_url, branch, workdir: None)
+    logs: list[str] = []
+
+    build_product_package(
+        template_zip=template,
+        sql_template_dir=sql_dir,
+        output_root=output,
+        package_zip=package_zip,
+        web_zip=web_zip,
+        version=BuildVersion("build-logs", "release_back", "release_front"),
+        config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
+        sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
+        data_sync_git_url="https://example.test/data.git",
+        data_sync_dir=data_sync_work,
+        logger=logs.append,
+    )
+
+    assert "data_sync_git_sync" in logs
+    assert "data_sync_copy" in logs
+    assert "standalone_zip_rebuild" in logs
+
+
 def test_default_organisation_dstart_uses_first_day_of_month():
     from datetime import date
 

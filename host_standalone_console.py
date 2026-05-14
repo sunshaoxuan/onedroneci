@@ -451,6 +451,9 @@ def run_job(job_id: str) -> None:
 
         check_cancelled(job_id)
         append_log(job_id, "standalone_packaging")
+        def package_log(message: str) -> None:
+            append_log(job_id, message)
+
         outputs = build_product_package(
             template_zip=configured_template_zip(),
             sql_template_dir=configured_sql_template_dir(),
@@ -479,6 +482,7 @@ def run_job(job_id: str) -> None:
             data_sync_branch=configured_data_sync_branch(),
             data_sync_dir=configured_data_sync_dir(),
             data_sync_subdir=configured_data_sync_subdir(),
+            logger=package_log,
         )
         outputs.update(partial_outputs)
         update_job(job_id, status="success", outputs=outputs)
@@ -865,6 +869,13 @@ function translateLogText(text) {
       'download_artifacts': 'package.zip / web.zip を取得しています',
       'selected_artifacts_done': '選択した成果物の取得が完了しました',
       'standalone_packaging': '製品交付パッケージを生成しています',
+      'sql_svn_download': 'SQL 資材を取得しています',
+      'sql_template_copy': 'SQL 資材を配置しています',
+      'data_sync_git_sync': 'データ連携資材を取得しています',
+      'data_sync_copy': 'データ連携資材を配置しています',
+      'account_sql_patch': '4.account.sql を反映しています',
+      'help_sql_replace': 'Help SQL を反映しています',
+      'standalone_zip_rebuild': 'OneHrStandalone.zip を生成しています',
       'standalone_package_done': '製品交付パッケージの生成が完了しました',
       'cancelled': '停止しました',
       'failed': '失敗',
@@ -883,6 +894,13 @@ function translateLogText(text) {
       'download_artifacts': 'Downloading package.zip / web.zip',
       'selected_artifacts_done': 'Selected artifacts downloaded',
       'standalone_packaging': 'Generating delivery package',
+      'sql_svn_download': 'Downloading SQL assets',
+      'sql_template_copy': 'Copying SQL assets',
+      'data_sync_git_sync': 'Fetching data synchronization assets',
+      'data_sync_copy': 'Copying data synchronization assets',
+      'account_sql_patch': 'Applying 4.account.sql changes',
+      'help_sql_replace': 'Applying Help SQL',
+      'standalone_zip_rebuild': 'Generating OneHrStandalone.zip',
       'standalone_package_done': 'Delivery package generated',
       'cancelled': 'Stopped',
       'failed': 'Failed',

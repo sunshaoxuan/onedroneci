@@ -262,18 +262,18 @@ def patch_account_sql(text: str, config: ProductSqlConfig) -> str:
     return patched
 
 
-def sync_git_tree(repo_url: str, branch: str, workdir: Path) -> None:
+def sync_git_tree(repo_url: str, branch: str, workdir: Path, timeout: int = 900) -> None:
     workdir.parent.mkdir(parents=True, exist_ok=True)
     if (workdir / ".git").is_dir():
-        subprocess.run(["git", "-C", str(workdir), "remote", "set-url", "origin", repo_url], check=True)
-        subprocess.run(["git", "-C", str(workdir), "fetch", "origin", branch, "--prune"], check=True)
-        subprocess.run(["git", "-C", str(workdir), "checkout", "-B", branch, f"origin/{branch}"], check=True)
-        subprocess.run(["git", "-C", str(workdir), "reset", "--hard", f"origin/{branch}"], check=True)
-        subprocess.run(["git", "-C", str(workdir), "clean", "-fd"], check=True)
+        subprocess.run(["git", "-C", str(workdir), "remote", "set-url", "origin", repo_url], check=True, timeout=timeout)
+        subprocess.run(["git", "-C", str(workdir), "fetch", "origin", branch, "--prune", "--depth", "1"], check=True, timeout=timeout)
+        subprocess.run(["git", "-C", str(workdir), "checkout", "-B", branch, f"origin/{branch}"], check=True, timeout=timeout)
+        subprocess.run(["git", "-C", str(workdir), "reset", "--hard", f"origin/{branch}"], check=True, timeout=timeout)
+        subprocess.run(["git", "-C", str(workdir), "clean", "-fd"], check=True, timeout=timeout)
         return
     if workdir.exists():
         shutil.rmtree(workdir)
-    subprocess.run(["git", "clone", "--branch", branch, repo_url, str(workdir)], check=True)
+    subprocess.run(["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(workdir)], check=True, timeout=timeout)
 
 
 def copy_data_sync_assets(
@@ -283,13 +283,18 @@ def copy_data_sync_assets(
     workdir: Path,
     subdir: str,
     target_dir: Path,
+    logger: Any | None = None,
 ) -> None:
+    if logger:
+        logger("data_sync_git_sync")
     sync_git_tree(repo_url, branch, workdir)
     source = workdir / Path(subdir)
     if not source.is_dir():
         raise FileNotFoundError(f"missing data synchronization directory: {source}")
     if target_dir.exists():
         shutil.rmtree(target_dir)
+    if logger:
+        logger("data_sync_copy")
     shutil.copytree(source, target_dir)
 
 
@@ -308,6 +313,7 @@ def build_product_package(
     data_sync_branch: str = DEFAULT_DATA_SYNC_BRANCH,
     data_sync_dir: Path | None = None,
     data_sync_subdir: str = DEFAULT_DATA_SYNC_SUBDIR,
+    logger: Any | None = None,
 ) -> dict[str, Any]:
     if not template_zip.is_file():
         raise FileNotFoundError(f"missing standalone template: {template_zip}")
@@ -319,6 +325,8 @@ def build_product_package(
         effective_sql_dir = sql_template_dir
         if sql_svn_url:
             effective_sql_dir = Path(sql_tmp) / "sql"
+            if logger:
+                logger("sql_svn_download")
             download_svn_http_tree(sql_svn_url, effective_sql_dir)
         if not (effective_sql_dir / "1.tenant").is_dir() or not (effective_sql_dir / "2.ohr").is_dir():
             raise FileNotFoundError(f"missing SQL templates under: {effective_sql_dir}")
@@ -330,6 +338,8 @@ def build_product_package(
             shutil.rmtree(delivery_root)
         product_dir.mkdir(parents=True, exist_ok=True)
 
+        if logger:
+            logger("sql_template_copy")
         shutil.copytree(effective_sql_dir / "1.tenant", product_dir / "1.tenant")
         shutil.copytree(effective_sql_dir / "2.ohr", product_dir / "2.ohr")
         if data_sync_git_url:
@@ -339,16 +349,23 @@ def build_product_package(
                 workdir=data_sync_dir or configured_data_sync_dir(),
                 subdir=data_sync_subdir,
                 target_dir=data_sync_target,
+                logger=logger,
             )
         account_sql = product_dir / "2.ohr" / "4.account.sql"
+        if logger:
+            logger("account_sql_patch")
         account_sql.write_text(
             patch_account_sql(account_sql.read_text(encoding="utf-8"), sql_config),
             encoding="utf-8",
         )
+        if logger:
+            logger("help_sql_replace")
         _replace_help_sql_if_present(web_zip, product_dir / "1.tenant" / "ohr_help.sql")
         (product_dir / "version.txt").write_text(render_version_txt(version), encoding="utf-8")
 
         final_zip = product_dir / "OneHrStandalone.zip"
+        if logger:
+            logger("standalone_zip_rebuild")
         _rebuild_standalone_zip(template_zip, final_zip, package_zip, web_zip, config)
         return {
             "product_dir": str(delivery_root),
