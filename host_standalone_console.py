@@ -18,11 +18,14 @@ from hv_vm_tools import hyperv_host
 from hv_vm_tools.config import Settings
 from standalone_packager import (
     BuildVersion,
+    ProductSqlConfig,
     StandaloneConfig,
     build_product_package,
     configured_output_dir,
     configured_sql_template_dir,
+    configured_sql_svn_url,
     configured_template_zip,
+    default_organisation_dstart,
     download_remote_artifact,
     remote_json,
 )
@@ -405,6 +408,11 @@ def run_job(job_id: str) -> None:
                 ohr_host_address=req.get("ohr_host_address") or req["conf_server_host"],
                 ohr_service_port=int(req.get("ohr_service_port") or 3198),
             ),
+            sql_config=ProductSqlConfig(
+                organisation_name=req["organisation_name"],
+                organisation_dstart=req.get("organisation_dstart") or default_organisation_dstart(),
+            ),
+            sql_svn_url=configured_sql_svn_url(),
         )
         outputs.update(partial_outputs)
         update_job(job_id, status="success", outputs=outputs)
@@ -494,6 +502,8 @@ INDEX_HTML = """<!doctype html>
         <label><span data-i18n="postgresPassword">PostgreSQL Password</span><input name="postgresql_password" value="password"></label>
         <label><span data-i18n="appHostName">アプリケーションサービスホスト名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
         <label><span data-i18n="ohrServicePort">OHR Service Port</span><input name="ohr_service_port" type="number" value="3198"></label>
+        <label><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
+        <label><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
       </div>
     </form>
 
@@ -577,6 +587,9 @@ const I18N = {
     appHostName: 'アプリケーションサービスホスト名',
     appHostPlaceholder: '顧客アクセスアドレスを使用',
     ohrServicePort: 'OHR サービスポート',
+    organisationName: '顧客機関名',
+    organisationNamePlaceholder: '例：学校法人サンプル',
+    organisationDstart: '機関開始日',
     historyKicker: '履歴',
     historyTitle: '構造履歴',
     resultKicker: '結果',
@@ -631,6 +644,9 @@ const I18N = {
     appHostName: '应用服务主机名',
     appHostPlaceholder: '默认取客户访问地址',
     ohrServicePort: 'OHR 服务端口',
+    organisationName: '客户机构名称',
+    organisationNamePlaceholder: '例如：学校法人サンプル',
+    organisationDstart: '机构开始日',
     historyKicker: '历史',
     historyTitle: '构造历史',
     resultKicker: '结果',
@@ -685,6 +701,9 @@ const I18N = {
     appHostName: 'Application service host name',
     appHostPlaceholder: 'Use customer access address',
     ohrServicePort: 'OHR Service Port',
+    organisationName: 'Customer organisation name',
+    organisationNamePlaceholder: 'Example: Sample University',
+    organisationDstart: 'Organisation start date',
     historyKicker: 'History',
     historyTitle: 'Build history',
     resultKicker: 'Result',
@@ -721,6 +740,10 @@ let lastTerminalStatus = 'unknown';
 const MAX_LOG_LINES = 1600;
 
 function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N['ja-JP'][key] || key; }
+function firstDayOfCurrentMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+}
 function token() {
   const found = document.cookie.split('; ').find(row => row.startsWith('host_console_token='));
   return found ? decodeURIComponent(found.split('=').slice(1).join('=')) : '';
@@ -1081,6 +1104,7 @@ function renderResult(job) {
 }
 
 applyI18n();
+document.getElementById('organisation-dstart').value = firstDayOfCurrentMonth();
 refreshTerminal();
 loadBranchLists();
 refresh();
@@ -1326,7 +1350,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         required = ["conf_server_host"] if build_frontend else []
         if build_backend and build_frontend:
-            required.append("postgresql_host")
+            required.extend(["postgresql_host", "organisation_name"])
         for key in required:
             if not str(payload.get(key) or "").strip():
                 self.send_json({"error": f"missing {key}"}, HTTPStatus.BAD_REQUEST)

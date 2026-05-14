@@ -161,6 +161,9 @@ def test_console_uses_commercial_delivery_package_naming():
     assert "Shomu Jimu System Builder" in console.APP_JS
     assert "最终安装包" not in console.APP_JS
     assert "最終インストールパッケージ" not in console.APP_JS
+    assert "organisation_name" in console.INDEX_HTML
+    assert "organisation_dstart" in console.INDEX_HTML
+    assert "firstDayOfCurrentMonth" in console.APP_JS
 
 
 def test_create_job_persists_metadata_and_log(tmp_path, monkeypatch):
