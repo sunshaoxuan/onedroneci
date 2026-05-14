@@ -1318,10 +1318,11 @@ function renderProgress(job) {
   if (!progress.length) return '';
   const items = progress.map((step, index) => {
     const status = step.status || 'pending';
+    const icon = status === 'success' ? '✓' : status === 'running' ? '▶' : status === 'failed' ? '!' : status === 'cancelled' ? '×' : '◷';
     return `<li class="${escapeHtml(status)}">
-      <span class="progress-index">${index + 1}</span>
+      <span class="progress-icon">${icon}</span>
       <span class="progress-name">${escapeHtml(progressLabel(step.id))}</span>
-      <span class="progress-status">${escapeHtml(status)}</span>
+      <span class="progress-index">${index + 1}</span>
     </li>`;
   }).join('');
   return `<section class="overall-progress">
@@ -1551,47 +1552,58 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .overall-progress h3 { margin: 0 0 10px; font-size: 15px; }
 .overall-progress ol {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .overall-progress li {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-rows: 24px minmax(28px, auto) 14px;
+  justify-items: center;
   align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 8px 10px;
+  gap: 3px;
+  min-height: 76px;
+  padding: 7px 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f5f8fb;
+  text-align: center;
 }
-.progress-index {
+.progress-icon {
   display: inline-grid;
   place-items: center;
   width: 24px;
   height: 24px;
   border-radius: 999px;
   background: #e8f1f4;
-  color: var(--accent-dark);
+  color: #778394;
   font-weight: 900;
   font-size: 12px;
 }
-.progress-name { font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.progress-status { color: var(--muted); font-size: 11px; }
+.progress-name {
+  font-weight: 850;
+  line-height: 1.2;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.progress-index {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
 .overall-progress li.success { border-color: #9ce7ba; background: #ecfdf3; }
-.overall-progress li.success .progress-index { background: #d7f8e4; color: var(--success); }
+.overall-progress li.success .progress-icon { background: #d7f8e4; color: var(--success); }
 .overall-progress li.running { border-color: #8ac8da; background: #edf8fb; }
-.overall-progress li.running .progress-index { background: var(--accent); color: #fff; animation: pulse 1.2s infinite ease-in-out; }
+.overall-progress li.running .progress-icon { background: #1677ff; color: #fff; animation: spin 1.1s infinite linear; }
 .overall-progress li.failed { border-color: #ffc7c1; background: #fff4f2; }
-.overall-progress li.failed .progress-index { background: #fff1f0; color: var(--danger); }
+.overall-progress li.failed .progress-icon { background: #fff1f0; color: var(--danger); }
 .overall-progress li.cancelled,
 .overall-progress li.skipped { opacity: .72; }
-@keyframes pulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(23, 107, 135, .32); }
-  50% { transform: scale(1.08); box-shadow: 0 0 0 6px rgba(23, 107, 135, 0); }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 .result-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .result-summary div { padding: 10px; background: #f5f8fb; border: 1px solid var(--line); border-radius: 8px; }
@@ -1630,7 +1642,8 @@ pre {
 @media (max-width: 980px) {
   .hero, .terminal-panel, .panel-heading { align-items: stretch; flex-direction: column; }
   h1 { font-size: 36px; }
-  .workbench, .form-panel .grid, .result-summary, .path-row, .overall-progress ol { grid-template-columns: 1fr; }
+  .workbench, .form-panel .grid, .result-summary, .path-row { grid-template-columns: 1fr; }
+  .overall-progress ol { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .terminal-actions, .run-actions { justify-content: flex-start; }
 }
 """

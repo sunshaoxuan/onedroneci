@@ -363,7 +363,9 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "function renderProgress(job)" in console.APP_JS
     assert "overall-progress" in console.APP_JS
     assert "progressSteps" in console.APP_JS
-    assert "@keyframes pulse" in console.STYLE_CSS
+    assert "progress-icon" in console.APP_JS
+    assert "repeat(10, minmax(0, 1fr))" in console.STYLE_CSS
+    assert "@keyframes spin" in console.STYLE_CSS
     assert "const pathList = outputs.product_dir ? pathRow(t('productDir'), outputs.product_dir)" in console.APP_JS
     assert "${pathRow(t('standaloneZip'), outputs.standalone_zip)}" not in console.APP_JS
     assert "${pathRow(t('versionTxt'), outputs.version_txt)}" not in console.APP_JS
