@@ -8,7 +8,7 @@ def test_cli_version(capsys):
         main(["--version"])
     assert e.value.code == 0
     out = capsys.readouterr().out
-    assert "0.1.0" in out
+    assert "0.2.0" in out
 
 
 def test_cli_ping_missing_subcommand():

@@ -452,6 +452,8 @@ def test_running_status_uses_single_animated_heartbeat_not_log_spam():
     assert "const MAX_LOG_LINES = 1600" in console.APP_JS
     assert "logLines = logLines.slice(logLines.length - MAX_LOG_LINES)" in console.APP_JS
     assert "shouldStickToBottom" in console.APP_JS
+    assert "'产物已收集': '成果物収集完了'" in console.APP_JS
+    assert "const status = translateLogText(rawStatus)" in console.APP_JS
     assert console.filter_display_log("a\nremote_build_status: running\nb") == "a\nb"
 
 

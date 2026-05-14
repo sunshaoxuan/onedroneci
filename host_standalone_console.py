@@ -1018,9 +1018,14 @@ function translateLogText(text) {
       '参数校验': 'パラメータ検証',
       '恢复前端工作区': 'フロントエンド作業区復元',
       '收集产物': '成果物収集',
+      '产物已收集': '成果物収集完了',
       '构建成功': '構築成功',
       '构建失败': '構築失敗',
-      '构建已停止': '構築を停止しました'
+      '构建已停止': '構築を停止しました',
+      'running': '実行中',
+      'success': '成功',
+      'failed': '失敗',
+      'cancelled': '停止済み'
     },
     'en-US': {
       'build_terminal_dispatch': 'Build terminal dispatched',
@@ -1043,9 +1048,38 @@ function translateLogText(text) {
       '参数校验': 'Validate parameters',
       '恢复前端工作区': 'Restore frontend workspace',
       '收集产物': 'Collect artifacts',
+      '产物已收集': 'Artifacts collected',
       '构建成功': 'Build succeeded',
       '构建失败': 'Build failed',
       '构建已停止': 'Build stopped'
+    },
+    'zh-CN': {
+      'build_terminal_dispatch': '已派发到构建终端',
+      'remote_build_id': '构建终端编号',
+      'remote_build_status': '构建终端状态',
+      'download_artifacts': '正在获取 package.zip / web.zip',
+      'selected_artifacts_done': '选定成果物下载完成',
+      'standalone_packaging': '正在生成产品交付包',
+      'sql_svn_download': '正在获取 SQL 资材',
+      'sql_template_copy': '正在配置 SQL 资材',
+      'data_sync_git_sync': '正在获取数据连携资材',
+      'data_sync_copy': '正在配置数据连携资材',
+      'account_sql_patch': '正在修改 4.account.sql',
+      'help_sql_replace': '正在反映 Help SQL',
+      'standalone_zip_rebuild': '正在生成 OneHrStandalone.zip',
+      'standalone_package_done': '产品交付包生成完成',
+      '构建开始': '构建开始',
+      '参数校验': '参数校验',
+      '恢复前端工作区': '恢复前端工作区',
+      '收集产物': '收集产物',
+      '产物已收集': '产物已收集',
+      '构建成功': '构建成功',
+      '构建失败': '构建失败',
+      '构建已停止': '构建已停止',
+      'running': '运行中',
+      'success': '成功',
+      'failed': '失败',
+      'cancelled': '已停止'
     }
   };
   const map = maps[lang] || {};
@@ -1056,7 +1090,8 @@ function translateLogText(text) {
 
 function heartbeatLine(job) {
   if (!job || !['queued', 'running'].includes(job.status)) return '';
-  const status = job.remote_build_status || job.status;
+  const rawStatus = job.remote_build_status || job.status;
+  const status = translateLogText(rawStatus);
   const phase = heartbeatTick % 72;
   const indent = Math.floor(phase / 6);
   const dots = (phase % 6) + 1;

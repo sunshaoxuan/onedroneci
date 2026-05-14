@@ -16,6 +16,11 @@
 - `STANDALONE_OUTPUT_DIR`：产品交付输出目录
 - `STANDALONE_TEMPLATE_ZIP`：固定壳包模板
 - `STANDALONE_SQL_TEMPLATE_DIR`：固定 SQL 模板目录
+- `STANDALONE_SQL_SVN_URL`：最终 SQL 资材 SVN 地址
+- `DATA_SYNC_GIT_URL`：数据连携 Git 仓库
+- `DATA_SYNC_BRANCH`：数据连携 Git 分支，默认 `master`
+- `DATA_SYNC_DIR`：数据连携本地缓存目录
+- `DATA_SYNC_SUBDIR`：数据连携复制子目录，默认 `updsv7phr/PHR`
 
 ## 历史和结果
 
@@ -25,7 +30,69 @@
 - `job.log`：宿主机聚合后的执行日志
 - `package.zip` / `web.zip`：从构建终端下载的中间产物
 
-页面中部显示历史和成果物路径，路径可直接复制；页面底部显示全宽日志窗口。
+页面中部显示历史和成果物路径，路径可直接复制；页面底部显示全宽日志窗口。刷新页面后，主控台优先选中 `queued` / `running` 任务；没有运行中的任务时，选中最近的历史任务。选中任务后，页面会把该任务的请求参数回填到表单中，运行中的任务保持只读。
+
+## 主控流程设计
+
+主控台展示完整交付流程，构建终端内嵌页面只展示构建终端自己的六个构建步骤。主控台的结构化进度字段为 `progress`，包含：
+
+1. `terminal_check`：确认构建终端可用。
+2. `terminal_dispatch`：向构建终端派发构建任务。
+3. `terminal_build`：等待构建终端生成 `package.zip` / `web.zip`。
+4. `download_artifacts`：下载构建终端中间产物。
+5. `sql_assets`：获取并配置 `1.tenant` / `2.ohr` SQL 资材。
+6. `data_sync_assets`：获取并配置 `データ連携`。
+7. `account_sql`：按页面参数修改 `2.ohr/4.account.sql`。
+8. `help_sql`：如果 `web.zip` 中存在 `insert_ohr_help.sql`，替换 `1.tenant/ohr_help.sql`。
+9. `standalone_zip`：重建 `OneHrStandalone.zip`。
+10. `complete`：完整交付目录生成完成。
+
+页面上每个步骤横向显示为小节点：完成为绿色对勾，等待为灰色小钟表，运行中为蓝色大圆内白色偏心小圆 orbit 动画，失败为红色叹号。日志刷新不会重绘进度区，避免动画反复从头开始。
+
+## 最终输出结构
+
+完整构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/<构建终端构建ID>/`：
+
+```text
+<构建终端构建ID>/
+  製品/
+    1.tenant/
+    2.ohr/
+    OneHrStandalone.zip
+    version.txt
+  データ連携/
+```
+
+`version.txt` 记录：
+
+- `資材:<构建终端构建ID>`
+- `前台分支：<frontend_release_branch>`
+- `后台分支：<backend_branch>`
+
+页面结果区只展示交付目录，避免用户误操作内部中间产物。
+
+## 二次打包来源
+
+- `OneHrStandalone.zip` 模板：`STANDALONE_TEMPLATE_ZIP`
+- SQL 资材：优先从 `STANDALONE_SQL_SVN_URL` 指向的 SVN 读取最新版本
+- 数据连携：`DATA_SYNC_GIT_URL`，默认 `https://upds7.ujob100.com/ohr/data-synchronization.git`
+- 数据连携分支：`DATA_SYNC_BRANCH`，默认 `master`
+- 数据连携子目录：`DATA_SYNC_SUBDIR`，默认 `updsv7phr/PHR`
+- `package.zip` / `web.zip`：来自构建终端
+
+`data-synchronization.git` 使用 shallow clone/fetch，并设置超时，避免首次全量 clone 静默挂住。
+
+## 删除和清理
+
+已结束任务可以删除；`queued` / `running` 任务不能直接删除，必须先停止。删除动作会清理：
+
+- `HOST_STANDALONE_DATA_DIR/<job_id>/`
+- `STANDALONE_OUTPUT_DIR/<job_id>/`
+- `STANDALONE_OUTPUT_DIR/<remote_build_id>/`
+- 构建终端 `/api/builds/<remote_build_id>`
+- 构建终端对应的构建记录和产物目录
+
+这样即使二次打包失败、还没有写入 `outputs.product_dir`，也能清掉用构建终端编号提前创建的半成品目录。
 
 ## 启动
 

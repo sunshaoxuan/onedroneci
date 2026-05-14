@@ -1,0 +1,52 @@
+# Changelog
+
+## 0.2.0 - 2026-05-14
+
+### Added
+
+- 新增宿主机主控台“庶務事務システム构造器”，固定监听 `0.0.0.0:8091`。
+- 新增完整交付包二次打包流程，输出 `dist\standalone\<构建ID>\製品` 和 `dist\standalone\<构建ID>\データ連携`。
+- 新增主控台完整流程进度条，展示端末确认、端末依赖、端末构建、成果物取得、SQL 资材、数据连携、`4.account.sql`、Help SQL、最终 ZIP、完成。
+- 新增构建历史持久化、刷新后自动选中运行中任务、选中历史任务自动回填参数。
+- 新增已结束任务删除功能，同时清理主控和构建终端的历史与产物。
+- 新增构建终端 Hyper-V 状态、启动、关闭控制，限制为配置中的单台虚拟机。
+- 新增构建终端同源代理 `/build-terminal/`，用于嵌入原始构建终端页面。
+- 新增三语 UI 文案：日语、中文、英文。
+
+### Changed
+
+- Direct 前端构建改为使用 `npm run build` + `npm run bundle` 的发布 zip，不再 fallback 打包 workspace 源码。
+- `conf_prod` 改为通过 `ohr-cicd generateConf.js` 生成。
+- help 改为通过 `ohr-help-docs + SVN` Direct 构建，不走 Nexus。
+- SQL 资材改为从 SVN 获取最新 `1.tenant` / `2.ohr`，并按页面参数修改 `4.account.sql`。
+- 数据连携资材改为从 `data-synchronization.git` 的 `updsv7phr/PHR` 复制。
+- 构建终端前端分支选择改为四个前端子项目共同存在的 `release_*` 分支，`ohr-workspace` 固定使用配置分支。
+- 主控台结果展示只显示交付目录，避免展示无意义的内部中间路径。
+- 主控台刷新日志时不再重绘结果区，避免进度动画反复重启。
+- 运行中进度动画改为蓝色大圆内白色偏心小圆 orbit 动画。
+
+### Performance
+
+- Git 工作区改为增量 fetch/reset，避免每次全量 clone。
+- pnpm/yarn 使用持久缓存目录。
+- pnpm/yarn install 增加 lock/package 指纹，未变化时跳过。
+- help 发布包按 Git revision、SVN revision、lock hash 复用。
+- 数据连携仓库使用 shallow clone/fetch 并设置超时。
+
+### Fixed
+
+- 修复前端/后端分支下拉样式不一致。
+- 修复构建启动后表单仍可修改的问题。
+- 修复构建中无法停止的问题。
+- 修复前端分支已填写仍报空的问题。
+- 修复 `web.zip` 错误打入 workspace 源码树的问题。
+- 修复失败任务删除后残留 `dist\standalone\<远端构建ID>` 半成品目录的问题。
+- 修复页面刷新后任务未选中、表单内容丢失的问题。
+- 修复构建终端成功但主控台卡在二次打包阶段时缺少可见进度的问题。
+
+## 0.1.0 - 2026-05-14
+
+### Added
+
+- 初始 Hyper-V 虚拟机维护工具。
+- 初始构建终端和 Direct 构建实验脚本。
