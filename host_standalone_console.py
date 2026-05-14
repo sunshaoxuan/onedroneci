@@ -1098,6 +1098,15 @@ function setFormLocked(locked) {
   document.getElementById('stopJob').disabled = !locked || !selected;
 }
 
+function fillFormFromJob(job) {
+  const request = (job && job.request) || {};
+  const form = document.getElementById('form');
+  Array.from(form.elements).forEach(el => {
+    if (!el.name || !(el.name in request)) return;
+    el.value = request[el.name] == null ? '' : request[el.name];
+  });
+}
+
 function statusText(status) {
   return {
     running: t('terminalRunning'),
@@ -1221,6 +1230,12 @@ async function refresh() {
     jobs.innerHTML = `<div class="empty-state">${t('noTask')}</div>`;
     return;
   }
+  if (!selected && data.jobs.length) {
+    selected = data.jobs[0].id;
+    lastRenderedResultSignature = '';
+    logOffset = 0;
+    logLines = [];
+  }
   data.jobs.forEach(job => {
     const btn = document.createElement('div');
     btn.className = job.id === selected ? 'job active' : 'job';
@@ -1260,6 +1275,7 @@ async function fetchJobLog(reset) {
 
 function render(job) {
   selectedJob = job;
+  fillFormFromJob(job);
   document.getElementById('jobBadge').textContent = `${job.id} · ${job.status}`;
   const running = ['queued', 'running'].includes(job.status);
   setFormLocked(running);
