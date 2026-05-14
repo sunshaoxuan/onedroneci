@@ -472,8 +472,8 @@ INDEX_HTML = """<!doctype html>
         </div>
       </div>
       <div class="grid">
-        <label><span data-i18n="backendBranch">バックエンドブランチ</span><input name="backend_branch" required list="backend-branches" placeholder="release_20260325"><datalist id="backend-branches"></datalist></label>
-        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><input name="frontend_release_branch" required list="frontend-branches" placeholder="release_20260325"><datalist id="frontend-branches"></datalist></label>
+        <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches" required><option value="">release_20260325</option></select></label>
+        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches" required><option value="">release_20260325</option></select></label>
         <label><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
         <label><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
         <label><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
@@ -711,15 +711,28 @@ function token() {
   return found ? decodeURIComponent(found.split('=').slice(1).join('=')) : '';
 }
 function authHeaders(extra = {}) { return {...extra, 'X-Management-Token': token()}; }
-function fillDatalist(id, branches) {
-  const list = document.getElementById(id);
-  if (!list) return;
-  list.innerHTML = '';
+function fillBranchSelect(id, branches, preferred = 'release_20260325') {
+  const select = document.getElementById(id);
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = preferred;
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  select.appendChild(placeholder);
   (branches || []).forEach(branch => {
     const option = document.createElement('option');
     option.value = branch;
-    list.appendChild(option);
+    option.textContent = branch;
+    select.appendChild(option);
   });
+  if (previous && (branches || []).includes(previous)) {
+    select.value = previous;
+  } else if ((branches || []).includes(preferred)) {
+    select.value = preferred;
+  }
 }
 async function loadBranchLists() {
   try {
@@ -727,8 +740,8 @@ async function loadBranchLists() {
       fetch('/build-terminal/api/backend-branches').then(res => res.json()),
       fetch('/build-terminal/api/frontend-branches').then(res => res.json())
     ]);
-    fillDatalist('backend-branches', backend.branches);
-    fillDatalist('frontend-branches', frontend.branches);
+    fillBranchSelect('backend-branches', backend.branches);
+    fillBranchSelect('frontend-branches', frontend.branches);
   } catch (error) {
     console.warn('failed to load branch lists', error);
   }
@@ -834,6 +847,7 @@ async function refreshTerminal() {
   }
   const data = await res.json();
   renderTerminal(data.status);
+  if (data.status === 'running') loadBranchLists();
   setFormLocked(['queued', 'running'].includes(selectedJob && selectedJob.status));
   return data;
 }

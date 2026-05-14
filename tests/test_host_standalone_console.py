@@ -135,14 +135,15 @@ def test_host_console_localizes_database_and_service_labels():
 
 
 def test_host_console_uses_build_terminal_branch_lists_via_proxy():
-    assert 'list="backend-branches"' in console.INDEX_HTML
-    assert 'list="frontend-branches"' in console.INDEX_HTML
+    assert 'name="backend_branch" id="backend-branches"' in console.INDEX_HTML
+    assert 'name="frontend_release_branch" id="frontend-branches"' in console.INDEX_HTML
     assert 'id="backend-branches"' in console.INDEX_HTML
     assert 'id="frontend-branches"' in console.INDEX_HTML
     assert "/build-terminal/api/backend-branches" in console.APP_JS
     assert "/build-terminal/api/frontend-branches" in console.APP_JS
-    assert "fillDatalist('backend-branches'" in console.APP_JS
-    assert "fillDatalist('frontend-branches'" in console.APP_JS
+    assert "fillBranchSelect('backend-branches'" in console.APP_JS
+    assert "fillBranchSelect('frontend-branches'" in console.APP_JS
+    assert "if (data.status === 'running') loadBranchLists();" in console.APP_JS
 
 
 def test_placeholder_text_is_visually_subtle():
