@@ -237,6 +237,75 @@ def test_git_errors_include_stderr_without_credentials(monkeypatch):
         raise AssertionError("git failure should raise")
 
 
+def test_git_failure_message_includes_stderr_without_credentials():
+    import subprocess
+    import standalone_packager as packager
+
+    exc = subprocess.CalledProcessError(
+        128,
+        ["git", "clone"],
+        stderr="fatal: https://oauth2:secret@example.test/repo.git failed",
+    )
+
+    message = packager.format_git_failure(exc)
+
+    assert "exit 128" in message
+    assert "<redacted>" in message
+    assert "secret" not in message
+
+
+def test_data_sync_uses_existing_cache_when_fetch_fails(monkeypatch, tmp_path):
+    import subprocess
+    import standalone_packager as packager
+
+    workdir = tmp_path / "data-sync-work"
+    target = tmp_path / "target"
+    cached = workdir / "updsv7phr" / "PHR"
+    cached.mkdir(parents=True)
+    (cached / "00_all_updsv7tophr.sql").write_text("cached", encoding="utf-8")
+
+    def fail_sync(*args, **kwargs):
+        raise subprocess.CalledProcessError(128, ["git", "fetch"], stderr="fatal: auth failed")
+
+    logs: list[str] = []
+    monkeypatch.setattr(packager, "sync_git_tree", fail_sync)
+
+    packager.copy_data_sync_assets(
+        repo_url="https://example.test/data.git",
+        branch="master",
+        workdir=workdir,
+        subdir="updsv7phr/PHR",
+        target_dir=target,
+        logger=logs.append,
+    )
+
+    assert (target / "00_all_updsv7tophr.sql").read_text(encoding="utf-8") == "cached"
+    assert "data_sync_cache_fallback" in logs
+
+
+def test_data_sync_raises_git_stderr_when_no_cache(monkeypatch, tmp_path):
+    import subprocess
+    import standalone_packager as packager
+
+    def fail_sync(*args, **kwargs):
+        raise subprocess.CalledProcessError(128, ["git", "clone"], stderr="fatal: auth failed")
+
+    monkeypatch.setattr(packager, "sync_git_tree", fail_sync)
+
+    try:
+        packager.copy_data_sync_assets(
+            repo_url="https://example.test/data.git",
+            branch="master",
+            workdir=tmp_path / "data-sync-work",
+            subdir="updsv7phr/PHR",
+            target_dir=tmp_path / "target",
+        )
+    except RuntimeError as exc:
+        assert "fatal: auth failed" in str(exc)
+    else:
+        raise AssertionError("missing cache should raise git failure")
+
+
 def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
     import standalone_packager as packager
 

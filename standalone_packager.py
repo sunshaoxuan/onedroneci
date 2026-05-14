@@ -328,6 +328,13 @@ def redact_url_credentials(text: str) -> str:
     return re.sub(r"https://([^:@/\s]+):([^@/\s]+)@", r"https://\1:<redacted>@", text)
 
 
+def format_git_failure(exc: subprocess.CalledProcessError) -> str:
+    stderr = redact_url_credentials((exc.stderr or "").strip())
+    stdout = redact_url_credentials((exc.output or "").strip())
+    detail = stderr or stdout or "no git output"
+    return f"git command failed with exit {exc.returncode}: {detail}"
+
+
 def sync_git_tree(repo_url: str, branch: str, workdir: Path, timeout: int = DEFAULT_DATA_SYNC_GIT_TIMEOUT, sparse_path: str | None = None) -> None:
     workdir.parent.mkdir(parents=True, exist_ok=True)
     if (workdir / ".git").is_dir() and not _valid_git_worktree(workdir):
@@ -377,8 +384,21 @@ def copy_data_sync_assets(
 ) -> None:
     if logger:
         logger("data_sync_git_sync")
-    sync_git_tree(repo_url, branch, workdir, sparse_path=subdir)
     source = workdir / Path(subdir)
+    try:
+        sync_git_tree(repo_url, branch, workdir, sparse_path=subdir)
+    except subprocess.CalledProcessError as exc:
+        if source.is_dir():
+            if logger:
+                logger("data_sync_cache_fallback")
+        else:
+            raise RuntimeError(format_git_failure(exc)) from exc
+    except subprocess.TimeoutExpired as exc:
+        if source.is_dir():
+            if logger:
+                logger("data_sync_cache_fallback")
+        else:
+            raise RuntimeError(f"git command timed out after {exc.timeout} seconds") from exc
     if not source.is_dir():
         raise FileNotFoundError(f"missing data synchronization directory: {source}")
     if target_dir.exists():
