@@ -361,6 +361,8 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "outputs.package_zip" in console.APP_JS
     assert "outputs.web_zip" in console.APP_JS
     assert "function renderProgress(job)" in console.APP_JS
+    assert "function renderResultIfChanged(job)" in console.APP_JS
+    assert "lastRenderedResultSignature" in console.APP_JS
     assert "overall-progress" in console.APP_JS
     assert "progressSteps" in console.APP_JS
     assert "progress-icon" in console.APP_JS

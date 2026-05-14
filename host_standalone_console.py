@@ -950,6 +950,7 @@ let logLines = [];
 let selectedJob = null;
 let heartbeatTick = 0;
 let lastTerminalStatus = 'unknown';
+let lastRenderedResultSignature = '';
 const MAX_LOG_LINES = 1600;
 
 function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N['ja-JP'][key] || key; }
@@ -1176,6 +1177,7 @@ async function deleteSelectedJob(jobId = selected) {
   if (selected === jobId) {
     selected = null;
     selectedJob = null;
+    lastRenderedResultSignature = '';
     logOffset = 0;
     logLines = [];
     document.getElementById('log').textContent = '';
@@ -1201,8 +1203,9 @@ document.getElementById('form').addEventListener('submit', async (event) => {
     alert(job.error);
     return;
   }
-  selected = job.id;
-  logOffset = 0;
+    selected = job.id;
+    lastRenderedResultSignature = '';
+    logOffset = 0;
   logLines = [];
   setFormLocked(true);
   refresh();
@@ -1224,7 +1227,7 @@ async function refresh() {
     btn.tabIndex = 0;
     const deletable = !['queued', 'running'].includes(job.status);
     btn.innerHTML = `<strong>${job.id}</strong><span>${job.status}${job.remote_build_id ? ' · ' + job.remote_build_id : ''}</span>${deletable ? `<button type="button" class="delete-job" data-job-id="${escapeHtml(job.id)}">${t('deleteJob')}</button>` : ''}`;
-    btn.onclick = () => { selected = job.id; logOffset = 0; logLines = []; render(job); fetchJobLog(true); };
+    btn.onclick = () => { selected = job.id; lastRenderedResultSignature = ''; logOffset = 0; logLines = []; render(job); fetchJobLog(true); };
     btn.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') btn.click(); };
     jobs.appendChild(btn);
     const deleteBtn = btn.querySelector('.delete-job');
@@ -1261,7 +1264,7 @@ function render(job) {
   const running = ['queued', 'running'].includes(job.status);
   setFormLocked(running);
   syncTerminalConsole(job);
-  renderResult(job);
+  renderResultIfChanged(job);
 }
 
 function unloadTerminalFrame() {
@@ -1387,6 +1390,24 @@ function renderResult(job) {
       setTimeout(() => { btn.textContent = t('copy'); }, 1200);
     });
   });
+}
+
+function resultSignature(job) {
+  return JSON.stringify({
+    id: job && job.id,
+    status: job && job.status,
+    remote_build_id: job && job.remote_build_id,
+    error: job && job.error,
+    outputs: job && job.outputs,
+    progress: job && job.progress
+  });
+}
+
+function renderResultIfChanged(job) {
+  const signature = resultSignature(job);
+  if (signature === lastRenderedResultSignature) return;
+  lastRenderedResultSignature = signature;
+  renderResult(job);
 }
 
 applyI18n();
