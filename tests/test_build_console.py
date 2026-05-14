@@ -79,6 +79,8 @@ def test_build_console_embedded_mode_is_read_only_current_build_view():
     assert "if (embeddedMode) return;" in server.APP_JS
     assert "body.embedded .hero" in server.STYLE_CSS
     assert "body.embedded .form-card" in server.STYLE_CSS
+    assert "body.embedded .history-card" in server.STYLE_CSS
+    assert "grid-template-columns: minmax(0, 1fr)" in server.STYLE_CSS
     assert "body.embedded #stop-button" in server.STYLE_CSS
 
 

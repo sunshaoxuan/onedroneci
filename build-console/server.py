@@ -1281,7 +1281,7 @@ INDEX_HTML = """<!doctype html>
       </form>
     </section>
     <section class="grid">
-      <div class="card">
+      <div class="card history-card">
         <div class="section-title compact">
           <h2 data-i18n="historyTitle">ビルド履歴</h2>
           <span class="muted" data-i18n="recentTasks">最近のタスク</span>
@@ -1868,7 +1868,10 @@ body.embedded main {
   padding: 14px;
 }
 body.embedded .grid {
-  grid-template-columns: minmax(260px, .75fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+body.embedded .history-card {
+  display: none;
 }
 body.embedded #stop-button {
   display: none !important;
