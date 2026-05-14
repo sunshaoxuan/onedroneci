@@ -155,16 +155,24 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def append_log(job_id: str, message: str) -> None:
+    append_log_lines(job_id, [message])
+
+
+def append_log_lines(job_id: str, messages: list[str]) -> None:
+    if not messages:
+        return
     with LOCK:
         job = JOBS.get(job_id) or read_job(job_id)
         lang = str((job.get("request") or {}).get("ui_language") or "ja-JP")
-        line = f"{time.strftime('%H:%M:%S')} {redact_build_terminal(message, lang)}"
-        job.setdefault("log", []).append(line)
+        stamp = time.strftime("%H:%M:%S")
+        lines = [f"{stamp} {redact_build_terminal(message, lang)}" for message in messages]
+        job.setdefault("log", []).extend(lines)
+        job["log"] = job["log"][-200:]
         job["updated_at"] = now()
         JOBS[job_id] = job
         write_job(job)
     with job_log_path(job_id).open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
+        f.write("\n".join(lines) + "\n")
 
 
 def update_job(job_id: str, **updates: Any) -> None:
@@ -193,9 +201,7 @@ def fetch_remote_log(job_id: str, remote_id: str) -> None:
         return
     text = str(data.get("text") or data.get("log") or "")
     if text:
-        for line in text.splitlines():
-            if line.strip():
-                append_log(job_id, line)
+        append_log_lines(job_id, [line for line in text.splitlines() if line.strip()])
     with LOCK:
         job = JOBS.get(job_id) or read_job(job_id)
         job["remote_log_offset"] = int(data.get("next_offset") or data.get("offset") or offset + len(text))
@@ -277,7 +283,9 @@ def cancel_job(job_id: str) -> dict[str, Any]:
 
 def run_job(job_id: str) -> None:
     with LOCK:
-        req = dict(JOBS[job_id]["request"])
+        job = JOBS.get(job_id) or read_job(job_id)
+        req = dict(job["request"])
+        remote_id = job.get("remote_build_id")
     work_dir = job_dir(job_id)
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -286,24 +294,27 @@ def run_job(job_id: str) -> None:
         if terminal["status"] != "running":
             raise RuntimeError("build_terminal_unavailable")
 
-        append_log(job_id, "build_terminal_dispatch")
-        remote_payload = {
-            "build_backend": True,
-            "build_frontend": True,
-            "backend_branch": req["backend_branch"],
-            "frontend_release_branch": req["frontend_release_branch"],
-            "help_docs_branch": req.get("help_docs_branch") or "release_ci",
-            "conf_server_host": req["conf_server_host"],
-            "conf_web_port": int(req.get("conf_web_port") or 80),
-            "conf_worker_processes": int(req.get("conf_worker_processes") or 1),
-            "conf_worker_connections": int(req.get("conf_worker_connections") or 1024),
-            "note": req.get("note") or f"standalone package {job_id}",
-        }
-        check_cancelled(job_id)
-        remote_build = remote_json(REMOTE_BUILD_CONSOLE_URL, "/api/builds", remote_payload)
-        remote_id = remote_build["id"]
-        update_job(job_id, remote_build_id=remote_id)
-        append_log(job_id, f"remote_build_id: {remote_id}")
+        if remote_id:
+            append_log(job_id, f"resume_remote_build: {remote_id}")
+        else:
+            append_log(job_id, "build_terminal_dispatch")
+            remote_payload = {
+                "build_backend": True,
+                "build_frontend": True,
+                "backend_branch": req["backend_branch"],
+                "frontend_release_branch": req["frontend_release_branch"],
+                "help_docs_branch": req.get("help_docs_branch") or "release_ci",
+                "conf_server_host": req["conf_server_host"],
+                "conf_web_port": int(req.get("conf_web_port") or 80),
+                "conf_worker_processes": int(req.get("conf_worker_processes") or 1),
+                "conf_worker_connections": int(req.get("conf_worker_connections") or 1024),
+                "note": req.get("note") or f"standalone package {job_id}",
+            }
+            check_cancelled(job_id)
+            remote_build = remote_json(REMOTE_BUILD_CONSOLE_URL, "/api/builds", remote_payload)
+            remote_id = remote_build["id"]
+            update_job(job_id, remote_build_id=remote_id)
+            append_log(job_id, f"remote_build_id: {remote_id}")
 
         while True:
             check_cancelled(job_id)
@@ -352,6 +363,21 @@ def run_job(job_id: str) -> None:
     except Exception as exc:
         update_job(job_id, status="failed", error=redact_build_terminal(str(exc)))
         append_log(job_id, f"failed: {exc}")
+
+
+def resume_unfinished_jobs() -> None:
+    for job in list_jobs():
+        if job.get("status") not in ("queued", "running"):
+            continue
+        if not job.get("remote_build_id"):
+            update_job(str(job["id"]), status="failed", error="host_console_restarted_before_build_terminal_dispatch")
+            append_log(str(job["id"]), "failed: host_console_restarted_before_build_terminal_dispatch")
+            continue
+        job_id = str(job["id"])
+        with LOCK:
+            JOBS[job_id] = job
+        thread = threading.Thread(target=run_job, args=(job_id,), daemon=True)
+        thread.start()
 
 
 INDEX_HTML = """<!doctype html>
@@ -1243,6 +1269,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> int:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    resume_unfinished_jobs()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"host standalone console listening on {HOST}:{PORT}")
     server.serve_forever()

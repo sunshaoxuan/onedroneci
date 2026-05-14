@@ -151,6 +151,66 @@ def test_create_job_persists_metadata_and_log(tmp_path, monkeypatch):
     assert jobs[0]["request"]["backend_branch"] == "release_back"
 
 
+def test_batch_log_write_keeps_metadata_small(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(console, "run_job", lambda job_id: None)
+    console.JOBS.clear()
+    job = console.create_job(
+        {
+            "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+            "conf_server_host": "example.local",
+            "postgresql_host": "db.local",
+        }
+    )
+
+    console.append_log_lines(job["id"], [f"line-{idx}" for idx in range(250)])
+
+    stored = console.read_job(job["id"])
+    assert len(stored["log"]) == 200
+    assert stored["log"][0].endswith("line-50")
+    assert "line-0" in (tmp_path / job["id"] / "job.log").read_text(encoding="utf-8")
+
+
+def test_resume_unfinished_jobs_restarts_monitor_thread(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    console.JOBS.clear()
+    started: list[tuple[object, tuple[object, ...]]] = []
+
+    class FakeThread:
+        def __init__(self, target, args, daemon):
+            started.append((target, args))
+
+        def start(self):
+            return None
+
+    job_id = "20260514000102"
+    job_dir = tmp_path / job_id
+    job_dir.mkdir(parents=True)
+    (job_dir / "metadata.json").write_text(
+        console.json.dumps(
+            {
+                "id": job_id,
+                "status": "running",
+                "created_at": 1,
+                "updated_at": 1,
+                "remote_build_id": "20260514000101",
+                "remote_log_offset": 10,
+                "request": {"backend_branch": "b", "frontend_release_branch": "f"},
+                "log": [],
+                "outputs": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (job_dir / "job.log").write_text("", encoding="utf-8")
+    monkeypatch.setattr(console.threading, "Thread", FakeThread)
+
+    console.resume_unfinished_jobs()
+
+    assert started == [(console.run_job, (job_id,))]
+
+
 def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "product_dir" in console.APP_JS
     assert "standalone_zip" in console.APP_JS
