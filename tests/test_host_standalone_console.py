@@ -39,6 +39,37 @@ def test_build_terminal_status_is_safe_when_vm_name_is_missing(monkeypatch):
     }
 
 
+def test_build_terminal_status_reports_stopped_when_configured_vm_is_off(monkeypatch):
+    monkeypatch.setattr(
+        console.Settings,
+        "from_env",
+        classmethod(lambda cls: FakeSettings(hyperv_vm_name="PHRCI")),
+    )
+    monkeypatch.setattr(console, "is_remote_console_reachable", lambda: False)
+    monkeypatch.setattr(console.hyperv_host, "vm_state", lambda name: ({"Name": name, "State": "Off"}, ""))
+
+    assert console.build_terminal_status() == {
+        "status": "stopped",
+        "configured": True,
+        "reachable": False,
+    }
+
+    monkeypatch.setattr(console.hyperv_host, "vm_state", lambda name: ({"Name": name, "State": 3}, ""))
+    assert console.build_terminal_status()["status"] == "stopped"
+
+
+def test_management_token_is_persisted_between_restarts(tmp_path, monkeypatch):
+    token_file = tmp_path / "management.token"
+    monkeypatch.delenv("HOST_STANDALONE_MANAGEMENT_TOKEN", raising=False)
+    monkeypatch.setattr(console, "TOKEN_FILE", token_file)
+
+    first = console.load_management_token()
+    second = console.load_management_token()
+
+    assert first == second
+    assert token_file.read_text(encoding="utf-8") == first
+
+
 def test_build_terminal_action_does_not_accept_page_vm_name(monkeypatch):
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -247,6 +278,12 @@ def test_embedded_build_terminal_unlocks_only_after_remote_build_starts():
     assert "event.target.open = false" in console.APP_JS
     assert "embedded=1&build_id=" in console.APP_JS
     assert "job.remote_build_id" in console.APP_JS
+
+
+def test_form_is_locked_unless_build_terminal_is_running():
+    assert "const terminalLocked = lastTerminalStatus !== 'running'" in console.APP_JS
+    assert "el.disabled = locked || terminalLocked" in console.APP_JS
+    assert "if (!res.ok)" in console.APP_JS
 
 
 def test_build_terminal_proxy_rewrites_absolute_assets():

@@ -32,7 +32,7 @@ HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
 DATA_DIR = Path(os.environ.get("HOST_STANDALONE_DATA_DIR", "dist/standalone-builds"))
-MANAGEMENT_TOKEN = os.environ.get("HOST_STANDALONE_MANAGEMENT_TOKEN") or secrets.token_urlsafe(32)
+TOKEN_FILE = Path(os.environ.get("HOST_STANDALONE_TOKEN_FILE", DATA_DIR / "management.token"))
 TERMINAL_LABELS = {
     "ja-JP": "ビルド端末",
     "zh-CN": "构建终端",
@@ -46,6 +46,26 @@ CANCELLED: set[str] = set()
 
 class JobCancelled(RuntimeError):
     pass
+
+
+def load_management_token() -> str:
+    env_token = os.environ.get("HOST_STANDALONE_MANAGEMENT_TOKEN")
+    if env_token:
+        return env_token
+    try:
+        if TOKEN_FILE.is_file():
+            token = TOKEN_FILE.read_text(encoding="utf-8").strip()
+            if token:
+                return token
+        TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        token = secrets.token_urlsafe(32)
+        TOKEN_FILE.write_text(token, encoding="utf-8")
+        return token
+    except OSError:
+        return secrets.token_urlsafe(32)
+
+
+MANAGEMENT_TOKEN = load_management_token()
 
 
 def now() -> int:
@@ -256,9 +276,13 @@ def build_terminal_status() -> dict[str, Any]:
         status = "permission_denied" if "access" in lowered or "denied" in lowered else "unknown"
         return {"status": status, "configured": True, "reachable": False, "message": redact_build_terminal(error)}
     state = str(row.get("State") or row.get("state") or "").lower()
-    if state in ("off", "stopped"):
+    if state in ("off", "stopped", "3"):
         return {"status": "stopped", "configured": True, "reachable": False}
     if state in ("running", "2"):
+        return {"status": "unreachable", "configured": True, "reachable": False}
+    if "off" in state or "stopped" in state:
+        return {"status": "stopped", "configured": True, "reachable": False}
+    if "running" in state:
         return {"status": "unreachable", "configured": True, "reachable": False}
     return {"status": "unknown", "configured": True, "reachable": False}
 
@@ -778,7 +802,8 @@ function applyI18n() {
 }
 
 function setFormLocked(locked) {
-  document.querySelectorAll('#form input, #form select, #startJob').forEach(el => { el.disabled = locked; });
+  const terminalLocked = lastTerminalStatus !== 'running';
+  document.querySelectorAll('#form input, #form select, #startJob').forEach(el => { el.disabled = locked || terminalLocked; });
   document.getElementById('stopJob').disabled = !locked || !selected;
 }
 
@@ -802,8 +827,14 @@ function renderTerminal(status) {
 
 async function refreshTerminal() {
   const res = await fetch('/api/build-terminal/status', {headers: authHeaders()});
+  if (!res.ok) {
+    renderTerminal('unknown');
+    setFormLocked(['queued', 'running'].includes(selectedJob && selectedJob.status));
+    return {status: 'unknown'};
+  }
   const data = await res.json();
   renderTerminal(data.status);
+  setFormLocked(['queued', 'running'].includes(selectedJob && selectedJob.status));
   return data;
 }
 
