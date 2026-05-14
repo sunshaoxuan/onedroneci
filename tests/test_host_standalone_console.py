@@ -85,6 +85,7 @@ def test_i18n_contains_terminal_controls_and_statuses():
         "terminalUnreachable",
         "terminalPermissionDenied",
         "terminalUnconfigured",
+        "terminalHeartbeat",
         "startTerminal",
         "stopTerminal",
         "refreshStatus",
@@ -219,6 +220,16 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert ".workbench" in console.STYLE_CSS
     assert ".log-panel" in console.STYLE_CSS
     assert "min-height: 560px" in console.STYLE_CSS
+
+
+def test_running_status_uses_single_animated_heartbeat_not_log_spam():
+    source = Path("host_standalone_console.py").read_text(encoding="utf-8")
+    assert "remote_build_status=status[\"status\"]" in source
+    assert "append_log(job_id, f\"remote_build_status" not in source
+    assert "function heartbeatLine(job)" in console.APP_JS
+    assert "'.'.repeat(heartbeatTick)" in console.APP_JS
+    assert "logBody + (heartbeat ?" in console.APP_JS
+    assert console.filter_display_log("a\nremote_build_status: running\nb") == "a\nb"
 
 
 def test_build_terminal_iframe_uses_host_proxy_not_direct_url():

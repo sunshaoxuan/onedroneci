@@ -209,6 +209,10 @@ def fetch_remote_log(job_id: str, remote_id: str) -> None:
         write_job(job)
 
 
+def filter_display_log(text: str) -> str:
+    return "\n".join(line for line in text.splitlines() if "remote_build_status:" not in line)
+
+
 def remote_post(path: str) -> dict[str, Any]:
     url = urllib.parse.urljoin(REMOTE_BUILD_CONSOLE_URL.rstrip("/") + "/", path.lstrip("/"))
     req = urllib.request.Request(url, data=b"{}", headers={"Content-Type": "application/json"}, method="POST")
@@ -325,7 +329,7 @@ def run_job(job_id: str) -> None:
                 if status["status"] != "success":
                     raise RuntimeError(f"remote_build_not_success: {status['status']}")
                 break
-            append_log(job_id, f"remote_build_status: {status['status']}")
+            update_job(job_id, remote_build_status=status["status"], heartbeat_at=now())
             time.sleep(5)
 
         check_cancelled(job_id)
@@ -533,6 +537,7 @@ const I18N = {
     logTitle: '実行ログ',
     terminalConsole: 'ビルド端末コンソール',
     terminalConsoleLocked: '構造開始後に表示できます',
+    terminalHeartbeat: 'ビルド端末稼働中',
     autoScroll: '自動スクロール',
     selectTask: 'タスクを選択してください。',
     noTask: 'タスク未選択',
@@ -585,6 +590,7 @@ const I18N = {
     logTitle: '执行日志',
     terminalConsole: '构建终端控制台',
     terminalConsoleLocked: '开始构造后可打开',
+    terminalHeartbeat: '构建终端运行中',
     autoScroll: '自动滚动',
     selectTask: '请选择任务。',
     noTask: '未选择任务',
@@ -637,6 +643,7 @@ const I18N = {
     logTitle: 'Execution log',
     terminalConsole: 'Build terminal console',
     terminalConsoleLocked: 'Available after build starts',
+    terminalHeartbeat: 'Build terminal active',
     autoScroll: 'Auto scroll',
     selectTask: 'Select a task.',
     noTask: 'No task selected',
@@ -656,6 +663,9 @@ let lang = localStorage.getItem('hostConsoleLang') || 'ja-JP';
 let selected = null;
 let timer = null;
 let logOffset = 0;
+let logBody = '';
+let selectedJob = null;
+let heartbeatTick = 0;
 let lastTerminalStatus = 'unknown';
 
 function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N['ja-JP'][key] || key; }
@@ -727,6 +737,20 @@ function translateLogText(text) {
   let result = text || '';
   Object.entries(map).forEach(([from, to]) => { result = result.split(from).join(to); });
   return result;
+}
+
+function heartbeatLine(job) {
+  if (!job || !['queued', 'running'].includes(job.status)) return '';
+  const status = job.remote_build_status || job.status;
+  heartbeatTick = (heartbeatTick % 6) + 1;
+  return `${t('terminalHeartbeat')} ${status} ${'.'.repeat(heartbeatTick)}`;
+}
+
+function renderLog() {
+  const log = document.getElementById('log');
+  const heartbeat = heartbeatLine(selectedJob);
+  log.textContent = logBody + (heartbeat ? `${logBody ? '\n' : ''}${heartbeat}` : '');
+  log.scrollTop = log.scrollHeight;
 }
 
 function applyI18n() {
@@ -833,7 +857,7 @@ async function refresh() {
     const btn = document.createElement('button');
     btn.className = job.id === selected ? 'job active' : 'job';
     btn.innerHTML = `<strong>${job.id}</strong><span>${job.status}${job.remote_build_id ? ' · ' + job.remote_build_id : ''}</span>`;
-    btn.onclick = () => { selected = job.id; logOffset = 0; render(job); fetchJobLog(true); };
+    btn.onclick = () => { selected = job.id; logOffset = 0; logBody = ''; render(job); fetchJobLog(true); };
     jobs.appendChild(btn);
     if (job.id === selected) render(job);
   });
@@ -844,20 +868,20 @@ async function fetchJobLog(reset) {
   if (!selected) return;
   if (reset) {
     logOffset = 0;
-    document.getElementById('log').textContent = '';
+    logBody = '';
   }
   const res = await fetch(`/api/jobs/${selected}/log?offset=${logOffset}`);
   if (!res.ok) return;
   const data = await res.json();
   logOffset = data.next_offset;
   if (data.text) {
-    const log = document.getElementById('log');
-    log.textContent += translateLogText(data.text);
-    log.scrollTop = log.scrollHeight;
+    logBody += translateLogText(data.text);
   }
+  renderLog();
 }
 
 function render(job) {
+  selectedJob = job;
   document.getElementById('jobBadge').textContent = `${job.id} · ${job.status}`;
   const running = ['queued', 'running'].includes(job.status);
   setFormLocked(running);
@@ -1184,7 +1208,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
         raw = path.read_bytes()
         offset = max(0, min(offset, len(raw)))
-        chunk = raw[offset:].decode("utf-8", "replace")
+        chunk = filter_display_log(raw[offset:].decode("utf-8", "replace"))
+        if chunk:
+            chunk += "\n"
         self.send_json({"text": chunk, "next_offset": len(raw), "offset": len(raw)})
 
     def proxy_build_terminal(self, method: str, parsed: urllib.parse.ParseResult) -> None:
