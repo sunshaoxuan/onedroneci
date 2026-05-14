@@ -150,6 +150,7 @@ def test_create_job_persists_metadata_and_log(tmp_path, monkeypatch):
     jobs = console.list_jobs()
     assert jobs[0]["id"] == job["id"]
     assert jobs[0]["request"]["backend_branch"] == "release_back"
+    assert not list((tmp_path / job["id"]).glob("*.tmp"))
 
 
 def test_batch_log_write_keeps_metadata_small(tmp_path, monkeypatch):
@@ -227,7 +228,9 @@ def test_running_status_uses_single_animated_heartbeat_not_log_spam():
     assert "remote_build_status=status[\"status\"]" in source
     assert "append_log(job_id, f\"remote_build_status" not in source
     assert "function heartbeatLine(job)" in console.APP_JS
-    assert "'.'.repeat(heartbeatTick)" in console.APP_JS
+    assert "const phase = heartbeatTick % 72" in console.APP_JS
+    assert "const indent = Math.floor(phase / 6)" in console.APP_JS
+    assert "'.'.repeat(dots)" in console.APP_JS
     assert "logBody + (heartbeat ?" in console.APP_JS
     assert console.filter_display_log("a\nremote_build_status: running\nb") == "a\nb"
 

@@ -84,6 +84,35 @@ def test_build_console_embedded_mode_is_read_only_current_build_view():
     assert "body.embedded #stop-button" in server.STYLE_CSS
 
 
+def test_build_console_marks_unfinished_builds_failed_on_startup(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    build_dir = tmp_path / "20260514000101"
+    build_dir.mkdir()
+    (build_dir / "build.log").write_text("", encoding="utf-8")
+    server.write_json(
+        build_dir / "metadata.json",
+        {
+            "id": "20260514000101",
+            "status": "running",
+            "updated_at": 1,
+            "steps": [
+                {"id": "build_frontend", "status": "running", "started_at": 1, "finished_at": None},
+                {"id": "collect_artifacts", "status": "pending", "started_at": None, "finished_at": None},
+            ],
+        },
+    )
+
+    server.mark_unfinished_builds_failed("restart")
+
+    meta = server.read_json(build_dir / "metadata.json")
+    assert meta["status"] == "failed"
+    assert meta["error"] == "restart"
+    assert meta["steps"][0]["status"] == "failed"
+    assert meta["steps"][1]["status"] == "skipped"
+    assert "构建失败：restart" in (build_dir / "build.log").read_text(encoding="utf-8")
+
+
 def test_create_build_requires_frontend_release_branch_when_frontend_enabled(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)

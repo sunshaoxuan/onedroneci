@@ -81,9 +81,22 @@ def read_job(job_id: str) -> dict[str, Any]:
 def write_job(job: dict[str, Any]) -> None:
     path = job_metadata_path(str(job["id"]))
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_name(f"{path.stem}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    last_error: OSError | None = None
+    for _ in range(8):
+        try:
+            tmp.replace(path)
+            return
+        except OSError as exc:
+            last_error = exc
+            time.sleep(0.08)
+    try:
+        tmp.unlink()
+    except OSError:
+        pass
+    if last_error:
+        raise last_error
 
 
 def list_jobs() -> list[dict[str, Any]]:
@@ -742,8 +755,11 @@ function translateLogText(text) {
 function heartbeatLine(job) {
   if (!job || !['queued', 'running'].includes(job.status)) return '';
   const status = job.remote_build_status || job.status;
-  heartbeatTick = (heartbeatTick % 6) + 1;
-  return `${t('terminalHeartbeat')} ${status} ${'.'.repeat(heartbeatTick)}`;
+  const phase = heartbeatTick % 72;
+  const indent = Math.floor(phase / 6);
+  const dots = (phase % 6) + 1;
+  heartbeatTick += 1;
+  return `${t('terminalHeartbeat')} ${status} ${' '.repeat(indent)}${'.'.repeat(dots)}`;
 }
 
 function renderLog() {

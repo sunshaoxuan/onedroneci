@@ -1043,6 +1043,34 @@ def list_builds() -> list[dict[str, Any]]:
     return builds
 
 
+def mark_unfinished_builds_failed(reason: str = "build_console_restarted_while_running") -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    for path in DATA_DIR.iterdir():
+        mp = path / "metadata.json"
+        if not mp.is_file():
+            continue
+        try:
+            meta = read_json(mp)
+        except json.JSONDecodeError:
+            continue
+        if meta.get("status") not in ("queued", "running"):
+            continue
+        build_id = str(meta.get("id") or path.name)
+        meta["status"] = "failed"
+        meta["error"] = reason
+        meta["updated_at"] = now()
+        for step in meta.get("steps", []):
+            if step.get("status") == "running":
+                step["status"] = "failed"
+                step["message"] = reason
+                step["finished_at"] = now()
+            elif step.get("status") == "pending":
+                step["status"] = "skipped"
+                step["message"] = reason
+        write_json(mp, meta)
+        append_log(build_id, f"构建失败：{reason}")
+
+
 def shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
@@ -2190,6 +2218,7 @@ pre {
 def main() -> int:
     load_env_file(CONFIG_FILE)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    mark_unfinished_builds_failed()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"build-console listening on http://{HOST}:{PORT}")
     server.serve_forever()
