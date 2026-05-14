@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -27,6 +28,7 @@ DEFAULT_DATA_SYNC_GIT_URL = "https://upds7.ujob100.com/ohr/data-synchronization.
 DEFAULT_DATA_SYNC_BRANCH = "master"
 DEFAULT_DATA_SYNC_DIR = DEFAULT_TEMPLATE_ROOT / "data-synchronization"
 DEFAULT_DATA_SYNC_SUBDIR = "updsv7phr/PHR"
+DEFAULT_DATA_SYNC_GIT_TIMEOUT = int(os.environ.get("DATA_SYNC_GIT_TIMEOUT", "300"))
 HELP_SQL_IN_WEB_ZIP = "ohr-cicd/web_prod/help/insert_ohr_help.sql"
 CONFIG_IN_STANDALONE_ZIP = "OneHrStandalone/bin/kernel/config.ini"
 PACKAGE_IN_STANDALONE_ZIP = "OneHrStandalone/software/package.zip"
@@ -73,7 +75,18 @@ def configured_sql_svn_url() -> str:
 
 
 def configured_data_sync_git_url() -> str:
-    return os.environ.get("DATA_SYNC_GIT_URL", DEFAULT_DATA_SYNC_GIT_URL)
+    return git_url_with_token(os.environ.get("DATA_SYNC_GIT_URL", DEFAULT_DATA_SYNC_GIT_URL))
+
+
+def git_url_with_token(url: str) -> str:
+    token = os.environ.get("DATA_SYNC_GIT_TOKEN") or os.environ.get("FRONTEND_GIT_TOKEN") or os.environ.get("OHR_BACK_GIT_TOKEN") or ""
+    if not token or "://" not in url or "@" in urllib.parse.urlparse(url).netloc:
+        return url
+    parsed = urllib.parse.urlparse(url)
+    netloc = f"oauth2:{urllib.parse.quote(token, safe='')}@{parsed.hostname or ''}"
+    if parsed.port:
+        netloc += f":{parsed.port}"
+    return urllib.parse.urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
 
 
 def configured_data_sync_branch() -> str:
@@ -262,18 +275,94 @@ def patch_account_sql(text: str, config: ProductSqlConfig) -> str:
     return patched
 
 
-def sync_git_tree(repo_url: str, branch: str, workdir: Path, timeout: int = 900) -> None:
+def _valid_git_worktree(workdir: Path) -> bool:
+    if not (workdir / ".git").is_dir():
+        return False
+    try:
+        subprocess.run(
+            ["git", "-C", str(workdir), "rev-parse", "--is-inside-work-tree"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+        subprocess.run(
+            ["git", "-C", str(workdir), "rev-parse", "--verify", "HEAD"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+    except Exception:
+        return False
+    return True
+
+
+def _run_git(cmd: list[str], timeout: int) -> None:
+    popen_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popen_kwargs["start_new_session"] = True
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GCM_INTERACTIVE"] = "Never"
+    proc = subprocess.Popen(cmd, env=env, **popen_kwargs)
+    try:
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except Exception:
+                proc.kill()
+        raise subprocess.TimeoutExpired(cmd, timeout) from exc
+    if rc:
+        raise subprocess.CalledProcessError(rc, cmd)
+
+
+def sync_git_tree(repo_url: str, branch: str, workdir: Path, timeout: int = DEFAULT_DATA_SYNC_GIT_TIMEOUT, sparse_path: str | None = None) -> None:
     workdir.parent.mkdir(parents=True, exist_ok=True)
-    if (workdir / ".git").is_dir():
-        subprocess.run(["git", "-C", str(workdir), "remote", "set-url", "origin", repo_url], check=True, timeout=timeout)
-        subprocess.run(["git", "-C", str(workdir), "fetch", "origin", branch, "--prune", "--depth", "1"], check=True, timeout=timeout)
-        subprocess.run(["git", "-C", str(workdir), "checkout", "-B", branch, f"origin/{branch}"], check=True, timeout=timeout)
-        subprocess.run(["git", "-C", str(workdir), "reset", "--hard", f"origin/{branch}"], check=True, timeout=timeout)
-        subprocess.run(["git", "-C", str(workdir), "clean", "-fd"], check=True, timeout=timeout)
+    if (workdir / ".git").is_dir() and not _valid_git_worktree(workdir):
+        shutil.rmtree(workdir)
+    if _valid_git_worktree(workdir):
+        _run_git(["git", "-C", str(workdir), "remote", "set-url", "origin", repo_url], timeout)
+        _run_git(["git", "-C", str(workdir), "fetch", "origin", branch, "--prune", "--depth", "1"], timeout)
+        if sparse_path:
+            _run_git(["git", "-C", str(workdir), "sparse-checkout", "init", "--cone"], timeout)
+            _run_git(["git", "-C", str(workdir), "sparse-checkout", "set", sparse_path], timeout)
+        _run_git(["git", "-C", str(workdir), "checkout", "-B", branch, f"origin/{branch}"], timeout)
+        _run_git(["git", "-C", str(workdir), "reset", "--hard", f"origin/{branch}"], timeout)
+        _run_git(["git", "-C", str(workdir), "clean", "-fd"], timeout)
         return
     if workdir.exists():
         shutil.rmtree(workdir)
-    subprocess.run(["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(workdir)], check=True, timeout=timeout)
+    if sparse_path:
+        try:
+            _run_git(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--single-branch",
+                    "--filter=blob:none",
+                    "--sparse",
+                    "--branch",
+                    branch,
+                    repo_url,
+                    str(workdir),
+                ],
+                timeout,
+            )
+            _run_git(["git", "-C", str(workdir), "sparse-checkout", "set", sparse_path], timeout)
+            return
+        except Exception:
+            if workdir.exists():
+                shutil.rmtree(workdir)
+    _run_git(["git", "clone", "--depth", "1", "--single-branch", "--branch", branch, repo_url, str(workdir)], timeout)
 
 
 def copy_data_sync_assets(
@@ -287,7 +376,7 @@ def copy_data_sync_assets(
 ) -> None:
     if logger:
         logger("data_sync_git_sync")
-    sync_git_tree(repo_url, branch, workdir)
+    sync_git_tree(repo_url, branch, workdir, sparse_path=subdir)
     source = workdir / Path(subdir)
     if not source.is_dir():
         raise FileNotFoundError(f"missing data synchronization directory: {source}")

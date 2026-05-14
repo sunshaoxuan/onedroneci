@@ -156,10 +156,10 @@ def test_data_sync_git_uses_shallow_clone_and_timeout(monkeypatch, tmp_path):
 
     calls: list[tuple[list[str], int | None]] = []
 
-    def fake_run(cmd, check, timeout=None):
+    def fake_run(cmd, timeout):
         calls.append((cmd, timeout))
 
-    monkeypatch.setattr(packager.subprocess, "run", fake_run)
+    monkeypatch.setattr(packager, "_run_git", fake_run)
 
     packager.sync_git_tree("https://example.test/data.git", "master", tmp_path / "data-sync", timeout=123)
 
@@ -170,6 +170,7 @@ def test_data_sync_git_uses_shallow_clone_and_timeout(monkeypatch, tmp_path):
                 "clone",
                 "--depth",
                 "1",
+                "--single-branch",
                 "--branch",
                 "master",
                 "https://example.test/data.git",
@@ -178,6 +179,41 @@ def test_data_sync_git_uses_shallow_clone_and_timeout(monkeypatch, tmp_path):
             123,
         )
     ]
+
+
+def test_data_sync_git_uses_sparse_clone_for_subdir(monkeypatch, tmp_path):
+    import standalone_packager as packager
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, timeout):
+        calls.append(cmd)
+
+    monkeypatch.setattr(packager, "_run_git", fake_run)
+
+    packager.sync_git_tree(
+        "https://example.test/data.git",
+        "master",
+        tmp_path / "data-sync",
+        timeout=123,
+        sparse_path="updsv7phr/PHR",
+    )
+
+    assert calls[0][:7] == ["git", "clone", "--depth", "1", "--single-branch", "--filter=blob:none", "--sparse"]
+    assert calls[1] == ["git", "-C", str(tmp_path / "data-sync"), "sparse-checkout", "set", "updsv7phr/PHR"]
+
+
+def test_data_sync_git_url_uses_existing_git_token(monkeypatch):
+    import standalone_packager as packager
+
+    monkeypatch.setenv("DATA_SYNC_GIT_URL", "https://example.test/ohr/data-synchronization.git")
+    monkeypatch.setenv("OHR_BACK_GIT_TOKEN", "secret token")
+    monkeypatch.delenv("DATA_SYNC_GIT_TOKEN", raising=False)
+    monkeypatch.delenv("FRONTEND_GIT_TOKEN", raising=False)
+
+    assert packager.configured_data_sync_git_url() == (
+        "https://oauth2:secret%20token@example.test/ohr/data-synchronization.git"
+    )
 
 
 def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
@@ -196,7 +232,7 @@ def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
     package_zip.write_bytes(b"new-package")
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr("ohr-cicd/web_prod/meta.json", "{}")
-    monkeypatch.setattr(packager, "sync_git_tree", lambda repo_url, branch, workdir: None)
+    monkeypatch.setattr(packager, "sync_git_tree", lambda repo_url, branch, workdir, **kwargs: None)
     logs: list[str] = []
 
     build_product_package(
