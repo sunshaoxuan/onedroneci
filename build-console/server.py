@@ -588,6 +588,21 @@ def cancel_build(build_id: str) -> dict[str, Any]:
     return read_json(path)
 
 
+def delete_build(build_id: str) -> dict[str, Any]:
+    path = metadata_path(build_id)
+    if not path.is_file():
+        raise FileNotFoundError(build_id)
+    meta = read_json(path)
+    if meta.get("status") in ("queued", "running"):
+        return {"ok": False, "error": "build_running"}
+    BUILD_THREADS.pop(build_id, None)
+    BUILD_PROCS.pop(build_id, None)
+    CANCELLED_BUILDS.discard(build_id)
+    shutil.rmtree(build_dir(build_id), ignore_errors=True)
+    shutil.rmtree(ARTIFACT_ROOT / build_id, ignore_errors=True)
+    return {"ok": True, "id": build_id}
+
+
 def checkout_command(branch: str) -> str:
     git_token = os.environ.get("OHR_BACK_GIT_TOKEN", "")
     set_origin = ""
@@ -1254,6 +1269,18 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return self.send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
         self.send_json(meta, HTTPStatus.CREATED)
+
+    def do_DELETE(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        m = re.fullmatch(r"/api/builds/([^/]+)", parsed.path)
+        if not m:
+            return self.send_error(HTTPStatus.NOT_FOUND)
+        try:
+            result = delete_build(m.group(1))
+        except FileNotFoundError:
+            return self.send_error(HTTPStatus.NOT_FOUND)
+        status = HTTPStatus.CONFLICT if result.get("error") == "build_running" else HTTPStatus.OK
+        return self.send_json(result, status)
 
     def send_build(self, build_id: str) -> None:
         path = metadata_path(build_id)

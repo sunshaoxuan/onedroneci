@@ -250,6 +250,36 @@ def test_create_build_requires_drone_config_when_drone_executor(tmp_path, monkey
         raise AssertionError("missing Drone config should fail")
 
 
+def test_delete_finished_build_removes_metadata_and_artifacts(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path / "builds")
+    monkeypatch.setattr(server, "ARTIFACT_ROOT", tmp_path / "artifacts")
+
+    build_id = "20260514121212"
+    server.build_dir(build_id).mkdir(parents=True)
+    server.write_json(
+        server.metadata_path(build_id),
+        {"id": build_id, "status": "success", "steps": [], "artifacts": []},
+    )
+    server.shared_artifact_path(build_id, "web.zip").parent.mkdir(parents=True)
+    server.shared_artifact_path(build_id, "web.zip").write_text("web", encoding="utf-8")
+
+    assert server.delete_build(build_id) == {"ok": True, "id": build_id}
+    assert not server.build_dir(build_id).exists()
+    assert not (server.ARTIFACT_ROOT / build_id).exists()
+
+
+def test_delete_running_build_is_rejected(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    build_id = "20260514121213"
+    server.build_dir(build_id).mkdir(parents=True)
+    server.write_json(server.metadata_path(build_id), {"id": build_id, "status": "running"})
+
+    assert server.delete_build(build_id) == {"ok": False, "error": "build_running"}
+    assert server.metadata_path(build_id).is_file()
+
+
 def test_list_frontend_release_branches_intersects_child_repos(monkeypatch):
     server = load_server()
 

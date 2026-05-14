@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
 import threading
 import time
 import urllib.error
@@ -260,6 +261,29 @@ def remote_post(path: str) -> dict[str, Any]:
         return json.loads(resp.read().decode("utf-8") or "{}")
 
 
+def remote_delete(path: str) -> dict[str, Any]:
+    url = urllib.parse.urljoin(REMOTE_BUILD_CONSOLE_URL.rstrip("/") + "/", path.lstrip("/"))
+    req = urllib.request.Request(url, headers={"Content-Type": "application/json"}, method="DELETE")
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read().decode("utf-8") or "{}")
+
+
+def remove_path_inside(path: Path, root: Path) -> bool:
+    try:
+        resolved = path.resolve()
+        resolved_root = root.resolve()
+    except OSError:
+        return False
+    if resolved == resolved_root or resolved_root not in resolved.parents:
+        return False
+    if resolved.exists():
+        if resolved.is_dir():
+            shutil.rmtree(resolved, ignore_errors=True)
+        else:
+            resolved.unlink(missing_ok=True)
+    return True
+
+
 def is_remote_console_reachable() -> bool:
     try:
         with urllib.request.urlopen(urllib.parse.urljoin(REMOTE_BUILD_CONSOLE_URL.rstrip("/") + "/", "api/builds"), timeout=5):
@@ -327,6 +351,40 @@ def cancel_job(job_id: str) -> dict[str, Any]:
     update_job(job_id, status="cancelled")
     append_log(job_id, "cancelled")
     return {"ok": True}
+
+
+def delete_job(job_id: str) -> dict[str, Any]:
+    try:
+        job = read_job(job_id)
+    except FileNotFoundError:
+        return {"ok": False, "error": "not_found"}
+    if job.get("status") in ("queued", "running"):
+        return {"ok": False, "error": "job_running"}
+
+    remote_id = job.get("remote_build_id")
+    if remote_id:
+        try:
+            remote_delete(f"/api/builds/{remote_id}")
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (HTTPStatus.NOT_FOUND,):
+                return {"ok": False, "error": f"remote_delete_failed:{exc.code}"}
+        except Exception as exc:
+            return {"ok": False, "error": f"remote_delete_failed:{redact_build_terminal(str(exc))}"}
+
+    output_root = configured_output_dir()
+    outputs = job.get("outputs") or {}
+    product_dir = str(outputs.get("product_dir") or "")
+    if product_dir:
+        product_path = Path(product_dir)
+        candidate = product_path.parent if product_path.name == "製品" else product_path
+        remove_path_inside(candidate, output_root)
+    remove_path_inside(output_root / job_id, output_root)
+
+    with LOCK:
+        JOBS.pop(job_id, None)
+        CANCELLED.discard(job_id)
+    shutil.rmtree(job_dir(job_id), ignore_errors=True)
+    return {"ok": True, "id": job_id, "remote_build_id": remote_id}
 
 
 def run_job(job_id: str) -> None:
@@ -616,6 +674,9 @@ const I18N = {
     copy: 'コピー',
     copied: 'コピーしました',
     copyFailed: 'コピー失敗',
+    deleteJob: '削除',
+    deleteConfirm: 'このタスクと対応する成果物を削除しますか？',
+    deleteFailed: '削除失敗',
     remoteBuild: 'ビルド端末番号',
     error: 'エラー',
     terminalFirst: 'ビルド端末を起動してから開始してください。',
@@ -673,6 +734,9 @@ const I18N = {
     copy: '复制',
     copied: '已复制',
     copyFailed: '复制失败',
+    deleteJob: '删除',
+    deleteConfirm: '要删除这个任务和对应产物吗？',
+    deleteFailed: '删除失败',
     remoteBuild: '构建终端编号',
     error: '错误',
     terminalFirst: '请先启动构建终端再开始。',
@@ -730,6 +794,9 @@ const I18N = {
     copy: 'Copy',
     copied: 'Copied',
     copyFailed: 'Copy failed',
+    deleteJob: 'Delete',
+    deleteConfirm: 'Delete this task and its artifacts?',
+    deleteFailed: 'Delete failed',
     remoteBuild: 'Build terminal ID',
     error: 'Error',
     terminalFirst: 'Start the build terminal first.',
@@ -945,6 +1012,28 @@ document.getElementById('stopJob').addEventListener('click', async () => {
   refresh();
 });
 
+async function deleteSelectedJob(jobId = selected) {
+  if (!jobId) return;
+  if (!confirm(t('deleteConfirm'))) return;
+  const res = await fetch(`/api/jobs/${jobId}`, {method: 'DELETE', headers: authHeaders()});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    alert(`${t('deleteFailed')}: ${data.error || res.status}`);
+    return;
+  }
+  if (selected === jobId) {
+    selected = null;
+    selectedJob = null;
+    logOffset = 0;
+    logLines = [];
+    document.getElementById('log').textContent = '';
+    document.getElementById('result').innerHTML = t('selectTask');
+    document.getElementById('jobBadge').textContent = t('noTask');
+    syncTerminalConsole(null);
+  }
+  await refresh();
+}
+
 document.getElementById('form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const terminal = await refreshTerminal();
@@ -978,11 +1067,21 @@ async function refresh() {
     return;
   }
   data.jobs.forEach(job => {
-    const btn = document.createElement('button');
+    const btn = document.createElement('div');
     btn.className = job.id === selected ? 'job active' : 'job';
-    btn.innerHTML = `<strong>${job.id}</strong><span>${job.status}${job.remote_build_id ? ' · ' + job.remote_build_id : ''}</span>`;
+    btn.tabIndex = 0;
+    const deletable = !['queued', 'running'].includes(job.status);
+    btn.innerHTML = `<strong>${job.id}</strong><span>${job.status}${job.remote_build_id ? ' · ' + job.remote_build_id : ''}</span>${deletable ? `<button type="button" class="delete-job" data-job-id="${escapeHtml(job.id)}">${t('deleteJob')}</button>` : ''}`;
     btn.onclick = () => { selected = job.id; logOffset = 0; logLines = []; render(job); fetchJobLog(true); };
+    btn.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') btn.click(); };
     jobs.appendChild(btn);
+    const deleteBtn = btn.querySelector('.delete-job');
+    if (deleteBtn) {
+      deleteBtn.onclick = event => {
+        event.stopPropagation();
+        deleteSelectedJob(job.id);
+      };
+    }
     if (job.id === selected) render(job);
   });
   if (selected) await fetchJobLog(false);
@@ -1096,7 +1195,10 @@ function renderResult(job) {
     <div class="path-list">
       ${pathList}
     </div>
+    ${['queued', 'running'].includes(job.status) ? '' : `<div class="result-actions"><button type="button" class="danger-lite" id="deleteSelectedJob">${t('deleteJob')}</button></div>`}
   `;
+  const deleteButton = box.querySelector('#deleteSelectedJob');
+  if (deleteButton) deleteButton.addEventListener('click', () => deleteSelectedJob(job.id));
   box.querySelectorAll('.copy-path').forEach(btn => {
     btn.addEventListener('click', async () => {
       try {
@@ -1236,6 +1338,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .jobs { display: grid; gap: 8px; max-height: 360px; overflow: auto; }
 .job {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   text-align: left;
@@ -1244,10 +1347,22 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   border: 1px solid var(--line);
   min-height: 42px;
   font-size: 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 9px 14px;
 }
 .job span { color: var(--muted); }
 .job.active { background: var(--ink); color: #fff; }
 .job.active span { color: #d8e2ef; }
+.delete-job {
+  min-height: 30px;
+  padding: 5px 9px;
+  background: #fff1f0;
+  color: var(--danger);
+  border: 1px solid #ffd1cc;
+}
+.job.active .delete-job { background: #fff; }
+.result-actions { margin-top: 14px; display: flex; justify-content: flex-end; }
 .badge {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1346,6 +1461,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
             action = parsed.path.rsplit("/", 1)[-1]
             return self.send_json(build_terminal_action(action))
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_DELETE(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith("/api/jobs/"):
+            if not self.authorized():
+                return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
+            job_id = parsed.path.split("/")[3]
+            result = delete_job(job_id)
+            status = HTTPStatus.CONFLICT if result.get("error") == "job_running" else HTTPStatus.OK
+            if result.get("error") == "not_found":
+                status = HTTPStatus.NOT_FOUND
+            return self.send_json(result, status)
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def create_job(self) -> None:

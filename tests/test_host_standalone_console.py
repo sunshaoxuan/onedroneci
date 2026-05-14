@@ -212,6 +212,52 @@ def test_batch_log_write_keeps_metadata_small(tmp_path, monkeypatch):
     assert "line-0" in (tmp_path / job["id"] / "job.log").read_text(encoding="utf-8")
 
 
+def test_delete_finished_job_removes_host_and_remote_artifacts(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path / "jobs")
+    monkeypatch.setattr(console, "JOBS", {})
+    monkeypatch.setattr(console, "CANCELLED", set())
+    output_root = tmp_path / "dist"
+    monkeypatch.setattr(console, "configured_output_dir", lambda: output_root)
+    remote_deleted: list[str] = []
+    monkeypatch.setattr(console, "remote_delete", lambda path: remote_deleted.append(path) or {"ok": True})
+
+    job_id = "20260514111111"
+    product_dir = output_root / job_id / "製品"
+    product_dir.mkdir(parents=True)
+    (product_dir / "OneHrStandalone.zip").write_text("zip", encoding="utf-8")
+    job_dir = console.job_dir(job_id)
+    job_dir.mkdir(parents=True)
+    (job_dir / "package.zip").write_text("pkg", encoding="utf-8")
+    console.write_job(
+        {
+            "id": job_id,
+            "status": "success",
+            "created_at": 1,
+            "updated_at": 1,
+            "remote_build_id": "remote-1",
+            "request": {},
+            "outputs": {"product_dir": str(product_dir)},
+        }
+    )
+
+    result = console.delete_job(job_id)
+
+    assert result["ok"] is True
+    assert remote_deleted == ["/api/builds/remote-1"]
+    assert not job_dir.exists()
+    assert not (output_root / job_id).exists()
+
+
+def test_delete_running_job_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(console, "JOBS", {})
+    job_id = "20260514111112"
+    console.write_job({"id": job_id, "status": "running", "created_at": 1, "updated_at": 1, "request": {}})
+
+    assert console.delete_job(job_id) == {"ok": False, "error": "job_running"}
+    assert console.job_metadata_path(job_id).is_file()
+
+
 def test_resume_unfinished_jobs_restarts_monitor_thread(tmp_path, monkeypatch):
     monkeypatch.setattr(console, "DATA_DIR", tmp_path)
     console.JOBS.clear()
