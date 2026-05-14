@@ -126,7 +126,7 @@ def build_product_package(
     if not (sql_template_dir / "1.tenant").is_dir() or not (sql_template_dir / "2.ohr").is_dir():
         raise FileNotFoundError(f"missing SQL templates under: {sql_template_dir}")
 
-    product_dir = output_root / f"{version.build_id}_製品"
+    product_dir = output_root / "製品"
     if product_dir.exists():
         shutil.rmtree(product_dir)
     product_dir.mkdir(parents=True, exist_ok=True)

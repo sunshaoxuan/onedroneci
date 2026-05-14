@@ -997,6 +997,11 @@ function pathRow(label, value) {
 function renderResult(job) {
   const outputs = job.outputs || {};
   const box = document.getElementById('result');
+  const deliveryPaths = outputs.product_dir || outputs.standalone_zip || outputs.version_txt;
+  const intermediatePaths = deliveryPaths ? '' : `
+      ${pathRow('package.zip', outputs.package_zip)}
+      ${pathRow('web.zip', outputs.web_zip)}
+  `;
   box.innerHTML = `
     <div class="result-summary">
       <div><span>ID</span><strong>${escapeHtml(job.id)}</strong></div>
@@ -1005,8 +1010,7 @@ function renderResult(job) {
       <div><span>${t('error')}</span><strong>${escapeHtml(job.error || '-')}</strong></div>
     </div>
     <div class="path-list">
-      ${pathRow('package.zip', outputs.package_zip)}
-      ${pathRow('web.zip', outputs.web_zip)}
+      ${intermediatePaths}
       ${pathRow(t('productDir'), outputs.product_dir)}
       ${pathRow(t('standaloneZip'), outputs.standalone_zip)}
       ${pathRow(t('versionTxt'), outputs.version_txt)}

@@ -254,6 +254,8 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "version_txt" in console.APP_JS
     assert "outputs.package_zip" in console.APP_JS
     assert "outputs.web_zip" in console.APP_JS
+    assert "const deliveryPaths" in console.APP_JS
+    assert "const intermediatePaths = deliveryPaths ? ''" in console.APP_JS
     assert "navigator.clipboard.writeText" in console.APP_JS
     assert ".workbench" in console.STYLE_CSS
     assert ".log-panel" in console.STYLE_CSS

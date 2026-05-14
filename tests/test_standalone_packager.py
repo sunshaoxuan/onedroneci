@@ -96,6 +96,7 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     )
 
     product_dir = Path(result["product_dir"])
+    assert product_dir == output / "製品"
     assert (product_dir / "version.txt").read_text(encoding="utf-8") == (
         "資材:build-1\n前台分支：release_front\n后台分支：release_back\n"
     )
