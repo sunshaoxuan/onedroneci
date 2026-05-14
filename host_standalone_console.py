@@ -405,8 +405,8 @@ INDEX_HTML = """<!doctype html>
         </div>
       </div>
       <div class="grid">
-        <label><span data-i18n="backendBranch">バックエンドブランチ</span><input name="backend_branch" required placeholder="release_20260325"></label>
-        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><input name="frontend_release_branch" required placeholder="release_20260325"></label>
+        <label><span data-i18n="backendBranch">バックエンドブランチ</span><input name="backend_branch" required list="backend-branches" placeholder="release_20260325"><datalist id="backend-branches"></datalist></label>
+        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><input name="frontend_release_branch" required list="frontend-branches" placeholder="release_20260325"><datalist id="frontend-branches"></datalist></label>
         <label><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
         <label><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
         <label><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
@@ -635,6 +635,28 @@ function token() {
   return found ? decodeURIComponent(found.split('=').slice(1).join('=')) : '';
 }
 function authHeaders(extra = {}) { return {...extra, 'X-Management-Token': token()}; }
+function fillDatalist(id, branches) {
+  const list = document.getElementById(id);
+  if (!list) return;
+  list.innerHTML = '';
+  (branches || []).forEach(branch => {
+    const option = document.createElement('option');
+    option.value = branch;
+    list.appendChild(option);
+  });
+}
+async function loadBranchLists() {
+  try {
+    const [backend, frontend] = await Promise.all([
+      fetch('/build-terminal/api/backend-branches').then(res => res.json()),
+      fetch('/build-terminal/api/frontend-branches').then(res => res.json())
+    ]);
+    fillDatalist('backend-branches', backend.branches);
+    fillDatalist('frontend-branches', frontend.branches);
+  } catch (error) {
+    console.warn('failed to load branch lists', error);
+  }
+}
 function translateLogText(text) {
   const maps = {
     'ja-JP': {
@@ -846,6 +868,7 @@ function renderResult(job) {
 
 applyI18n();
 refreshTerminal();
+loadBranchLists();
 refresh();
 timer = setInterval(refresh, 5000);
 """

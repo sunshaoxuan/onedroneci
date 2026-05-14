@@ -102,6 +102,17 @@ def test_host_console_localizes_database_and_service_labels():
     assert "OHR 服务端口" in console.APP_JS
 
 
+def test_host_console_uses_build_terminal_branch_lists_via_proxy():
+    assert 'list="backend-branches"' in console.INDEX_HTML
+    assert 'list="frontend-branches"' in console.INDEX_HTML
+    assert 'id="backend-branches"' in console.INDEX_HTML
+    assert 'id="frontend-branches"' in console.INDEX_HTML
+    assert "/build-terminal/api/backend-branches" in console.APP_JS
+    assert "/build-terminal/api/frontend-branches" in console.APP_JS
+    assert "fillDatalist('backend-branches'" in console.APP_JS
+    assert "fillDatalist('frontend-branches'" in console.APP_JS
+
+
 def test_placeholder_text_is_visually_subtle():
     assert "input::placeholder" in console.STYLE_CSS
     assert "color: #aeb8c6" in console.STYLE_CSS
