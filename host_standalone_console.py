@@ -327,6 +327,8 @@ def run_job(job_id: str) -> None:
         job = JOBS.get(job_id) or read_job(job_id)
         req = dict(job["request"])
         remote_id = job.get("remote_build_id")
+    build_backend = bool(str(req.get("backend_branch") or "").strip())
+    build_frontend = bool(str(req.get("frontend_release_branch") or "").strip())
     work_dir = job_dir(job_id)
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -340,12 +342,12 @@ def run_job(job_id: str) -> None:
         else:
             append_log(job_id, "build_terminal_dispatch")
             remote_payload = {
-                "build_backend": True,
-                "build_frontend": True,
-                "backend_branch": req["backend_branch"],
-                "frontend_release_branch": req["frontend_release_branch"],
+                "build_backend": build_backend,
+                "build_frontend": build_frontend,
+                "backend_branch": req.get("backend_branch") or "",
+                "frontend_release_branch": req.get("frontend_release_branch") or "",
                 "help_docs_branch": req.get("help_docs_branch") or "release_ci",
-                "conf_server_host": req["conf_server_host"],
+                "conf_server_host": req.get("conf_server_host") or "",
                 "conf_web_port": int(req.get("conf_web_port") or 80),
                 "conf_worker_processes": int(req.get("conf_worker_processes") or 1),
                 "conf_worker_connections": int(req.get("conf_worker_connections") or 1024),
@@ -371,8 +373,16 @@ def run_job(job_id: str) -> None:
 
         check_cancelled(job_id)
         append_log(job_id, "download_artifacts")
-        package_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "package.zip", work_dir / "package.zip")
-        web_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "web.zip", work_dir / "web.zip")
+        package_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "package.zip", work_dir / "package.zip") if build_backend else None
+        web_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "web.zip", work_dir / "web.zip") if build_frontend else None
+        partial_outputs = {
+            "package_zip": str(package_zip) if package_zip else "",
+            "web_zip": str(web_zip) if web_zip else "",
+        }
+        if not (build_backend and build_frontend):
+            update_job(job_id, status="success", outputs=partial_outputs)
+            append_log(job_id, "selected_artifacts_done")
+            return
 
         check_cancelled(job_id)
         append_log(job_id, "standalone_packaging")
@@ -384,8 +394,8 @@ def run_job(job_id: str) -> None:
             web_zip=web_zip,
             version=BuildVersion(
                 build_id=remote_id,
-                backend_branch=req["backend_branch"],
-                frontend_branch=req["frontend_release_branch"],
+                backend_branch=req.get("backend_branch") or "-",
+                frontend_branch=req.get("frontend_release_branch") or "-",
             ),
             config=StandaloneConfig(
                 postgresql_host=req["postgresql_host"],
@@ -396,6 +406,7 @@ def run_job(job_id: str) -> None:
                 ohr_service_port=int(req.get("ohr_service_port") or 3198),
             ),
         )
+        outputs.update(partial_outputs)
         update_job(job_id, status="success", outputs=outputs)
         append_log(job_id, "standalone_package_done")
     except JobCancelled:
@@ -472,8 +483,8 @@ INDEX_HTML = """<!doctype html>
         </div>
       </div>
       <div class="grid">
-        <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches" required><option value="">release_20260325</option></select></label>
-        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches" required><option value="">release_20260325</option></select></label>
+        <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches"><option value=""></option></select></label>
+        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches"><option value=""></option></select></label>
         <label><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
         <label><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
         <label><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
@@ -711,15 +722,14 @@ function token() {
   return found ? decodeURIComponent(found.split('=').slice(1).join('=')) : '';
 }
 function authHeaders(extra = {}) { return {...extra, 'X-Management-Token': token()}; }
-function fillBranchSelect(id, branches, preferred = 'release_20260325') {
+function fillBranchSelect(id, branches) {
   const select = document.getElementById(id);
   if (!select) return;
   const previous = select.value;
   select.innerHTML = '';
   const placeholder = document.createElement('option');
   placeholder.value = '';
-  placeholder.textContent = preferred;
-  placeholder.disabled = true;
+  placeholder.textContent = '';
   placeholder.selected = true;
   select.appendChild(placeholder);
   (branches || []).forEach(branch => {
@@ -730,8 +740,6 @@ function fillBranchSelect(id, branches, preferred = 'release_20260325') {
   });
   if (previous && (branches || []).includes(previous)) {
     select.value = previous;
-  } else if ((branches || []).includes(preferred)) {
-    select.value = preferred;
   }
 }
 async function loadBranchLists() {
@@ -753,6 +761,7 @@ function translateLogText(text) {
       'remote_build_id': 'ビルド端末番号',
       'remote_build_status': 'ビルド端末状態',
       'download_artifacts': 'package.zip / web.zip を取得しています',
+      'selected_artifacts_done': '選択した成果物の取得が完了しました',
       'standalone_packaging': '製品交付パッケージを生成しています',
       'standalone_package_done': '製品交付パッケージの生成が完了しました',
       'cancelled': '停止しました',
@@ -770,6 +779,7 @@ function translateLogText(text) {
       'remote_build_id': 'Build terminal ID',
       'remote_build_status': 'Build terminal status',
       'download_artifacts': 'Downloading package.zip / web.zip',
+      'selected_artifacts_done': 'Selected artifacts downloaded',
       'standalone_packaging': 'Generating delivery package',
       'standalone_package_done': 'Delivery package generated',
       'cancelled': 'Stopped',
@@ -995,6 +1005,8 @@ function renderResult(job) {
       <div><span>${t('error')}</span><strong>${escapeHtml(job.error || '-')}</strong></div>
     </div>
     <div class="path-list">
+      ${pathRow('package.zip', outputs.package_zip)}
+      ${pathRow('web.zip', outputs.web_zip)}
       ${pathRow(t('productDir'), outputs.product_dir)}
       ${pathRow(t('standaloneZip'), outputs.standalone_zip)}
       ${pathRow(t('versionTxt'), outputs.version_txt)}
@@ -1248,7 +1260,15 @@ class Handler(BaseHTTPRequestHandler):
     def create_job(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-        for key in ("backend_branch", "frontend_release_branch", "conf_server_host", "postgresql_host"):
+        build_backend = bool(str(payload.get("backend_branch") or "").strip())
+        build_frontend = bool(str(payload.get("frontend_release_branch") or "").strip())
+        if not build_backend and not build_frontend:
+            self.send_json({"error": "missing build target"}, HTTPStatus.BAD_REQUEST)
+            return
+        required = ["conf_server_host"] if build_frontend else []
+        if build_backend and build_frontend:
+            required.append("postgresql_host")
+        for key in required:
             if not str(payload.get(key) or "").strip():
                 self.send_json({"error": f"missing {key}"}, HTTPStatus.BAD_REQUEST)
                 return

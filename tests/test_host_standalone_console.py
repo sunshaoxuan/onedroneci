@@ -137,6 +137,8 @@ def test_host_console_localizes_database_and_service_labels():
 def test_host_console_uses_build_terminal_branch_lists_via_proxy():
     assert 'name="backend_branch" id="backend-branches"' in console.INDEX_HTML
     assert 'name="frontend_release_branch" id="frontend-branches"' in console.INDEX_HTML
+    assert 'name="backend_branch" id="backend-branches" required' not in console.INDEX_HTML
+    assert 'name="frontend_release_branch" id="frontend-branches" required' not in console.INDEX_HTML
     assert 'id="backend-branches"' in console.INDEX_HTML
     assert 'id="frontend-branches"' in console.INDEX_HTML
     assert "/build-terminal/api/backend-branches" in console.APP_JS
@@ -144,6 +146,7 @@ def test_host_console_uses_build_terminal_branch_lists_via_proxy():
     assert "fillBranchSelect('backend-branches'" in console.APP_JS
     assert "fillBranchSelect('frontend-branches'" in console.APP_JS
     assert "if (data.status === 'running') loadBranchLists();" in console.APP_JS
+    assert "select.value = preferred" not in console.APP_JS
 
 
 def test_placeholder_text_is_visually_subtle():
@@ -249,10 +252,67 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "product_dir" in console.APP_JS
     assert "standalone_zip" in console.APP_JS
     assert "version_txt" in console.APP_JS
+    assert "outputs.package_zip" in console.APP_JS
+    assert "outputs.web_zip" in console.APP_JS
     assert "navigator.clipboard.writeText" in console.APP_JS
     assert ".workbench" in console.STYLE_CSS
     assert ".log-panel" in console.STYLE_CSS
     assert "min-height: 560px" in console.STYLE_CSS
+
+
+def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    console.JOBS.clear()
+    job_id = "20260514000103"
+    job = {
+        "id": job_id,
+        "status": "queued",
+        "created_at": 1,
+        "updated_at": 1,
+        "remote_build_id": None,
+        "remote_log_offset": 0,
+        "request": {
+            "backend_branch": "",
+            "frontend_release_branch": "release_front",
+            "help_docs_branch": "release_ci",
+            "conf_server_host": "customer.local",
+        },
+        "log": [],
+        "outputs": {},
+    }
+    console.job_dir(job_id).mkdir(parents=True)
+    console.job_log_path(job_id).write_text("", encoding="utf-8")
+    console.write_job(job)
+    console.JOBS[job_id] = job
+    payloads: list[dict] = []
+
+    def fake_remote_json(base, path, payload=None):
+        if path == "/api/builds":
+            payloads.append(payload)
+            return {"id": "remote-web"}
+        if path == "/api/builds/remote-web":
+            return {"status": "success"}
+        if path.endswith("/log?offset=0"):
+            return {"text": "", "offset": 0}
+        return {"text": "", "offset": 0}
+
+    def fake_download(base, build_id, name, destination):
+        destination.write_bytes(name.encode("utf-8"))
+        return destination
+
+    monkeypatch.setattr(console, "build_terminal_status", lambda: {"status": "running"})
+    monkeypatch.setattr(console, "remote_json", fake_remote_json)
+    monkeypatch.setattr(console, "download_remote_artifact", fake_download)
+    monkeypatch.setattr(console, "build_product_package", lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not package")))
+
+    console.run_job(job_id)
+
+    stored = console.read_job(job_id)
+    assert stored["status"] == "success"
+    assert stored["outputs"]["web_zip"].endswith("web.zip")
+    assert stored["outputs"]["package_zip"] == ""
+    assert payloads[0]["build_backend"] is False
+    assert payloads[0]["build_frontend"] is True
 
 
 def test_running_status_uses_single_animated_heartbeat_not_log_spam():
