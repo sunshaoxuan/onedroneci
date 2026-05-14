@@ -364,6 +364,7 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "function renderResultIfChanged(job)" in console.APP_JS
     assert "function fillFormFromJob(job)" in console.APP_JS
     assert "if (!selected && data.jobs.length)" in console.APP_JS
+    assert "const activeJob = data.jobs.find(job => ['queued', 'running'].includes(job.status))" in console.APP_JS
     assert "lastRenderedResultSignature" in console.APP_JS
     assert "overall-progress" in console.APP_JS
     assert "progressSteps" in console.APP_JS

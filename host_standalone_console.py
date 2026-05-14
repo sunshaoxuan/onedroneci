@@ -1231,7 +1231,8 @@ async function refresh() {
     return;
   }
   if (!selected && data.jobs.length) {
-    selected = data.jobs[0].id;
+    const activeJob = data.jobs.find(job => ['queued', 'running'].includes(job.status));
+    selected = (activeJob || data.jobs[0]).id;
     lastRenderedResultSignature = '';
     logOffset = 0;
     logLines = [];
