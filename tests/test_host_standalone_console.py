@@ -92,6 +92,22 @@ def test_i18n_contains_terminal_controls_and_statuses():
         assert key in console.APP_JS
 
 
+def test_host_console_localizes_database_and_service_labels():
+    assert "PostgreSQL ホスト" in console.APP_JS
+    assert "PostgreSQL ポート" in console.APP_JS
+    assert "PostgreSQL ユーザー" in console.APP_JS
+    assert "PostgreSQL パスワード" in console.APP_JS
+    assert "OHR サービスポート" in console.APP_JS
+    assert "PostgreSQL 主机" in console.APP_JS
+    assert "OHR 服务端口" in console.APP_JS
+
+
+def test_placeholder_text_is_visually_subtle():
+    assert "input::placeholder" in console.STYLE_CSS
+    assert "color: #aeb8c6" in console.STYLE_CSS
+    assert "font-weight: 500" in console.STYLE_CSS
+
+
 def test_console_uses_commercial_delivery_package_naming():
     assert "庶務事務システム构造器" in console.INDEX_HTML
     assert "庶务事务系统构造器" in console.APP_JS

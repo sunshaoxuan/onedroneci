@@ -492,13 +492,13 @@ const I18N = {
     helpBranch: 'ヘルプブランチ',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
-    postgresHost: 'PostgreSQL Host',
-    postgresPort: 'PostgreSQL Port',
-    postgresUser: 'PostgreSQL User',
-    postgresPassword: 'PostgreSQL Password',
+    postgresHost: 'PostgreSQL ホスト',
+    postgresPort: 'PostgreSQL ポート',
+    postgresUser: 'PostgreSQL ユーザー',
+    postgresPassword: 'PostgreSQL パスワード',
     appHostName: 'アプリケーションサービスホスト名',
     appHostPlaceholder: '顧客アクセスアドレスを使用',
-    ohrServicePort: 'OHR Service Port',
+    ohrServicePort: 'OHR サービスポート',
     historyKicker: '履歴',
     historyTitle: '構造履歴',
     resultKicker: '結果',
@@ -543,13 +543,13 @@ const I18N = {
     helpBranch: 'Help 分支',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
-    postgresHost: 'PostgreSQL Host',
-    postgresPort: 'PostgreSQL Port',
-    postgresUser: 'PostgreSQL User',
-    postgresPassword: 'PostgreSQL Password',
+    postgresHost: 'PostgreSQL 主机',
+    postgresPort: 'PostgreSQL 端口',
+    postgresUser: 'PostgreSQL 用户',
+    postgresPassword: 'PostgreSQL 密码',
     appHostName: '应用服务主机名',
     appHostPlaceholder: '默认取客户访问地址',
-    ohrServicePort: 'OHR Service Port',
+    ohrServicePort: 'OHR 服务端口',
     historyKicker: '历史',
     historyTitle: '构造历史',
     resultKicker: '结果',
@@ -905,6 +905,11 @@ select, input {
   color: var(--ink);
   padding: 11px 12px;
   font: inherit;
+}
+input::placeholder {
+  color: #aeb8c6;
+  font-weight: 500;
+  opacity: 1;
 }
 input:disabled, select:disabled { background: #eef2f5; color: #7b8794; }
 .terminal-panel, .panel {
