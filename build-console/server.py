@@ -1512,6 +1512,9 @@ function translateLogText(text) {
 let currentBuild = null;
 let logOffset = 0;
 let timer = null;
+const params = new URLSearchParams(window.location.search);
+const embeddedMode = params.get('embedded') === '1';
+const embeddedBuildId = params.get('build_id') || '';
 
 const statusLabel = {
   queued: 'queued',
@@ -1596,6 +1599,7 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
 });
 
 document.getElementById('stop-button').addEventListener('click', async () => {
+  if (embeddedMode) return;
   if (!currentBuild) return;
   const btn = document.getElementById('stop-button');
   btn.disabled = true;
@@ -1616,10 +1620,22 @@ document.getElementById('language').addEventListener('change', event => {
   if (currentBuild) refreshCurrent();
 });
 
+function applyEmbeddedMode() {
+  if (!embeddedMode) return;
+  document.body.classList.add('embedded');
+  document.getElementById('stop-button').hidden = true;
+  if (embeddedBuildId) selectBuild(embeddedBuildId);
+}
+
 function setFormLocked(locked) {
   document.querySelectorAll('#build-form input, #build-form button').forEach(el => {
     if (el.id !== 'stop-button') el.disabled = locked;
   });
+  if (embeddedMode) {
+    document.getElementById('start-button').hidden = true;
+    document.getElementById('stop-button').hidden = true;
+    return;
+  }
   document.getElementById('start-button').hidden = locked;
   document.getElementById('stop-button').hidden = !locked;
   document.getElementById('stop-button').disabled = false;
@@ -1690,11 +1706,12 @@ async function loadBuilds() {
   const data = await res.json();
   const list = document.getElementById('build-list');
   list.innerHTML = '';
-  if (!data.builds.length) {
+  const builds = embeddedMode && embeddedBuildId ? data.builds.filter(build => build.id === embeddedBuildId) : data.builds;
+  if (!builds.length) {
     list.innerHTML = `<div class="empty-state small">${t('noBuilds')}</div>`;
     return;
   }
-  data.builds.forEach(build => {
+  builds.forEach(build => {
     const item = document.createElement('button');
     item.className = 'build-item ' + build.status;
     item.innerHTML = `
@@ -1704,7 +1721,9 @@ async function loadBuilds() {
       </span>
       <em>${t('status.' + build.status) || build.status}</em>
     `;
-    item.onclick = () => selectBuild(build.id);
+    item.onclick = () => {
+      if (!embeddedMode) selectBuild(build.id);
+    };
     list.appendChild(item);
   });
 }
@@ -1804,6 +1823,7 @@ function renderDetail(build) {
 applyI18n();
 loadBranchLists();
 loadBuilds();
+applyEmbeddedMode();
 setInterval(loadBuilds, 5000);
 """
 
@@ -1836,6 +1856,20 @@ body {
     linear-gradient(180deg, #f8fafc 0%, var(--bg) 45%, #eef2f7 100%);
   color: var(--text);
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+body.embedded .hero,
+body.embedded .form-card {
+  display: none;
+}
+body.embedded main {
+  max-width: none;
+  padding: 14px;
+}
+body.embedded .grid {
+  grid-template-columns: minmax(260px, .75fr) minmax(0, 1.25fr);
+}
+body.embedded #stop-button {
+  display: none !important;
 }
 main { max-width: 1220px; margin: 0 auto; padding: 34px 26px 42px; }
 h1, h2 { margin: 0; letter-spacing: -.03em; }

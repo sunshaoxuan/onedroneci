@@ -67,6 +67,19 @@ def test_build_console_page_has_i18n_without_breaking_api():
         assert step_id in server.APP_JS
 
 
+def test_build_console_embedded_mode_is_read_only_current_build_view():
+    server = load_server()
+
+    assert "embeddedMode" in server.APP_JS
+    assert "embeddedBuildId" in server.APP_JS
+    assert "document.body.classList.add('embedded')" in server.APP_JS
+    assert "data.builds.filter(build => build.id === embeddedBuildId)" in server.APP_JS
+    assert "if (embeddedMode) return;" in server.APP_JS
+    assert "body.embedded .hero" in server.STYLE_CSS
+    assert "body.embedded .form-card" in server.STYLE_CSS
+    assert "body.embedded #stop-button" in server.STYLE_CSS
+
+
 def test_create_build_requires_frontend_release_branch_when_frontend_enabled(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)

@@ -506,6 +506,7 @@ const I18N = {
     logKicker: 'ログ',
     logTitle: '実行ログ',
     terminalConsole: 'ビルド端末コンソール',
+    terminalConsoleLocked: '構造開始後に表示できます',
     autoScroll: '自動スクロール',
     selectTask: 'タスクを選択してください。',
     noTask: 'タスク未選択',
@@ -557,6 +558,7 @@ const I18N = {
     logKicker: '日志',
     logTitle: '执行日志',
     terminalConsole: '构建终端控制台',
+    terminalConsoleLocked: '开始构造后可打开',
     autoScroll: '自动滚动',
     selectTask: '请选择任务。',
     noTask: '未选择任务',
@@ -608,6 +610,7 @@ const I18N = {
     logKicker: 'Log',
     logTitle: 'Execution log',
     terminalConsole: 'Build terminal console',
+    terminalConsoleLocked: 'Available after build starts',
     autoScroll: 'Auto scroll',
     selectTask: 'Select a task.',
     noTask: 'No task selected',
@@ -756,6 +759,10 @@ document.getElementById('startTerminal').addEventListener('click', () => termina
 document.getElementById('stopTerminal').addEventListener('click', () => terminalAction('stop'));
 document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
   const frame = document.getElementById('terminalFrame');
+  if (event.target.open && !frame.dataset.ready) {
+    event.target.open = false;
+    return;
+  }
   if (event.target.open && !frame.src) frame.src = frame.dataset.src;
 });
 document.getElementById('stopJob').addEventListener('click', async () => {
@@ -828,7 +835,32 @@ function render(job) {
   document.getElementById('jobBadge').textContent = `${job.id} · ${job.status}`;
   const running = ['queued', 'running'].includes(job.status);
   setFormLocked(running);
+  syncTerminalConsole(job);
   renderResult(job);
+}
+
+function syncTerminalConsole(job) {
+  const details = document.getElementById('terminalConsoleDetails');
+  const frame = document.getElementById('terminalFrame');
+  const summary = details.querySelector('summary');
+  const remoteId = job && job.remote_build_id;
+  if (!remoteId) {
+    details.open = false;
+    details.classList.add('disabled');
+    frame.removeAttribute('src');
+    frame.dataset.ready = '';
+    frame.dataset.src = '/build-terminal/';
+    summary.textContent = `${t('terminalConsole')} · ${t('terminalConsoleLocked')}`;
+    return;
+  }
+  details.classList.remove('disabled');
+  frame.dataset.ready = '1';
+  const nextSrc = `/build-terminal/?embedded=1&build_id=${encodeURIComponent(remoteId)}`;
+  if (frame.dataset.src !== nextSrc) {
+    frame.dataset.src = nextSrc;
+    if (details.open) frame.src = nextSrc;
+  }
+  summary.textContent = `${t('terminalConsole')} · ${remoteId}`;
 }
 
 function escapeHtml(value) {
@@ -1022,6 +1054,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .copy-path { min-height: 34px; padding: 7px 10px; }
 .terminal-frame-panel details { overflow: hidden; }
 .terminal-frame-panel summary { cursor: pointer; font-weight: 900; }
+.terminal-frame-panel details.disabled summary { color: var(--muted); cursor: not-allowed; }
 iframe {
   width: 100%;
   height: 520px;

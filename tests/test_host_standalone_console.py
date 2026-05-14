@@ -167,6 +167,14 @@ def test_build_terminal_iframe_uses_host_proxy_not_direct_url():
     assert "REMOTE_BUILD_CONSOLE_URL" not in console.INDEX_HTML
 
 
+def test_embedded_build_terminal_unlocks_only_after_remote_build_starts():
+    assert "terminalConsoleLocked" in console.APP_JS
+    assert "frame.dataset.ready" in console.APP_JS
+    assert "event.target.open = false" in console.APP_JS
+    assert "embedded=1&build_id=" in console.APP_JS
+    assert "job.remote_build_id" in console.APP_JS
+
+
 def test_build_terminal_proxy_rewrites_absolute_assets():
     class Dummy(console.Handler):
         def __init__(self):
