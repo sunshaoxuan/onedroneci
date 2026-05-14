@@ -302,19 +302,52 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "ohr-cicd/web_prod" in script
     assert "ohr-cicd/conf_prod" in script
     assert "conf_prod/TODO.md" not in script
-    assert "common-settings.conf" in script
-    assert "cicd.json" in script
+    assert "[sync ohr-cicd]" in script
+    assert "OHR_CICD_GIT_URL" in script
+    assert "OHR_CICD_BRANCH" in script
+    assert "config.$OHR_CICD_ENV.js" in script
+    assert "node ./src/generateConf.js" in script
+    assert "conf_$OHR_CICD_ENV" in script
     assert "CONF_SERVER_HOST" in script
     assert "CONF_WEB_PORT" in script
-    assert 'if [ "$CONF_WEB_PORT" != "80" ]; then' in script
-    assert 'portal_origin="$portal_origin:$CONF_WEB_PORT"' in script
+    assert "HOST_PORTAL = PORT_PORTAL === 80" in script
+    assert "CONF_WEB_DIR: 'ohr-cicd/web_prod'" in script
+    assert "CONF_CONF_DIR: 'conf_prod'" in script
     assert "web_prod/help" in script
     assert "ohr-help-docs" in script
     assert "svn checkout" in script
     assert "svn update" in script
+    assert "svn cleanup" in script
+    assert "npm run copy-images" in script
     assert "使用 SVN 文档源构建 Help" in script
     assert "HELP_DOCS_SVN_WORKDIR" in script
     assert "ohr_help_docs_release_*.zip" in script
     assert "前端发布包生成失败" in script
     assert 'zip -r "$OUT_WEB_ZIP" .' not in script
     assert "node_modules/*" not in script
+
+
+def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
+    server = load_server()
+    monkeypatch.setenv("NPM_AUTH_B64", "dGVzdDp0ZXN0")
+    monkeypatch.setattr(server, "OHR_CICD_GIT_URL", "https://example.test/ohr-cicd.git")
+    monkeypatch.setattr(server, "OHR_CICD_BRANCH", "master")
+    monkeypatch.setattr(server, "OHR_CICD_ENV", "direct_prod")
+
+    env = server.direct_frontend_env(
+        {
+            "frontend_release_branch": "release_front",
+            "frontend_workspace_branch": "master",
+            "help_docs_branch": "release_ci",
+            "conf_server_host": "customer.local",
+            "conf_web_port": 80,
+            "conf_worker_processes": 1,
+            "conf_worker_connections": 1024,
+        },
+        "20260514120000",
+    )
+
+    assert env["OHR_CICD_GIT_URL"] == "https://example.test/ohr-cicd.git"
+    assert env["OHR_CICD_BRANCH"] == "master"
+    assert env["OHR_CICD_ENV"] == "direct_prod"
+    assert env["CONF_SERVER_HOST"] == "customer.local"

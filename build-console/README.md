@@ -7,6 +7,7 @@
 - 选择后端分支与前端版本分支，触发打包；展示流水线步骤、状态与增量日志。
 - 前端版本分支来自 `ohr-feelin`、`ohr-lowcode-engine`、`ohr-micro-frontends`、`ohr-nocode-engine` 共同存在的 `release_*` 分支；`ohr-workspace` 固定使用 `FRONTEND_WORKSPACE_BRANCH`（默认 `master`）。
 - 构建目标可单独开关：只构建后端 `package.zip`、只构建前端 `web.zip`，或两者都构建。
+- direct 前端构建中，`conf_prod` 由 `ohr-cicd` 的 `generateConf.js` 生成；`help` 由 `ohr-help-docs` 加持久 SVN 文档目录实时构建，不走 Nexus。
 - 成功后下载 **`package.zip`** 与 **`web.zip`**（路径见 API 说明）。
 - **执行器**由 `BUILD_EXECUTOR` 控制：
   - **`direct`**：在 CI 本机线程内执行克隆、Maven、前端构建等（见 `server.py`）。

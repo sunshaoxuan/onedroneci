@@ -55,6 +55,15 @@ HELP_DOCS_SVN_DIR = Path(os.environ.get("HELP_DOCS_SVN_DIR", "/opt/ohr-help-docs
 HELP_DOCS_SVN_USERNAME = os.environ.get("HELP_DOCS_SVN_USERNAME", "")
 HELP_DOCS_SVN_PASSWORD = os.environ.get("HELP_DOCS_SVN_PASSWORD", "")
 CONF_PROD_TEMPLATE_DIR = Path(os.environ.get("CONF_PROD_TEMPLATE_DIR", "/opt/ohr-build-console/conf_prod_template"))
+OHR_CICD_GIT_URL = os.environ.get("OHR_CICD_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-cicd.git")
+OHR_CICD_BRANCH = os.environ.get("OHR_CICD_BRANCH", "master")
+OHR_CICD_DIR = Path(os.environ.get("OHR_CICD_DIR", "/opt/ohr-cicd-src"))
+OHR_CICD_ENV = os.environ.get("OHR_CICD_ENV", "direct_prod")
+OHR_CICD_SERVICE_GATEWAY = os.environ.get("OHR_CICD_SERVICE_GATEWAY", "http://localhost:3198/")
+OHR_CICD_MINIO_SERVER = os.environ.get("OHR_CICD_MINIO_SERVER", "http://localhost:19000")
+OHR_CICD_MINIO_HOST = os.environ.get("OHR_CICD_MINIO_HOST", "localhost:19000")
+OHR_CICD_RUSTFS_SERVER = os.environ.get("OHR_CICD_RUSTFS_SERVER", "http://127.0.0.1:12345")
+OHR_CICD_RUSTFS_HOST = os.environ.get("OHR_CICD_RUSTFS_HOST", "127.0.0.1:12345")
 HOST = os.environ.get("BUILD_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUILD_CONSOLE_PORT", "8090"))
 CONFIG_FILE = Path(os.environ.get("BUILD_CONSOLE_ENV", ROOT / "build-console.env"))
@@ -739,6 +748,65 @@ npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
 npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
 npm i -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
 apt-get update -qy && apt-get install -y zip unzip subversion
+CICD_DIR="$OHR_CICD_WORKDIR"
+if [[ ! "$OHR_CICD_ENV" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "ohr-cicd 环境名不合法：$OHR_CICD_ENV"
+  exit 6
+fi
+mkdir -p "$(dirname "$CICD_DIR")"
+if [ -d "$CICD_DIR/.git" ]; then
+  echo "[sync ohr-cicd] fetch $OHR_CICD_BRANCH"
+  git -C "$CICD_DIR" remote set-url origin "$OHR_CICD_GIT_URL"
+  git -C "$CICD_DIR" fetch origin "$OHR_CICD_BRANCH" --prune
+  git -C "$CICD_DIR" checkout -B "$OHR_CICD_BRANCH" "origin/$OHR_CICD_BRANCH"
+  git -C "$CICD_DIR" reset --hard "origin/$OHR_CICD_BRANCH"
+  git -C "$CICD_DIR" clean -fd -e node_modules
+else
+  rm -rf "$CICD_DIR"
+  echo "[sync ohr-cicd] clone $OHR_CICD_BRANCH"
+  git clone -b "$OHR_CICD_BRANCH" "$OHR_CICD_GIT_URL" "$CICD_DIR"
+fi
+cd "$CICD_DIR"
+yarn install --frozen-lockfile --cache-folder /opt/yarn-cache || yarn install --cache-folder /opt/yarn-cache
+cat > "config.$OHR_CICD_ENV.js" <<'JS'
+const getSharedConfig = require('./sharedConfig');
+
+const ENV = process.env.OHR_CICD_ENV || 'direct_prod';
+const PORT_PORTAL = Number(process.env.CONF_WEB_PORT || 80);
+const HOST_NAME = `http://${process.env.CONF_SERVER_HOST}`;
+const HOST_PORTAL = PORT_PORTAL === 80 ? HOST_NAME : `${HOST_NAME}:${PORT_PORTAL}`;
+const SERVICE_GATEWAY = process.env.OHR_CICD_SERVICE_GATEWAY || 'http://localhost:3198/';
+
+module.exports = {
+  ...getSharedConfig({
+    HOST_PORTAL,
+    PORT_PORTAL,
+    ENV,
+    ENV_TYPE: 'windows',
+    PORT_DUMI_BASIC: Number(process.env.OHR_CICD_DUMI_BASIC_PORT || 8005),
+    PORT_DUMI_NOCODE: Number(process.env.OHR_CICD_DUMI_NOCODE_PORT || 8006),
+    SERVER_GATEWAY: SERVICE_GATEWAY.endsWith('/') ? SERVICE_GATEWAY : `${SERVICE_GATEWAY}/`,
+    NGINX_SERVER_NAME: `localhost ${process.env.CONF_SERVER_HOST}`,
+    MINIO_SERVER: process.env.OHR_CICD_MINIO_SERVER || 'http://localhost:19000',
+    MINIO_HOST: process.env.OHR_CICD_MINIO_HOST || 'localhost:19000',
+    RUSTFS_SERVER: process.env.OHR_CICD_RUSTFS_SERVER || 'http://127.0.0.1:12345',
+    RUSTFS_HOST: process.env.OHR_CICD_RUSTFS_HOST || '127.0.0.1:12345',
+    AZURE_SERVER: process.env.OHR_CICD_AZURE_SERVER || 'undefined',
+    AZURE_HOST: process.env.OHR_CICD_AZURE_HOST || 'undefined',
+    CONF_WEB_DIR: 'ohr-cicd/web_prod',
+    CONF_CONF_DIR: 'conf_prod',
+    CONF_TEMPLATE_DIR: 'conf-template',
+    WORKER_PROCESSES: Number(process.env.CONF_WORKER_PROCESSES || 1),
+    WORKER_CONNS: Number(process.env.CONF_WORKER_CONNECTIONS || 1024),
+    ENABLE_DEBUG: false,
+  }),
+};
+JS
+env="$OHR_CICD_ENV" node ./src/generateConf.js
+if [ ! -d "$CICD_DIR/conf_$OHR_CICD_ENV" ]; then
+  echo "ohr-cicd conf_prod 生成失败：$CICD_DIR/conf_$OHR_CICD_ENV 不存在"
+  exit 6
+fi
 HELP_DIR="$HELP_DOCS_WORKDIR"
 mkdir -p "$(dirname "$HELP_DIR")"
 if [ -d "$HELP_DIR/.git" ]; then
@@ -747,7 +815,7 @@ if [ -d "$HELP_DIR/.git" ]; then
   git -C "$HELP_DIR" fetch origin "$HELP_DOCS_BRANCH" --prune
   git -C "$HELP_DIR" checkout -B "$HELP_DOCS_BRANCH" "origin/$HELP_DOCS_BRANCH"
   git -C "$HELP_DIR" reset --hard "origin/$HELP_DOCS_BRANCH"
-  git -C "$HELP_DIR" clean -fd
+  git -C "$HELP_DIR" clean -fd -e node_modules
 else
   rm -rf "$HELP_DIR"
   echo "[sync ohr-help-docs] clone $HELP_DOCS_BRANCH"
@@ -819,41 +887,9 @@ unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
 mkdir -p "$publish_root/ohr-cicd/web_prod/help"
 unzip -q "$HELP_DIR/$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
 conf_dir="$publish_root/ohr-cicd/conf_prod"
-if [ ! -d "$CONF_PROD_TEMPLATE_DIR" ]; then
-  echo "conf_prod 模板目录不存在：$CONF_PROD_TEMPLATE_DIR"
-  exit 6
-fi
-cp -a "$CONF_PROD_TEMPLATE_DIR/." "$conf_dir/"
+rm -rf "$conf_dir"
+cp -a "$CICD_DIR/conf_$OHR_CICD_ENV" "$conf_dir"
 rm -f "$conf_dir"/*.crt "$conf_dir"/*.key "$conf_dir"/TODO.md
-portal_origin="http://$CONF_SERVER_HOST"
-if [ "$CONF_WEB_PORT" != "80" ]; then
-  portal_origin="$portal_origin:$CONF_WEB_PORT"
-fi
-cat > "$conf_dir/common-settings.conf" <<CONF
-set \$ohr_server_name "localhost $CONF_SERVER_HOST";
-set \$ohr_portal_origin "$portal_origin";
-
-set \$web_root_directory "ohr-cicd/web_prod";
-set \$engine_root_directory "ohr-cicd/web_prod/engine/serve-assets/";
-set \$help_root_directory "ohr-cicd/web_prod/help/";
-set \$portal_root_directory "ohr-cicd/web_prod/portal/dist/";
-set \$dumi_basic_root_directory "ohr-cicd/web_prod/dumi_basic/docs-dist/";
-set \$dumi_nocode_root_directory "ohr-cicd/web_prod/dumi_nocode/docs-dist/";
-CONF
-printf '{"hostPort":%s}\n' "$CONF_WEB_PORT" > "$conf_dir/cicd.json"
-python3 - "$conf_dir/nginx.conf" "$CONF_WEB_PORT" "$CONF_WORKER_PROCESSES" "$CONF_WORKER_CONNECTIONS" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-path = Path(sys.argv[1])
-port, workers, connections = sys.argv[2:5]
-text = path.read_text(encoding="utf-8")
-text = re.sub(r"worker_processes\s+\d+;", f"worker_processes {workers};", text, count=1)
-text = re.sub(r"worker_connections\s+\d+;", f"worker_connections {connections};", text, count=1)
-text = re.sub(r"listen\s+\d+;", f"listen {port};", text, count=1)
-path.write_text(text, encoding="utf-8")
-PY
 (
   cd "$publish_root"
   zip -qr "$OUT_WEB_ZIP" ohr-cicd
@@ -890,6 +926,15 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "HELP_DOCS_SVN_USERNAME": HELP_DOCS_SVN_USERNAME,
         "HELP_DOCS_SVN_PASSWORD": HELP_DOCS_SVN_PASSWORD,
         "CONF_PROD_TEMPLATE_DIR": str(CONF_PROD_TEMPLATE_DIR),
+        "OHR_CICD_GIT_URL": git_url_with_token(OHR_CICD_GIT_URL),
+        "OHR_CICD_BRANCH": OHR_CICD_BRANCH,
+        "OHR_CICD_WORKDIR": str(OHR_CICD_DIR),
+        "OHR_CICD_ENV": OHR_CICD_ENV,
+        "OHR_CICD_SERVICE_GATEWAY": OHR_CICD_SERVICE_GATEWAY,
+        "OHR_CICD_MINIO_SERVER": OHR_CICD_MINIO_SERVER,
+        "OHR_CICD_MINIO_HOST": OHR_CICD_MINIO_HOST,
+        "OHR_CICD_RUSTFS_SERVER": OHR_CICD_RUSTFS_SERVER,
+        "OHR_CICD_RUSTFS_HOST": OHR_CICD_RUSTFS_HOST,
         "CONF_SERVER_HOST": req.get("conf_server_host") or "",
         "CONF_WEB_PORT": str(req.get("conf_web_port") or 80),
         "CONF_WORKER_PROCESSES": str(req.get("conf_worker_processes") or 1),
@@ -1278,6 +1323,7 @@ INDEX_HTML = """<!doctype html>
           <summary data-i18n="frontendRuleTitle">フロントエンド分岐ルール</summary>
           <p class="muted" data-i18n="frontendRuleDesc">ohr-workspace は release_* 分岐を使用せず、構築時は master 固定です。選択した版本分岐は ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends に使用します。</p>
         </details>
+        <p class="muted source-note" data-i18n="directSourceDesc">Direct 方式：conf_prod は ohr-cicd から生成し、help は ohr-help-docs + SVN から生成します。</p>
         <div class="subsection-title" data-i18n="customerConfig">顧客設定</div>
         <div class="form-grid four">
           <div class="field-block">
@@ -1355,6 +1401,7 @@ const I18N = {
     helpBranch: 'Help 文書ブランチ',
     frontendRuleTitle: 'フロントエンド分岐ルール',
     frontendRuleDesc: 'ohr-workspace は release_* 分岐を使用せず、構築時は master 固定です。選択した版本分岐は ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends に使用します。',
+    directSourceDesc: 'Direct 方式：conf_prod は ohr-cicd から生成し、help は ohr-help-docs + SVN から生成します。',
     customerConfig: '顧客設定',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
@@ -1402,6 +1449,7 @@ const I18N = {
     helpBranch: 'Help 文档分支',
     frontendRuleTitle: '前端分支规则',
     frontendRuleDesc: 'ohr-workspace 不使用 release_* 分支，构建时固定检出 master；上方选择的版本分支会同时用于四个子项目。',
+    directSourceDesc: 'Direct 方式：conf_prod 来自 ohr-cicd 生成，help 来自 ohr-help-docs + SVN 生成。',
     customerConfig: '客户配置区',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
@@ -1449,6 +1497,7 @@ const I18N = {
     helpBranch: 'Help docs branch',
     frontendRuleTitle: 'Frontend branch rule',
     frontendRuleDesc: 'ohr-workspace does not use release_* branches and stays on master. The selected release branch is used for the four frontend child projects.',
+    directSourceDesc: 'Direct mode: conf_prod is generated from ohr-cicd; help is generated from ohr-help-docs + SVN.',
     customerConfig: 'Customer configuration',
     customerHost: 'Customer access address',
     webPort: 'Web port',
