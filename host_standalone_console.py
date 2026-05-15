@@ -679,10 +679,7 @@ INDEX_HTML = """<!doctype html>
             <p class="section-kicker" data-i18n="historyKicker">履歴</p>
             <h2 data-i18n="historyTitle">構造履歴</h2>
           </div>
-          <div class="history-actions">
-            <div id="jobBadge" class="badge" data-i18n="noTask">タスク未選択</div>
-            <button id="newJobMode" class="secondary" type="button" data-i18n="newBuild">新規構造</button>
-          </div>
+          <button id="newJobMode" class="secondary" type="button" data-i18n="newBuild">新規構造</button>
         </div>
         <div id="jobs" class="jobs"></div>
       </section>
@@ -785,7 +782,6 @@ const I18N = {
     noTask: 'タスク未選択',
     newBuild: '新規構造',
     newBuildReady: '新しい構造を開始できます。構造パラメータを入力してください。',
-    selectedTask: '選択中',
     hostTaskId: '主控タスク',
     statusLabel: '状態',
     productDir: '交付ディレクトリ',
@@ -864,7 +860,6 @@ const I18N = {
     noTask: '未选择任务',
     newBuild: '新建构造',
     newBuildReady: '可以开始新的构造。请填写构造参数。',
-    selectedTask: '当前选中',
     hostTaskId: '主控任务',
     statusLabel: '状态',
     productDir: '交付目录',
@@ -943,7 +938,6 @@ const I18N = {
     noTask: 'No task selected',
     newBuild: 'New build',
     newBuildReady: 'Ready to start a new build. Fill in the build parameters.',
-    selectedTask: 'Selected',
     hostTaskId: 'Host task',
     statusLabel: 'Status',
     productDir: 'Delivery directory',
@@ -1151,7 +1145,6 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
   document.getElementById('language').value = lang;
   if (mode === 'create') {
-    document.getElementById('jobBadge').textContent = t('newBuild');
     document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
   }
   renderTerminal(lastTerminalStatus);
@@ -1183,13 +1176,8 @@ function enterCreateMode() {
   logLines = [];
   document.getElementById('log').textContent = '';
   document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
-  document.getElementById('jobBadge').textContent = t('newBuild');
   syncTerminalConsole(null);
   setFormLocked(false);
-}
-
-function selectedJobBadge(job) {
-  return `${t('selectedTask')}: ${job.id} / ${t('statusLabel')}: ${translateLogText(job.status)}`;
 }
 
 function jobMetaLine(job) {
@@ -1362,7 +1350,6 @@ async function refresh() {
     if (mode !== 'create' && job.id === selected) render(job);
   });
   if (mode === 'create' && !activeJob) {
-    document.getElementById('jobBadge').textContent = t('newBuild');
     if (!lastRenderedResultSignature) {
       document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
       lastRenderedResultSignature = 'create';
@@ -1394,7 +1381,6 @@ function render(job) {
     fillFormFromJob(job);
     lastFilledJobId = job.id;
   }
-  document.getElementById('jobBadge').textContent = selectedJobBadge(job);
   const running = ['queued', 'running'].includes(job.status);
   setFormLocked(running);
   syncTerminalConsole(job);
@@ -1647,7 +1633,6 @@ input:disabled, select:disabled { background: #eef2f5; color: #7b8794; }
 .terminal-panel[data-status="permission_denied"] h2::before { background: var(--danger); }
 #terminalHint { margin: 8px 0 0; color: var(--muted); }
 .terminal-actions, .run-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
-.history-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
 .panel { padding: 20px; margin-bottom: 18px; }
 .panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
 .form-panel .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
@@ -1698,14 +1683,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .job.active .delete-job { background: #fff; }
 .result-actions { margin-top: 14px; display: flex; justify-content: flex-end; }
-.badge {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px 10px;
-  color: var(--muted);
-  font-size: 13px;
-  white-space: nowrap;
-}
 .empty-state { color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 18px; }
 .overall-progress { margin-bottom: 16px; }
 .overall-progress h3 { margin: 0 0 10px; font-size: 15px; }

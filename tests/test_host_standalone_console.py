@@ -374,7 +374,9 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "if (mode !== 'create' && lastFilledJobId !== job.id)" in console.APP_JS
     assert "newBuildReady" in console.APP_JS
     assert "id=\"newJobMode\"" in console.INDEX_HTML
-    assert "function selectedJobBadge(job)" in console.APP_JS
+    assert "jobBadge" not in console.APP_JS
+    assert "id=\"jobBadge\"" not in console.INDEX_HTML
+    assert ".badge" not in console.STYLE_CSS
     assert "function jobMetaLine(job)" in console.APP_JS
     assert "hostTaskId" in console.APP_JS
     assert "statusLabel" in console.APP_JS
