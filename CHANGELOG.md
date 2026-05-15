@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1 - 2026-05-15
+
+### Added
+
+- 新增 `secrets/*.enc` 加密配置提交机制，支持用 `OHR_SECRET_KEY` 或本机 `.secrets.key` 解密恢复。
+- 新增 `scripts/secret_env.py`，用于初始化密钥、生成 manifest、加密本机 `.env`、恢复明文配置。
+- 新增 `scripts/load_encrypted_env.ps1`，可将指定密文配置加载到当前 PowerShell 进程环境。
+
+### Changed
+
+- README 与敏感信息文档补充密文提交、解密恢复和密钥保管说明。
+- 项目依赖增加 `cryptography`，用于 Fernet 认证加密。
+
 ## 0.2.0 - 2026-05-14
 
 ### Added

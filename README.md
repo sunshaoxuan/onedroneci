@@ -51,6 +51,23 @@
 - 数据连携仓库使用 shallow clone/fetch，并设置超时，避免首次 clone 静默挂住。
 - 固定中间件和壳包模板只保留在宿主机，不进入 Git。
 
+## 私密配置
+
+明文 `.env` 文件不提交 Git。需要共享部署配置时，先在本机生成密钥并加密：
+
+```powershell
+python scripts\secret_env.py init-key
+python scripts\secret_env.py encrypt
+```
+
+密文保存在 `secrets/*.enc`，解密密钥来自 `OHR_SECRET_KEY` 或本机 `.secrets.key`。`.secrets.key` 不提交 Git。恢复配置：
+
+```powershell
+python scripts\secret_env.py restore
+```
+
+详细规则见 [敏感信息处理](docs/SECRET_HANDLING.md)。
+
 ## 常用命令
 
 初始化宿主机固定模板：

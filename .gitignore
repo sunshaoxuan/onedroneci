@@ -18,6 +18,9 @@ build-console/build-console.env
 build-console/builds/
 .repo-git/
 .standalone-template/
+.secrets.key
+*.env.dec
+secrets/*.tmp
 
 # 远端/本机一次性诊断与构建日志，可能包含 token、私服凭据或内部环境信息。
 _*.txt
