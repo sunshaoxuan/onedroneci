@@ -1672,8 +1672,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   padding: 9px 14px;
 }
 .job span { color: var(--muted); }
-.job.active { background: var(--ink); color: #fff; }
-.job.active span { color: #d8e2ef; }
+.job.active {
+  background: #e9f7fb;
+  color: #0f3d4c;
+  border-color: #8ac8da;
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+.job.active span { color: #4f6676; }
 .delete-job {
   min-height: 30px;
   padding: 5px 9px;
@@ -1681,7 +1686,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   color: var(--danger);
   border: 1px solid #ffd1cc;
 }
-.job.active .delete-job { background: #fff; }
+.job.active .delete-job { background: #fffafa; }
 .result-actions { margin-top: 14px; display: flex; justify-content: flex-end; }
 .empty-state { color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 18px; }
 .overall-progress { margin-bottom: 16px; }
