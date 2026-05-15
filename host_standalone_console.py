@@ -1779,7 +1779,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   box-shadow: none;
 }
 .help-dot:hover { background: #e8f4fa; color: var(--accent); transform: none; box-shadow: none; }
-.path-row code { padding: 10px; background: #0d1320; color: #d8e8f6; border-radius: 8px; overflow: auto; white-space: nowrap; }
+.path-row code {
+  padding: 10px;
+  background: #f5f8fb;
+  color: #25364a;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  white-space: nowrap;
+}
 .copy-path { min-height: 34px; padding: 7px 10px; }
 .terminal-frame-panel details { overflow: hidden; }
 .terminal-frame-panel summary { cursor: pointer; font-weight: 900; }
