@@ -363,8 +363,17 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "function renderProgress(job)" in console.APP_JS
     assert "function renderResultIfChanged(job)" in console.APP_JS
     assert "function fillFormFromJob(job)" in console.APP_JS
-    assert "if (!selected && data.jobs.length)" in console.APP_JS
+    assert "let mode = 'create'" in console.APP_JS
+    assert "function enterCreateMode()" in console.APP_JS
+    assert "mode = 'active'" in console.APP_JS
+    assert "mode = ['queued', 'running'].includes(job.status) ? 'active' : 'view'" in console.APP_JS
+    assert "if (!selected && data.jobs.length)" not in console.APP_JS
     assert "const activeJob = data.jobs.find(job => ['queued', 'running'].includes(job.status))" in console.APP_JS
+    assert "if (activeJob && (mode !== 'active' || selected !== activeJob.id))" in console.APP_JS
+    assert "mode === 'create' && !activeJob" in console.APP_JS
+    assert "if (mode !== 'create' && lastFilledJobId !== job.id)" in console.APP_JS
+    assert "newBuildReady" in console.APP_JS
+    assert "id=\"newJobMode\"" in console.INDEX_HTML
     assert "lastRenderedResultSignature" in console.APP_JS
     assert "overall-progress" in console.APP_JS
     assert "progressSteps" in console.APP_JS
@@ -476,7 +485,8 @@ def test_embedded_build_terminal_unlocks_only_after_remote_build_starts():
 
 def test_form_is_locked_unless_build_terminal_is_running():
     assert "const terminalLocked = lastTerminalStatus !== 'running'" in console.APP_JS
-    assert "el.disabled = locked || terminalLocked" in console.APP_JS
+    assert "const modeLocked = mode !== 'create'" in console.APP_JS
+    assert "el.disabled = locked || modeLocked || terminalLocked" in console.APP_JS
     assert "if (!res.ok)" in console.APP_JS
 
 

@@ -679,7 +679,10 @@ INDEX_HTML = """<!doctype html>
             <p class="section-kicker" data-i18n="historyKicker">履歴</p>
             <h2 data-i18n="historyTitle">構造履歴</h2>
           </div>
-          <div id="jobBadge" class="badge" data-i18n="noTask">タスク未選択</div>
+          <div class="history-actions">
+            <div id="jobBadge" class="badge" data-i18n="noTask">タスク未選択</div>
+            <button id="newJobMode" class="secondary" type="button" data-i18n="newBuild">新規構造</button>
+          </div>
         </div>
         <div id="jobs" class="jobs"></div>
       </section>
@@ -780,6 +783,8 @@ const I18N = {
     autoScroll: '自動スクロール',
     selectTask: 'タスクを選択してください。',
     noTask: 'タスク未選択',
+    newBuild: '新規構造',
+    newBuildReady: '新しい構造を開始できます。構造パラメータを入力してください。',
     productDir: '交付ディレクトリ',
     productDirHint: 'このパスは Web サイトを動かしている宿主機上の場所です。閲覧している端末のローカルパスではありません。',
     standaloneZip: 'OneHrStandalone.zip',
@@ -854,6 +859,8 @@ const I18N = {
     autoScroll: '自动滚动',
     selectTask: '请选择任务。',
     noTask: '未选择任务',
+    newBuild: '新建构造',
+    newBuildReady: '可以开始新的构造。请填写构造参数。',
     productDir: '交付目录',
     productDirHint: '这个路径是在网站宿主机上的位置，不是当前浏览器所在电脑的本地路径。',
     standaloneZip: 'OneHrStandalone.zip',
@@ -928,6 +935,8 @@ const I18N = {
     autoScroll: 'Auto scroll',
     selectTask: 'Select a task.',
     noTask: 'No task selected',
+    newBuild: 'New build',
+    newBuildReady: 'Ready to start a new build. Fill in the build parameters.',
     productDir: 'Delivery directory',
     productDirHint: 'This path is on the web host machine, not on the local computer running this browser.',
     standaloneZip: 'OneHrStandalone.zip',
@@ -951,9 +960,11 @@ let timer = null;
 let logOffset = 0;
 let logLines = [];
 let selectedJob = null;
+let mode = 'create';
 let heartbeatTick = 0;
 let lastTerminalStatus = 'unknown';
 let lastRenderedResultSignature = '';
+let lastFilledJobId = null;
 const MAX_LOG_LINES = 1600;
 
 function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N['ja-JP'][key] || key; }
@@ -1130,13 +1141,18 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
   document.getElementById('language').value = lang;
+  if (mode === 'create') {
+    document.getElementById('jobBadge').textContent = t('newBuild');
+    document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
+  }
   renderTerminal(lastTerminalStatus);
 }
 
 function setFormLocked(locked) {
   const terminalLocked = lastTerminalStatus !== 'running';
-  document.querySelectorAll('#form input, #form select, #startJob').forEach(el => { el.disabled = locked || terminalLocked; });
-  document.getElementById('stopJob').disabled = !locked || !selected;
+  const modeLocked = mode !== 'create';
+  document.querySelectorAll('#form input, #form select, #startJob').forEach(el => { el.disabled = locked || modeLocked || terminalLocked; });
+  document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
 }
 
 function fillFormFromJob(job) {
@@ -1146,6 +1162,21 @@ function fillFormFromJob(job) {
     if (!el.name || !(el.name in request)) return;
     el.value = request[el.name] == null ? '' : request[el.name];
   });
+}
+
+function enterCreateMode() {
+  mode = 'create';
+  selected = null;
+  selectedJob = null;
+  lastFilledJobId = null;
+  lastRenderedResultSignature = '';
+  logOffset = 0;
+  logLines = [];
+  document.getElementById('log').textContent = '';
+  document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
+  document.getElementById('jobBadge').textContent = t('newBuild');
+  syncTerminalConsole(null);
+  setFormLocked(false);
 }
 
 function statusText(status) {
@@ -1190,12 +1221,17 @@ async function terminalAction(action) {
 document.getElementById('language').addEventListener('change', event => {
   lang = event.target.value;
   localStorage.setItem('hostConsoleLang', lang);
+  lastRenderedResultSignature = '';
   applyI18n();
   refresh();
 });
 document.getElementById('refreshTerminal').addEventListener('click', refreshTerminal);
 document.getElementById('startTerminal').addEventListener('click', () => terminalAction('start'));
 document.getElementById('stopTerminal').addEventListener('click', () => terminalAction('stop'));
+document.getElementById('newJobMode').addEventListener('click', () => {
+  enterCreateMode();
+  refresh();
+});
 document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
   const frame = document.getElementById('terminalFrame');
   if (event.target.open && !frame.dataset.ready) {
@@ -1225,15 +1261,7 @@ async function deleteSelectedJob(jobId = selected) {
     return;
   }
   if (selected === jobId) {
-    selected = null;
-    selectedJob = null;
-    lastRenderedResultSignature = '';
-    logOffset = 0;
-    logLines = [];
-    document.getElementById('log').textContent = '';
-    document.getElementById('result').innerHTML = t('selectTask');
-    document.getElementById('jobBadge').textContent = t('noTask');
-    syncTerminalConsole(null);
+    enterCreateMode();
   }
   await refresh();
 }
@@ -1253,9 +1281,12 @@ document.getElementById('form').addEventListener('submit', async (event) => {
     alert(job.error);
     return;
   }
-    selected = job.id;
-    lastRenderedResultSignature = '';
-    logOffset = 0;
+  mode = 'active';
+  selected = job.id;
+  selectedJob = job;
+  lastFilledJobId = null;
+  lastRenderedResultSignature = '';
+  logOffset = 0;
   logLines = [];
   setFormLocked(true);
   refresh();
@@ -1267,24 +1298,39 @@ async function refresh() {
   const data = await res.json();
   const jobs = document.getElementById('jobs');
   jobs.innerHTML = '';
+  const activeJob = data.jobs.find(job => ['queued', 'running'].includes(job.status));
   if (!data.jobs.length) {
     jobs.innerHTML = `<div class="empty-state">${t('noTask')}</div>`;
+    if (mode !== 'create') enterCreateMode();
     return;
   }
-  if (!selected && data.jobs.length) {
-    const activeJob = data.jobs.find(job => ['queued', 'running'].includes(job.status));
-    selected = (activeJob || data.jobs[0]).id;
+  if (activeJob && (mode !== 'active' || selected !== activeJob.id)) {
+    mode = 'active';
+    selected = activeJob.id;
+    selectedJob = activeJob;
+    lastFilledJobId = null;
     lastRenderedResultSignature = '';
     logOffset = 0;
     logLines = [];
+  } else if (!activeJob && mode === 'active') {
+    enterCreateMode();
   }
   data.jobs.forEach(job => {
     const btn = document.createElement('div');
-    btn.className = job.id === selected ? 'job active' : 'job';
+    btn.className = mode !== 'create' && job.id === selected ? 'job active' : 'job';
     btn.tabIndex = 0;
     const deletable = !['queued', 'running'].includes(job.status);
     btn.innerHTML = `<strong>${job.id}</strong><span>${job.status}${job.remote_build_id ? ' · ' + job.remote_build_id : ''}</span>${deletable ? `<button type="button" class="delete-job" data-job-id="${escapeHtml(job.id)}">${t('deleteJob')}</button>` : ''}`;
-    btn.onclick = () => { selected = job.id; lastRenderedResultSignature = ''; logOffset = 0; logLines = []; render(job); fetchJobLog(true); };
+    btn.onclick = () => {
+      mode = ['queued', 'running'].includes(job.status) ? 'active' : 'view';
+      selected = job.id;
+      lastFilledJobId = null;
+      lastRenderedResultSignature = '';
+      logOffset = 0;
+      logLines = [];
+      render(job);
+      fetchJobLog(true);
+    };
     btn.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') btn.click(); };
     jobs.appendChild(btn);
     const deleteBtn = btn.querySelector('.delete-job');
@@ -1294,9 +1340,17 @@ async function refresh() {
         deleteSelectedJob(job.id);
       };
     }
-    if (job.id === selected) render(job);
+    if (mode !== 'create' && job.id === selected) render(job);
   });
-  if (selected) await fetchJobLog(false);
+  if (mode === 'create' && !activeJob) {
+    document.getElementById('jobBadge').textContent = t('newBuild');
+    if (!lastRenderedResultSignature) {
+      document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
+      lastRenderedResultSignature = 'create';
+    }
+    setFormLocked(false);
+  }
+  if (mode !== 'create' && selected) await fetchJobLog(false);
 }
 
 async function fetchJobLog(reset) {
@@ -1317,7 +1371,10 @@ async function fetchJobLog(reset) {
 
 function render(job) {
   selectedJob = job;
-  fillFormFromJob(job);
+  if (mode !== 'create' && lastFilledJobId !== job.id) {
+    fillFormFromJob(job);
+    lastFilledJobId = job.id;
+  }
   document.getElementById('jobBadge').textContent = `${job.id} · ${job.status}`;
   const running = ['queued', 'running'].includes(job.status);
   setFormLocked(running);
@@ -1571,6 +1628,7 @@ input:disabled, select:disabled { background: #eef2f5; color: #7b8794; }
 .terminal-panel[data-status="permission_denied"] h2::before { background: var(--danger); }
 #terminalHint { margin: 8px 0 0; color: var(--muted); }
 .terminal-actions, .run-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.history-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
 .panel { padding: 20px; margin-bottom: 18px; }
 .panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
 .form-panel .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
