@@ -2288,9 +2288,10 @@ details.sync-hint p { margin: 10px 0 0; line-height: 1.6; }
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 72px;
+  align-self: end;
+  min-height: 45px;
   margin: 0;
-  padding: 12px;
+  padding: 0 13px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: rgba(248, 250, 252, .72);

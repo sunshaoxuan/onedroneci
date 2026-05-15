@@ -1662,8 +1662,9 @@ label { display: grid; gap: 7px; font-weight: 800; font-size: 13px; color: #2734
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 70px;
-  padding: 12px;
+  align-self: end;
+  min-height: 43px;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f5f8fb;
