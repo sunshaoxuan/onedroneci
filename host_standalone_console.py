@@ -785,6 +785,9 @@ const I18N = {
     noTask: 'タスク未選択',
     newBuild: '新規構造',
     newBuildReady: '新しい構造を開始できます。構造パラメータを入力してください。',
+    selectedTask: '選択中',
+    hostTaskId: '主控タスク',
+    statusLabel: '状態',
     productDir: '交付ディレクトリ',
     productDirHint: 'このパスは Web サイトを動かしている宿主機上の場所です。閲覧している端末のローカルパスではありません。',
     standaloneZip: 'OneHrStandalone.zip',
@@ -861,6 +864,9 @@ const I18N = {
     noTask: '未选择任务',
     newBuild: '新建构造',
     newBuildReady: '可以开始新的构造。请填写构造参数。',
+    selectedTask: '当前选中',
+    hostTaskId: '主控任务',
+    statusLabel: '状态',
     productDir: '交付目录',
     productDirHint: '这个路径是在网站宿主机上的位置，不是当前浏览器所在电脑的本地路径。',
     standaloneZip: 'OneHrStandalone.zip',
@@ -937,6 +943,9 @@ const I18N = {
     noTask: 'No task selected',
     newBuild: 'New build',
     newBuildReady: 'Ready to start a new build. Fill in the build parameters.',
+    selectedTask: 'Selected',
+    hostTaskId: 'Host task',
+    statusLabel: 'Status',
     productDir: 'Delivery directory',
     productDirHint: 'This path is on the web host machine, not on the local computer running this browser.',
     standaloneZip: 'OneHrStandalone.zip',
@@ -1179,6 +1188,16 @@ function enterCreateMode() {
   setFormLocked(false);
 }
 
+function selectedJobBadge(job) {
+  return `${t('selectedTask')}: ${job.id} / ${t('statusLabel')}: ${translateLogText(job.status)}`;
+}
+
+function jobMetaLine(job) {
+  const parts = [`${t('statusLabel')}: ${translateLogText(job.status)}`];
+  if (job.remote_build_id) parts.push(`${t('remoteBuild')}: ${job.remote_build_id}`);
+  return parts.join(' / ');
+}
+
 function statusText(status) {
   return {
     running: t('terminalRunning'),
@@ -1320,7 +1339,7 @@ async function refresh() {
     btn.className = mode !== 'create' && job.id === selected ? 'job active' : 'job';
     btn.tabIndex = 0;
     const deletable = !['queued', 'running'].includes(job.status);
-    btn.innerHTML = `<strong>${job.id}</strong><span>${job.status}${job.remote_build_id ? ' · ' + job.remote_build_id : ''}</span>${deletable ? `<button type="button" class="delete-job" data-job-id="${escapeHtml(job.id)}">${t('deleteJob')}</button>` : ''}`;
+    btn.innerHTML = `<strong>${t('hostTaskId')}: ${job.id}</strong><span>${escapeHtml(jobMetaLine(job))}</span>${deletable ? `<button type="button" class="delete-job" data-job-id="${escapeHtml(job.id)}">${t('deleteJob')}</button>` : ''}`;
     btn.onclick = () => {
       mode = ['queued', 'running'].includes(job.status) ? 'active' : 'view';
       selected = job.id;
@@ -1375,7 +1394,7 @@ function render(job) {
     fillFormFromJob(job);
     lastFilledJobId = job.id;
   }
-  document.getElementById('jobBadge').textContent = `${job.id} · ${job.status}`;
+  document.getElementById('jobBadge').textContent = selectedJobBadge(job);
   const running = ['queued', 'running'].includes(job.status);
   setFormLocked(running);
   syncTerminalConsole(job);
