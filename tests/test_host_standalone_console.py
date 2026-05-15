@@ -365,6 +365,10 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "function fillFormFromJob(job)" in console.APP_JS
     assert "let mode = 'create'" in console.APP_JS
     assert "function enterCreateMode()" in console.APP_JS
+    assert "function markSelectedJobRow(jobId)" in console.APP_JS
+    assert "btn.dataset.jobId = job.id" in console.APP_JS
+    assert "markSelectedJobRow(job.id)" in console.APP_JS
+    assert "window.requestAnimationFrame(() =>" in console.APP_JS
     assert "mode = 'active'" in console.APP_JS
     assert "mode = ['queued', 'running'].includes(job.status) ? 'active' : 'view'" in console.APP_JS
     assert "if (!selected && data.jobs.length)" not in console.APP_JS

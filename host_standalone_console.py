@@ -1166,6 +1166,12 @@ function fillFormFromJob(job) {
   });
 }
 
+function markSelectedJobRow(jobId) {
+  document.querySelectorAll('#jobs .job').forEach(row => {
+    row.classList.toggle('active', mode !== 'create' && row.dataset.jobId === jobId);
+  });
+}
+
 function enterCreateMode() {
   mode = 'create';
   selected = null;
@@ -1177,6 +1183,7 @@ function enterCreateMode() {
   document.getElementById('log').textContent = '';
   document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
   syncTerminalConsole(null);
+  markSelectedJobRow(null);
   setFormLocked(false);
 }
 
@@ -1325,6 +1332,7 @@ async function refresh() {
   data.jobs.forEach(job => {
     const btn = document.createElement('div');
     btn.className = mode !== 'create' && job.id === selected ? 'job active' : 'job';
+    btn.dataset.jobId = job.id;
     btn.tabIndex = 0;
     const deletable = !['queued', 'running'].includes(job.status);
     btn.innerHTML = `<strong>${t('hostTaskId')}: ${job.id}</strong><span>${escapeHtml(jobMetaLine(job))}</span>${deletable ? `<button type="button" class="delete-job" data-job-id="${escapeHtml(job.id)}">${t('deleteJob')}</button>` : ''}`;
@@ -1335,8 +1343,11 @@ async function refresh() {
       lastRenderedResultSignature = '';
       logOffset = 0;
       logLines = [];
-      render(job);
-      fetchJobLog(true);
+      markSelectedJobRow(job.id);
+      window.requestAnimationFrame(() => {
+        render(job);
+        fetchJobLog(true);
+      });
     };
     btn.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') btn.click(); };
     jobs.appendChild(btn);
