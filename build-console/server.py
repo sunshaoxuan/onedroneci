@@ -180,6 +180,15 @@ def parse_int_field(payload: dict[str, Any], key: str, default: int) -> int:
         raise ValueError(f"{key} 必须是数字") from exc
 
 
+def parse_bool_field(payload: dict[str, Any], key: str, default: bool = False) -> bool:
+    raw = payload.get(key)
+    if raw in (None, ""):
+        return default
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
 def append_log(build_id: str, line: str) -> None:
     with log_path(build_id).open("a", encoding="utf-8") as f:
         f.write(line.rstrip("\n") + "\n")
@@ -231,6 +240,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
     help_docs_branch = str(payload.get("help_docs_branch") or HELP_DOCS_BRANCH).strip()
     conf_server_host = str(payload.get("conf_server_host") or "").strip()
     conf_web_port = parse_int_field(payload, "conf_web_port", 80)
+    conf_enable_https = parse_bool_field(payload, "conf_enable_https", False)
     conf_worker_processes = parse_int_field(payload, "conf_worker_processes", 1)
     conf_worker_connections = parse_int_field(payload, "conf_worker_connections", 1024)
     note = str(payload.get("note") or "").strip()
@@ -295,6 +305,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
             "help_docs_branch": help_docs_branch,
             "conf_server_host": conf_server_host,
             "conf_web_port": conf_web_port,
+            "conf_enable_https": conf_enable_https,
             "conf_worker_processes": conf_worker_processes,
             "conf_worker_connections": conf_worker_connections,
             "build_backend": build_backend,
@@ -819,8 +830,12 @@ const getSharedConfig = require('./sharedConfig');
 
 const ENV = process.env.OHR_CICD_ENV || 'direct_prod';
 const PORT_PORTAL = Number(process.env.CONF_WEB_PORT || 80);
-const HOST_NAME = `http://${process.env.CONF_SERVER_HOST}`;
-const HOST_PORTAL = PORT_PORTAL === 80 ? HOST_NAME : `${HOST_NAME}:${PORT_PORTAL}`;
+const ENABLE_HTTPS = process.env.CONF_ENABLE_HTTPS === 'true';
+const HTTPS_PORT = Number(process.env.CONF_HTTPS_PORT || 443);
+const HOST_NAME = `${ENABLE_HTTPS ? 'https' : 'http'}://${process.env.CONF_SERVER_HOST}`;
+const HOST_PORTAL = ENABLE_HTTPS
+  ? (HTTPS_PORT === 443 ? HOST_NAME : `${HOST_NAME}:${HTTPS_PORT}`)
+  : (PORT_PORTAL === 80 ? HOST_NAME : `${HOST_NAME}:${PORT_PORTAL}`);
 const SERVICE_GATEWAY = process.env.OHR_CICD_SERVICE_GATEWAY || 'http://localhost:3198/';
 
 module.exports = {
@@ -844,6 +859,10 @@ module.exports = {
     CONF_TEMPLATE_DIR: 'conf-template',
     WORKER_PROCESSES: Number(process.env.CONF_WORKER_PROCESSES || 1),
     WORKER_CONNS: Number(process.env.CONF_WORKER_CONNECTIONS || 1024),
+    ENABLE_HTTPS,
+    PORT_HTTPS: HTTPS_PORT,
+    SSL_CERTIFICATE: 'server.crt',
+    SSL_CERTIFICATE_KEY: 'server.key',
     ENABLE_DEBUG: false,
   }),
 };
@@ -852,6 +871,32 @@ env="$OHR_CICD_ENV" node ./src/generateConf.js
 if [ ! -d "$CICD_DIR/conf_$OHR_CICD_ENV" ]; then
   echo "ohr-cicd conf_prod 生成失败：$CICD_DIR/conf_$OHR_CICD_ENV 不存在"
   exit 6
+fi
+if [ "${CONF_ENABLE_HTTPS:-false}" = "true" ]; then
+  conf_out="$CICD_DIR/conf_$OHR_CICD_ENV"
+  if [ -f "$conf_out/nginx_https.conf" ]; then
+    cp "$conf_out/nginx_https.conf" "$conf_out/nginx.conf"
+  fi
+  if ! grep -q "listen[[:space:]]*443[[:space:]]*ssl" "$conf_out/nginx.conf"; then
+    echo "HTTPS が有効ですが、ohr-cicd が 443 ssl 用 nginx.conf を生成していません"
+    exit 6
+  fi
+  python3 - "$conf_out/nginx.conf" "$conf_out/common-settings.conf" "$CONF_SERVER_HOST" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+nginx_path = Path(sys.argv[1])
+settings_path = Path(sys.argv[2])
+host = sys.argv[3]
+nginx = nginx_path.read_text(encoding="utf-8")
+nginx = re.sub(r"ssl_certificate\s+[^;]+;", "ssl_certificate server.crt;", nginx)
+nginx = re.sub(r"ssl_certificate_key\s+[^;]+;", "ssl_certificate_key server.key;", nginx)
+nginx_path.write_text(nginx, encoding="utf-8")
+settings = settings_path.read_text(encoding="utf-8")
+settings = re.sub(r'set \$ohr_portal_origin "[^"]+";', f'set $ohr_portal_origin "https://{host}";', settings)
+settings_path.write_text(settings, encoding="utf-8")
+PY
 fi
 HELP_DIR="$HELP_DOCS_WORKDIR"
 mkdir -p "$(dirname "$HELP_DIR")"
@@ -1011,6 +1056,8 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "OHR_CICD_RUSTFS_HOST": OHR_CICD_RUSTFS_HOST,
         "CONF_SERVER_HOST": req.get("conf_server_host") or "",
         "CONF_WEB_PORT": str(req.get("conf_web_port") or 80),
+        "CONF_ENABLE_HTTPS": "true" if req.get("conf_enable_https") else "false",
+        "CONF_HTTPS_PORT": "443",
         "CONF_WORKER_PROCESSES": str(req.get("conf_worker_processes") or 1),
         "CONF_WORKER_CONNECTIONS": str(req.get("conf_worker_connections") or 1024),
         "OHR_BUILD_ID": build_id,
@@ -1420,6 +1467,10 @@ INDEX_HTML = """<!doctype html>
             <label for="input-conf-web-port" data-i18n="webPort">Web ポート</label>
             <input id="input-conf-web-port" name="conf_web_port" type="number" min="1" max="65535" value="80" autocomplete="off">
           </div>
+          <label class="toggle-card inline-toggle">
+            <input id="input-conf-enable-https" name="conf_enable_https" type="checkbox">
+            <span data-i18n="enableHttps">HTTPS / 443 設定を生成</span>
+          </label>
           <div class="field-block">
             <label for="input-conf-worker-processes">worker_processes</label>
             <input id="input-conf-worker-processes" name="conf_worker_processes" type="number" min="1" value="1" autocomplete="off">
@@ -1491,6 +1542,7 @@ const I18N = {
     customerConfig: '顧客設定',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
+    enableHttps: 'HTTPS / 443 設定を生成',
     note: '備考',
     notePlaceholder: '例：検証環境初回構築',
     startBuild: 'ビルド開始',
@@ -1515,6 +1567,7 @@ const I18N = {
     download: 'ダウンロード',
     buildId: 'ビルド番号',
     executor: '実行方式',
+    httpsMode: 'HTTPS 設定',
     workspaceBranch: 'workspace ブランチ',
     worker: 'worker',
     status: {queued:'待機中', running:'実行中', success:'成功', failed:'失敗', cancelled:'停止済み', pending:'待機', skipped:'スキップ'},
@@ -1539,6 +1592,7 @@ const I18N = {
     customerConfig: '客户配置区',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
+    enableHttps: '生成 HTTPS / 443 配置',
     note: '备注',
     notePlaceholder: '例如：测试环境首次打包',
     startBuild: '开始构建',
@@ -1563,6 +1617,7 @@ const I18N = {
     download: '下载',
     buildId: '构建编号',
     executor: '执行器',
+    httpsMode: 'HTTPS 配置',
     workspaceBranch: 'workspace 分支',
     worker: 'worker',
     status: {queued:'排队中', running:'运行中', success:'成功', failed:'失败', cancelled:'已停止', pending:'等待', skipped:'跳过'},
@@ -1587,6 +1642,7 @@ const I18N = {
     customerConfig: 'Customer configuration',
     customerHost: 'Customer access address',
     webPort: 'Web port',
+    enableHttps: 'Generate HTTPS / 443 configuration',
     note: 'Note',
     notePlaceholder: 'Example: first test build',
     startBuild: 'Start build',
@@ -1611,6 +1667,7 @@ const I18N = {
     download: 'Download',
     buildId: 'Build ID',
     executor: 'Executor',
+    httpsMode: 'HTTPS configuration',
     workspaceBranch: 'Workspace branch',
     worker: 'worker',
     status: {queued:'Queued', running:'Running', success:'Success', failed:'Failed', cancelled:'Stopped', pending:'Pending', skipped:'Skipped'},
@@ -1703,6 +1760,7 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const helpDocsBranch = (form.get('help_docs_branch') || '').trim();
   const confServerHost = (form.get('conf_server_host') || '').trim();
   const confWebPort = Number(form.get('conf_web_port') || 80);
+  const confEnableHttps = document.getElementById('input-conf-enable-https').checked;
   const confWorkerProcesses = Number(form.get('conf_worker_processes') || 1);
   const confWorkerConnections = Number(form.get('conf_worker_connections') || 1024);
   if (!buildBackend && !buildFrontend) {
@@ -1749,6 +1807,7 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
     help_docs_branch: helpDocsBranch,
     conf_server_host: confServerHost,
     conf_web_port: confWebPort,
+    conf_enable_https: confEnableHttps,
     conf_worker_processes: confWorkerProcesses,
     conf_worker_connections: confWorkerConnections,
     note: form.get('note')
@@ -1816,6 +1875,7 @@ function syncBuildTargetInputs() {
   const confInputs = [
     document.getElementById('input-conf-server-host'),
     document.getElementById('input-conf-web-port'),
+    document.getElementById('input-conf-enable-https'),
     document.getElementById('input-conf-worker-processes'),
     document.getElementById('input-conf-worker-connections')
   ];
@@ -1976,6 +2036,10 @@ function renderDetail(build) {
       <div>
         <div class="muted">${t('webPort')}</div>
         <strong>${build.request.conf_web_port || ''}</strong>
+      </div>
+      <div>
+        <div class="muted">${t('httpsMode')}</div>
+        <strong>${build.request.conf_enable_https ? '443 / server.crt / server.key' : '-'}</strong>
       </div>
       <div>
         <div class="muted">${t('worker')}</div>
@@ -2217,6 +2281,21 @@ details.sync-hint p { margin: 10px 0 0; line-height: 1.6; }
   background: rgba(248, 250, 252, .72);
 }
 .toggle-option input {
+  width: auto;
+  margin: 0;
+}
+.inline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 72px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, .72);
+}
+.inline-toggle input {
   width: auto;
   margin: 0;
 }

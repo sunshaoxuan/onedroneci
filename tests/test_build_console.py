@@ -210,6 +210,7 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
             "frontend_release_branch": "release_front",
             "conf_server_host": "192.168.70.136",
             "conf_web_port": "40443",
+            "conf_enable_https": True,
             "conf_worker_processes": "1",
             "conf_worker_connections": "1024",
             "note": "smoke",
@@ -223,6 +224,7 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
     assert meta["request"]["help_docs_branch"] == "release_ci"
     assert meta["request"]["conf_server_host"] == "192.168.70.136"
     assert meta["request"]["conf_web_port"] == 40443
+    assert meta["request"]["conf_enable_https"] is True
     assert meta["request"]["conf_worker_processes"] == 1
     assert meta["request"]["conf_worker_connections"] == 1024
     assert (tmp_path / meta["id"] / "metadata.json").is_file()
@@ -340,7 +342,16 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "conf_$OHR_CICD_ENV" in script
     assert "CONF_SERVER_HOST" in script
     assert "CONF_WEB_PORT" in script
-    assert "HOST_PORTAL = PORT_PORTAL === 80" in script
+    assert "CONF_ENABLE_HTTPS" in script
+    assert "ENABLE_HTTPS" in script
+    assert "PORT_HTTPS: HTTPS_PORT" in script
+    assert "SSL_CERTIFICATE: 'server.crt'" in script
+    assert "SSL_CERTIFICATE_KEY: 'server.key'" in script
+    assert "nginx_https.conf" in script
+    assert "ssl_certificate server.crt" in script
+    assert "ssl_certificate_key server.key" in script
+    assert "listen[[:space:]]*443[[:space:]]*ssl" in script
+    assert "const HOST_PORTAL = ENABLE_HTTPS" in script
     assert "CONF_WEB_DIR: 'ohr-cicd/web_prod'" in script
     assert "CONF_CONF_DIR: 'conf_prod'" in script
     assert "web_prod/help" in script
@@ -384,6 +395,7 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
             "help_docs_branch": "release_ci",
             "conf_server_host": "customer.local",
             "conf_web_port": 80,
+            "conf_enable_https": True,
             "conf_worker_processes": 1,
             "conf_worker_connections": 1024,
         },
@@ -394,6 +406,7 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
     assert env["OHR_CICD_BRANCH"] == "master"
     assert env["OHR_CICD_ENV"] == "direct_prod"
     assert env["CONF_SERVER_HOST"] == "customer.local"
+    assert env["CONF_ENABLE_HTTPS"] == "true"
 
 
 def test_build_console_log_rendering_keeps_fixed_line_window():

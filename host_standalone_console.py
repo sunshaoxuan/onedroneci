@@ -490,6 +490,7 @@ def run_job(job_id: str) -> None:
                 "help_docs_branch": req.get("help_docs_branch") or "release_ci",
                 "conf_server_host": req.get("conf_server_host") or "",
                 "conf_web_port": int(req.get("conf_web_port") or 80),
+                "conf_enable_https": bool(req.get("conf_enable_https")),
                 "conf_worker_processes": int(req.get("conf_worker_processes") or 1),
                 "conf_worker_connections": int(req.get("conf_worker_connections") or 1024),
                 "note": req.get("note") or f"standalone package {job_id}",
@@ -661,6 +662,7 @@ INDEX_HTML = """<!doctype html>
         <label><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
         <label><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
         <label><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
+        <label class="check-row"><input name="conf_enable_https" type="checkbox"><span data-i18n="enableHttps">HTTPS / 443 設定を生成</span></label>
         <label><span data-i18n="postgresHost">PostgreSQL Host</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
         <label><span data-i18n="postgresPort">PostgreSQL Port</span><input name="postgresql_port" type="number" value="5432"></label>
         <label><span data-i18n="postgresUser">PostgreSQL User</span><input name="postgresql_user" value="postgres"></label>
@@ -745,6 +747,7 @@ const I18N = {
     helpBranch: 'ヘルプブランチ',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
+    enableHttps: 'HTTPS / 443 設定を生成',
     postgresHost: 'PostgreSQL ホスト',
     postgresPort: 'PostgreSQL ポート',
     postgresUser: 'PostgreSQL ユーザー',
@@ -823,6 +826,7 @@ const I18N = {
     helpBranch: 'Help 分支',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
+    enableHttps: '生成 HTTPS / 443 配置',
     postgresHost: 'PostgreSQL 主机',
     postgresPort: 'PostgreSQL 端口',
     postgresUser: 'PostgreSQL 用户',
@@ -901,6 +905,7 @@ const I18N = {
     helpBranch: 'Help branch',
     customerHost: 'Customer access address',
     webPort: 'Web port',
+    enableHttps: 'Generate HTTPS / 443 configuration',
     postgresHost: 'PostgreSQL Host',
     postgresPort: 'PostgreSQL Port',
     postgresUser: 'PostgreSQL User',
@@ -1162,6 +1167,10 @@ function fillFormFromJob(job) {
   const form = document.getElementById('form');
   Array.from(form.elements).forEach(el => {
     if (!el.name || !(el.name in request)) return;
+    if (el.type === 'checkbox') {
+      el.checked = Boolean(request[el.name]);
+      return;
+    }
     el.value = request[el.name] == null ? '' : request[el.name];
   });
 }
@@ -1288,6 +1297,7 @@ document.getElementById('form').addEventListener('submit', async (event) => {
     return;
   }
   const payload = Object.fromEntries(new FormData(event.target).entries());
+  payload.conf_enable_https = event.target.elements.conf_enable_https.checked;
   payload.ui_language = lang;
   const res = await fetch('/api/jobs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
   const job = await res.json();
@@ -1648,6 +1658,17 @@ input:disabled, select:disabled { background: #eef2f5; color: #7b8794; }
 .panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
 .form-panel .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 label { display: grid; gap: 7px; font-weight: 800; font-size: 13px; color: #273449; }
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 70px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f5f8fb;
+}
+.check-row input { width: auto; }
 button {
   min-height: 40px;
   border: 0;

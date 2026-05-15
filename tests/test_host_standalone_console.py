@@ -163,6 +163,10 @@ def test_console_uses_commercial_delivery_package_naming():
     assert "最終インストールパッケージ" not in console.APP_JS
     assert "organisation_name" in console.INDEX_HTML
     assert "organisation_dstart" in console.INDEX_HTML
+    assert "conf_enable_https" in console.INDEX_HTML
+    assert "enableHttps" in console.APP_JS
+    assert "payload.conf_enable_https" in console.APP_JS
+    assert "el.type === 'checkbox'" in console.APP_JS
     assert "firstDayOfCurrentMonth" in console.APP_JS
 
 
@@ -420,6 +424,7 @@ def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
             "frontend_release_branch": "release_front",
             "help_docs_branch": "release_ci",
             "conf_server_host": "customer.local",
+            "conf_enable_https": True,
         },
         "log": [],
         "outputs": {},
@@ -457,6 +462,7 @@ def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
     assert stored["outputs"]["package_zip"] == ""
     assert payloads[0]["build_backend"] is False
     assert payloads[0]["build_frontend"] is True
+    assert payloads[0]["conf_enable_https"] is True
 
 
 def test_running_status_uses_single_animated_heartbeat_not_log_spam():
