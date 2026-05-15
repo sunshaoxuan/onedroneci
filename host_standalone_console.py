@@ -781,6 +781,7 @@ const I18N = {
     selectTask: 'タスクを選択してください。',
     noTask: 'タスク未選択',
     productDir: '交付ディレクトリ',
+    productDirHint: 'このパスは Web サイトを動かしている宿主機上の場所です。閲覧している端末のローカルパスではありません。',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
     copy: 'コピー',
@@ -854,6 +855,7 @@ const I18N = {
     selectTask: '请选择任务。',
     noTask: '未选择任务',
     productDir: '交付目录',
+    productDirHint: '这个路径是在网站宿主机上的位置，不是当前浏览器所在电脑的本地路径。',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
     copy: '复制',
@@ -927,6 +929,7 @@ const I18N = {
     selectTask: 'Select a task.',
     noTask: 'No task selected',
     productDir: 'Delivery directory',
+    productDirHint: 'This path is on the web host machine, not on the local computer running this browser.',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
     copy: 'Copy',
@@ -1363,7 +1366,10 @@ function escapeHtml(value) {
 function pathRow(label, value) {
   if (!value) return '';
   const safe = escapeHtml(value);
-  return `<div class="path-row"><span>${label}</span><code>${safe}</code><button type="button" class="copy-path" data-path="${safe}">${t('copy')}</button></div>`;
+  const hint = label === t('productDir')
+    ? `<button type="button" class="help-dot" aria-label="${escapeHtml(t('productDirHint'))}" title="${escapeHtml(t('productDirHint'))}">?</button>`
+    : '';
+  return `<div class="path-row"><span class="path-label">${label}${hint}</span><code>${safe}</code><button type="button" class="copy-path" data-path="${safe}">${t('copy')}</button></div>`;
 }
 
 function progressLabel(id) {
@@ -1704,7 +1710,21 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .result-summary strong { word-break: break-all; }
 .path-list { display: grid; gap: 10px; }
 .path-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.path-row span { color: var(--muted); font-size: 13px; font-weight: 800; }
+.path-label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 800; }
+.help-dot {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid #bfd1df;
+  background: #f5f9fc;
+  color: #557086;
+  font-size: 12px;
+  line-height: 16px;
+  box-shadow: none;
+}
+.help-dot:hover { background: #e8f4fa; color: var(--accent); transform: none; box-shadow: none; }
 .path-row code { padding: 10px; background: #0d1320; color: #d8e8f6; border-radius: 8px; overflow: auto; white-space: nowrap; }
 .copy-path { min-height: 34px; padding: 7px 10px; }
 .terminal-frame-panel details { overflow: hidden; }
