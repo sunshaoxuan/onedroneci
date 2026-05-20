@@ -26,6 +26,7 @@ from drone_adapter import DroneBuildRef, DroneExecutorAdapter
 
 DATA_DIR = Path(os.environ.get("BUILD_CONSOLE_DATA_DIR", ROOT / "builds"))
 OHR_BACK_DIR = Path(os.environ.get("OHR_BACK_DIR", "/root/ohr-back"))
+OHR_BACK_GIT_URL = os.environ.get("OHR_BACK_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-back.git")
 ARTIFACT_ROOT = Path(os.environ.get("BUILD_ARTIFACT_ROOT", "/opt/ohr-build-artifacts"))
 PRODUCT_VARIANTS = ("standard", "nho")
 NHO_BACK_DIR = Path(os.environ.get("NHO_BACK_DIR", "/root/nho-ohr-back"))
@@ -1290,36 +1291,8 @@ def nho_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
 
 
 def list_backend_release_branches(product_variant: str = "standard", limit: int = 200) -> list[str]:
-    if product_variant == "nho":
-        return list_release_branches_for_url(NHO_BACK_GIT_URL, limit)
-    git_token = os.environ.get("OHR_BACK_GIT_TOKEN", "")
-    remote = "origin"
-    if git_token:
-        remote = "https://oauth2:" + urllib.parse.quote(git_token, safe="") + "@upds7.ujob100.com/ohr/ohr-back.git"
-    try:
-        proc = subprocess.run(
-            ["git", "ls-remote", "--heads", remote, "release_*"],
-            cwd=str(OHR_BACK_DIR) if OHR_BACK_DIR.is_dir() else None,
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return []
-    if proc.returncode != 0:
-        return []
-    branches: list[str] = []
-    for line in proc.stdout.splitlines():
-        _, _, ref = line.partition("\t")
-        if not ref.startswith("refs/heads/"):
-            continue
-        branch = ref.removeprefix("refs/heads/")
-        if branch.startswith("release_") and BRANCH_RE.fullmatch(branch):
-            branches.append(branch)
-    branches = sorted(set(branches), reverse=True)
-    return branches[:limit]
+    repo_url = NHO_BACK_GIT_URL if product_variant == "nho" else OHR_BACK_GIT_URL
+    return list_release_branches_for_url(repo_url, limit)
 
 
 def list_release_branches_for_url(url: str, limit: int = 500) -> list[str]:

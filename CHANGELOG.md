@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2 - 2026-05-20
+
+### Fixed
+
+- 构建终端后端分支列表改为按产品版本显式查询对应 GitLab 项目：標準版使用 `ohr/ohr-back`，NHO版使用 `nhophr/ohr-back`，不再依赖本地 checkout 的 `origin`。
+- 增加测试固定標準版/NHO版前后端分支候选来源，避免两个产品版本误用同一套仓库清单。
+
 ## 0.3.1 - 2026-05-20
 
 ### Changed

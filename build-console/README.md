@@ -56,7 +56,7 @@ python host_standalone_console.py
 ```
 
 默认输出目录为 `dist\standalone`，可用 `STANDALONE_OUTPUT_DIR` 覆盖。固定模板不提交 Git，避免 1GB 级中间件包在仓库和构建终端之间反复传输。
-- `GET /api/backend-branches?product_variant=standard|nho`、`GET /api/frontend-branches?product_variant=standard|nho`：分支候选（供页面使用）
+- `GET /api/backend-branches?product_variant=standard|nho`、`GET /api/frontend-branches?product_variant=standard|nho`：分支候选（供页面使用）。后端分支会显式按产品版本查询对应 GitLab 项目：標準版为 `ohr/ohr-back`，NHO版为 `nhophr/ohr-back`。
 
 ## Direct 前端打包设计
 

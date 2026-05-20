@@ -356,9 +356,34 @@ def test_list_frontend_release_branches_intersects_child_repos(monkeypatch):
     assert server.list_frontend_release_branches() == ["release_20260102"]
 
 
-def test_list_backend_release_branches_parses_refs(monkeypatch, tmp_path):
+def test_variant_branch_lists_use_variant_gitlab_projects(monkeypatch):
     server = load_server()
-    monkeypatch.setattr(server, "OHR_BACK_DIR", tmp_path)
+
+    calls: list[str] = []
+
+    def fake_list(url, limit=500):
+        calls.append(url)
+        return ["release_common"]
+
+    monkeypatch.setattr(server, "list_release_branches_for_url", fake_list)
+
+    assert server.list_backend_release_branches("standard") == ["release_common"]
+    assert calls[-1] == server.OHR_BACK_GIT_URL
+
+    assert server.list_backend_release_branches("nho") == ["release_common"]
+    assert calls[-1] == server.NHO_BACK_GIT_URL
+
+    calls.clear()
+    assert server.list_frontend_release_branches("standard") == ["release_common"]
+    assert calls == list(server.FRONTEND_CHILD_REPOS.values())
+
+    calls.clear()
+    assert server.list_frontend_release_branches("nho") == ["release_common"]
+    assert calls == list(server.NHO_FRONTEND_CHILD_REPOS.values())
+
+
+def test_list_release_branches_for_url_parses_refs(monkeypatch):
+    server = load_server()
 
     class Result:
         returncode = 0
@@ -371,7 +396,10 @@ def test_list_backend_release_branches_parses_refs(monkeypatch, tmp_path):
 
     monkeypatch.setattr(server.subprocess, "run", lambda *args, **kwargs: Result())
 
-    assert server.list_backend_release_branches() == ["release_20260502", "release_20260501"]
+    assert server.list_release_branches_for_url("https://example.test/repo.git") == [
+        "release_20260502",
+        "release_20260501",
+    ]
 
 
 def test_direct_frontend_build_uses_bundle_zip_only():
