@@ -775,6 +775,8 @@ const I18N = {
     refreshStatus: '状態更新',
     startTerminal: 'ビルド端末を起動',
     stopTerminal: 'ビルド端末を停止',
+    stopTerminalConfirm: 'ビルド端末を停止するには SHUTDOWN と入力してください。',
+    stopTerminalConfirmFailed: '入力が一致しないため、ビルド端末の停止を中止しました。',
     formKicker: '構造設定',
     formTitle: '構成パラメータ',
     productVariant: '製品バージョン',
@@ -860,6 +862,8 @@ const I18N = {
     refreshStatus: '刷新状态',
     startTerminal: '启动构建终端',
     stopTerminal: '关闭构建终端',
+    stopTerminalConfirm: '如需关闭构建终端，请输入 SHUTDOWN。',
+    stopTerminalConfirmFailed: '输入不一致，已取消关闭构建终端。',
     formKicker: '打包设置',
     formTitle: '构造参数',
     productVariant: '产品版本',
@@ -945,6 +949,8 @@ const I18N = {
     refreshStatus: 'Refresh status',
     startTerminal: 'Start build terminal',
     stopTerminal: 'Stop build terminal',
+    stopTerminalConfirm: 'Type SHUTDOWN to stop the build terminal.',
+    stopTerminalConfirmFailed: 'Input did not match; build terminal stop was cancelled.',
     formKicker: 'Build settings',
     formTitle: 'Build parameters',
     productVariant: 'Product version',
@@ -1308,6 +1314,13 @@ async function refreshTerminal() {
 }
 
 async function terminalAction(action) {
+  if (action === 'stop') {
+    const typed = window.prompt(t('stopTerminalConfirm'), '');
+    if ((typed || '').trim().toUpperCase() !== 'SHUTDOWN') {
+      alert(t('stopTerminalConfirmFailed'));
+      return;
+    }
+  }
   const res = await fetch(`/api/build-terminal/${action}`, {method: 'POST', headers: authHeaders({'Content-Type': 'application/json'}), body: '{}'});
   const data = await res.json();
   renderTerminal(data.status === 'requested' ? 'unknown' : data.status);

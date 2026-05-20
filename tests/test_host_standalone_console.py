@@ -119,9 +119,17 @@ def test_i18n_contains_terminal_controls_and_statuses():
         "terminalHeartbeat",
         "startTerminal",
         "stopTerminal",
+        "stopTerminalConfirm",
+        "stopTerminalConfirmFailed",
         "refreshStatus",
     ):
         assert key in console.APP_JS
+
+
+def test_stop_build_terminal_requires_shutdown_keyword():
+    assert "window.prompt(t('stopTerminalConfirm'), '')" in console.APP_JS
+    assert ".trim().toUpperCase() !== 'SHUTDOWN'" in console.APP_JS
+    assert "return;" in console.APP_JS
 
 
 def test_host_console_localizes_database_and_service_labels():
