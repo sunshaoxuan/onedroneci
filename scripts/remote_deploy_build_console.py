@@ -71,6 +71,8 @@ def render_env() -> str:
         "NHO_FRONTEND_NOCODE_ENGINE_GIT_URL": base.get("NHO_FRONTEND_NOCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-nocode-engine.git"),
         "NHO_FRONTEND_NENCHO_GIT_URL": base.get("NHO_FRONTEND_NENCHO_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-web-nencho.git"),
         "NHO_PNPM_CACHE_DIR": base.get("NHO_PNPM_CACHE_DIR", "/opt/nho-pnpm-cache"),
+        "NHO_YARN_CACHE_DIR": base.get("NHO_YARN_CACHE_DIR", "/opt/nho-yarn-cache"),
+        "NHO_MAVEN_CACHE_DIR": base.get("NHO_MAVEN_CACHE_DIR", "/opt/nho-maven-cache"),
         "NHO_MATERIAL_SVN_URL": base.get("NHO_MATERIAL_SVN_URL", "http://3.115.155.21/svn/nho4phr/大連側/97.リリース作業"),
         "NHO_MATERIAL_SVN_USERNAME": base.get("NHO_MATERIAL_SVN_USERNAME", ""),
         "NHO_MATERIAL_SVN_PASSWORD": base.get("NHO_MATERIAL_SVN_PASSWORD", ""),
@@ -122,7 +124,7 @@ def main() -> int:
         timeout=45,
     )
     try:
-        _run(client, f"mkdir -p {REMOTE_DIR}/builds /opt/ohr-build-artifacts /opt/pnpm-cache /opt/nho-pnpm-cache /opt/yarn-cache /opt/workspace-cache-ohr /opt/ohr-backend/.m2 /opt/ohr-workspace-src /opt/nho-ohr-workspace-src /root/nho-ohr-back /opt/ohr-help-docs-src /opt/ohr-help-docs-svn && rm -rf {REMOTE_DIR}/conf_prod_template && mkdir -p {REMOTE_DIR}/conf_prod_template && chmod 700 {REMOTE_DIR}")
+        _run(client, f"mkdir -p {REMOTE_DIR}/builds /opt/ohr-build-artifacts /opt/pnpm-cache /opt/nho-pnpm-cache /opt/yarn-cache /opt/nho-yarn-cache /opt/nho-maven-cache /opt/workspace-cache-ohr /opt/ohr-backend/.m2 /opt/ohr-workspace-src /opt/nho-ohr-workspace-src /root/nho-ohr-back /opt/ohr-help-docs-src /opt/ohr-help-docs-svn && rm -rf {REMOTE_DIR}/conf_prod_template && mkdir -p {REMOTE_DIR}/conf_prod_template && chmod 700 {REMOTE_DIR}")
         with client.open_sftp() as sftp:
             sftp.put(str(ROOT / "build-console" / "server.py"), f"{REMOTE_DIR}/server.py")
             sftp.put(str(ROOT / "build-console" / "drone_adapter.py"), f"{REMOTE_DIR}/drone_adapter.py")

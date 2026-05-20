@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.9`
+当前版本：`0.3.10`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -71,7 +71,8 @@
 - 標準版前端、NHO前端、help、`ohr-cicd`、数据连携仓库均采用增量 Git 同步。
 - 构建终端记录和共享产物按 `standard/<build_id>`、`nho/<build_id>` 分目录保存。
 - SVN 文档目录采用持久工作副本，已存在时执行 update。
-- 標準版 pnpm 使用 `/opt/pnpm-cache`；NHO pnpm 使用 `/opt/nho-pnpm-cache`；yarn 使用 `/opt/yarn-cache`。
+- 標準版 pnpm 使用 `/opt/pnpm-cache`；NHO pnpm 使用 `/opt/nho-pnpm-cache`。
+- NHO 前端 yarn 使用 `/opt/nho-yarn-cache`，后端 Maven 使用 `/opt/nho-maven-cache`，避免与標準版依赖缓存混用。
 - `ohr-workspace` 和 help 的 pnpm install 会按 lock/package 指纹跳过不必要安装。
 - help 构建按 Git revision、SVN revision、lock hash 复用发布 zip。
 - 数据连携仓库使用 shallow clone/fetch，并设置超时，避免首次 clone 静默挂住。

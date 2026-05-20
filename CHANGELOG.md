@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.10 - 2026-05-20
+
+### Changed
+
+- NHO版后端 Maven 本地仓库改为 `/opt/nho-maven-cache`，不再与標準版共用默认 Maven 缓存。
+- NHO版前端显式使用 `/opt/nho-yarn-cache`，并继续保留 `/opt/nho-pnpm-cache` 与独立 Git 工作区。
+
 ## 0.3.9 - 2026-05-20
 
 ### Added

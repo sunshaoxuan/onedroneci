@@ -58,6 +58,8 @@ NHO_FRONTEND_FEELIN_GIT_URL = os.environ.get("NHO_FRONTEND_FEELIN_GIT_URL", "htt
 NHO_FRONTEND_WORKSPACE_BRANCH = os.environ.get("NHO_FRONTEND_WORKSPACE_BRANCH", "master")
 NHO_FRONTEND_FEELIN_BRANCH = os.environ.get("NHO_FRONTEND_FEELIN_BRANCH", "master")
 NHO_PNPM_CACHE_DIR = os.environ.get("NHO_PNPM_CACHE_DIR", "/opt/nho-pnpm-cache")
+NHO_YARN_CACHE_DIR = os.environ.get("NHO_YARN_CACHE_DIR", "/opt/nho-yarn-cache")
+NHO_MAVEN_CACHE_DIR = os.environ.get("NHO_MAVEN_CACHE_DIR", "/opt/nho-maven-cache")
 NHO_MATERIAL_SVN_URL = os.environ.get(
     "NHO_MATERIAL_SVN_URL",
     "http://3.115.155.21/svn/nho4phr/大連側/97.リリース作業",
@@ -795,11 +797,13 @@ git rev-parse --short HEAD
 
 
 def nho_build_command() -> str:
-    return r"""set -euo pipefail
+    cache_dir = shell_quote(NHO_MAVEN_CACHE_DIR)
+    return f"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 if ! command -v zip >/dev/null 2>&1; then apt-get update -qy && apt-get install -y zip; fi
+mkdir -p {cache_dir}
 rm -rf ./package ./package.zip
-mvn -B clean package -Dmaven.test.skip
+mvn -B -Dmaven.repo.local={cache_dir} clean package -Dmaven.test.skip
 chmod +x ./collect-pkg.sh
 ./collect-pkg.sh
 if [ ! -d ./package ]; then
@@ -944,6 +948,8 @@ git clean -fd -e node_modules -e .ci-cache -e .cache -e .turbo -e .vite
 npm i -g pnpm@9.4.0 --registry=https://registry.npmmirror.com/
 npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
 pnpm config set store-dir "$NHO_PNPM_CACHE_DIR" || true
+mkdir -p "$NHO_YARN_CACHE_DIR"
+yarn config set cache-folder "$NHO_YARN_CACHE_DIR" || true
 npm uninstall -g ohr-cli || true
 npm install -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
 if [ -n "${FRONTEND_GIT_TOKEN:-}" ]; then
@@ -982,9 +988,12 @@ cd "$OHR_FRONTEND_WORKDIR"
 npm i -g pnpm@9.4.0 --registry=https://registry.npmmirror.com/
 npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
 pnpm config set store-dir "$NHO_PNPM_CACHE_DIR" || true
+mkdir -p "$NHO_YARN_CACHE_DIR"
+yarn config set cache-folder "$NHO_YARN_CACHE_DIR" || true
 npm uninstall -g ohr-cli || true
 npm install -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
 yarn config set registry https://registry.npmjs.org
+yarn config set cache-folder "$NHO_YARN_CACHE_DIR" || true
 yarn config set enableMirror false || true
 yarn config set checksumBehavior ignore || true
 find . -maxdepth 1 -type f -name 'release_*.zip' -delete
@@ -1313,6 +1322,7 @@ def nho_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "NHO_FRONTEND_NOCODE_ENGINE_GIT_URL": git_url_with_token(NHO_FRONTEND_CHILD_REPOS["frontend_nocode_engine_branch"]),
         "NHO_FRONTEND_NENCHO_GIT_URL": git_url_with_token(NHO_FRONTEND_CHILD_REPOS["frontend_nencho_branch"]),
         "NHO_PNPM_CACHE_DIR": NHO_PNPM_CACHE_DIR,
+        "NHO_YARN_CACHE_DIR": NHO_YARN_CACHE_DIR,
         "OHR_BUILD_ID": build_id,
         "OUT_WEB_ZIP": str(shared_artifact_path(build_id, "web.zip", "nho")),
     }
