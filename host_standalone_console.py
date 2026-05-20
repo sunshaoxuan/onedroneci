@@ -21,6 +21,7 @@ from standalone_packager import (
     BuildVersion,
     ProductSqlConfig,
     StandaloneConfig,
+    build_nho_common_package,
     build_product_package,
     configured_data_sync_branch,
     configured_data_sync_dir,
@@ -463,6 +464,7 @@ def run_job(job_id: str) -> None:
         job = JOBS.get(job_id) or read_job(job_id)
         req = dict(job["request"])
         remote_id = job.get("remote_build_id")
+    product_variant = str(req.get("product_variant") or "standard").lower()
     build_backend = bool(str(req.get("backend_branch") or "").strip())
     build_frontend = bool(str(req.get("frontend_release_branch") or "").strip())
     work_dir = job_dir(job_id)
@@ -483,6 +485,7 @@ def run_job(job_id: str) -> None:
             update_progress(job_id, "terminal_dispatch", "running")
             append_log(job_id, "build_terminal_dispatch")
             remote_payload = {
+                "product_variant": product_variant,
                 "build_backend": build_backend,
                 "build_frontend": build_frontend,
                 "backend_branch": req.get("backend_branch") or "",
@@ -526,6 +529,26 @@ def run_job(job_id: str) -> None:
             "web_zip": str(web_zip) if web_zip else "",
         }
         update_progress(job_id, "download_artifacts", "success")
+        if product_variant == "nho":
+            for step_id in ("sql_assets", "data_sync_assets", "account_sql", "help_sql"):
+                update_progress(job_id, step_id, "skipped")
+            update_progress(job_id, "standalone_zip", "running")
+            def nho_package_log(message: str) -> None:
+                append_log(job_id, message)
+
+            outputs = build_nho_common_package(
+                output_root=configured_output_dir(),
+                build_id=job_id,
+                package_zip=package_zip,
+                web_zip=web_zip,
+                logger=nho_package_log,
+            )
+            update_progress(job_id, "standalone_zip", "success")
+            update_progress(job_id, "complete", "success")
+            update_job(job_id, status="success", outputs=outputs)
+            append_log(job_id, "nho_common_package_done")
+            return
+
         if not (build_backend and build_frontend):
             for step_id in ("sql_assets", "data_sync_assets", "account_sql", "help_sql", "standalone_zip"):
                 update_progress(job_id, step_id, "skipped")
@@ -657,20 +680,25 @@ INDEX_HTML = """<!doctype html>
         </div>
       </div>
       <div class="grid">
+        <fieldset class="variant-field">
+          <legend data-i18n="productVariant">製品バージョン</legend>
+          <label class="radio-pill"><input name="product_variant" type="radio" value="standard" checked><span data-i18n="variantStandard">標準版</span></label>
+          <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
+        </fieldset>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches"><option value=""></option></select></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches"><option value=""></option></select></label>
-        <label><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
-        <label><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
-        <label><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
-        <label class="check-row"><input name="conf_enable_https" type="checkbox"><span data-i18n="enableHttps">HTTPS / 443 設定を生成</span></label>
-        <label><span data-i18n="postgresHost">PostgreSQL Host</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
-        <label><span data-i18n="postgresPort">PostgreSQL Port</span><input name="postgresql_port" type="number" value="5432"></label>
-        <label><span data-i18n="postgresUser">PostgreSQL User</span><input name="postgresql_user" value="postgres"></label>
-        <label><span data-i18n="postgresPassword">PostgreSQL Password</span><input name="postgresql_password" value="password"></label>
-        <label><span data-i18n="appHostName">アプリケーションサービスホスト名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
-        <label><span data-i18n="ohrServicePort">OHR Service Port</span><input name="ohr_service_port" type="number" value="3198"></label>
-        <label><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
-        <label><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
+        <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
+        <label class="standard-only"><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
+        <label class="standard-only"><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
+        <label class="check-row standard-only"><input name="conf_enable_https" type="checkbox"><span data-i18n="enableHttps">HTTPS / 443 設定を生成</span></label>
+        <label class="standard-only"><span data-i18n="postgresHost">PostgreSQL Host</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
+        <label class="standard-only"><span data-i18n="postgresPort">PostgreSQL Port</span><input name="postgresql_port" type="number" value="5432"></label>
+        <label class="standard-only"><span data-i18n="postgresUser">PostgreSQL User</span><input name="postgresql_user" value="postgres"></label>
+        <label class="standard-only"><span data-i18n="postgresPassword">PostgreSQL Password</span><input name="postgresql_password" value="password"></label>
+        <label class="standard-only"><span data-i18n="appHostName">アプリケーションサービスホスト名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
+        <label class="standard-only"><span data-i18n="ohrServicePort">OHR Service Port</span><input name="ohr_service_port" type="number" value="3198"></label>
+        <label class="standard-only"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
+        <label class="standard-only"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
       </div>
     </form>
 
@@ -740,6 +768,9 @@ const I18N = {
     stopTerminal: 'ビルド端末を停止',
     formKicker: '構造設定',
     formTitle: '構成パラメータ',
+    productVariant: '製品バージョン',
+    variantStandard: '標準版',
+    variantNho: 'NHO版',
     stopJob: '停止',
     startJob: '構造を開始',
     backendBranch: 'バックエンドブランチ',
@@ -788,6 +819,7 @@ const I18N = {
     hostTaskId: '主控タスク',
     statusLabel: '状態',
     productDir: '交付ディレクトリ',
+    commonZip: '共通.zip',
     productDirHint: 'このパスは Web サイトを動かしている宿主機上の場所です。閲覧している端末のローカルパスではありません。',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
@@ -819,6 +851,9 @@ const I18N = {
     stopTerminal: '关闭构建终端',
     formKicker: '打包设置',
     formTitle: '构造参数',
+    productVariant: '产品版本',
+    variantStandard: '标准版',
+    variantNho: 'NHO版',
     stopJob: '停止',
     startJob: '开始构造',
     backendBranch: '后端分支',
@@ -867,6 +902,7 @@ const I18N = {
     hostTaskId: '主控任务',
     statusLabel: '状态',
     productDir: '交付目录',
+    commonZip: '共通.zip',
     productDirHint: '这个路径是在网站宿主机上的位置，不是当前浏览器所在电脑的本地路径。',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
@@ -898,6 +934,9 @@ const I18N = {
     stopTerminal: 'Stop build terminal',
     formKicker: 'Build settings',
     formTitle: 'Build parameters',
+    productVariant: 'Product version',
+    variantStandard: 'Standard',
+    variantNho: 'NHO',
     stopJob: 'Stop',
     startJob: 'Start build',
     backendBranch: 'Backend branch',
@@ -946,6 +985,7 @@ const I18N = {
     hostTaskId: 'Host task',
     statusLabel: 'Status',
     productDir: 'Delivery directory',
+    commonZip: '共通.zip',
     productDirHint: 'This path is on the web host machine, not on the local computer running this browser.',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
@@ -1005,11 +1045,20 @@ function fillBranchSelect(id, branches) {
     select.value = previous;
   }
 }
+function getProductVariant() {
+  const checked = document.querySelector('input[name="product_variant"]:checked');
+  return checked ? checked.value : 'standard';
+}
+function applyVariantVisibility() {
+  const isNho = getProductVariant() === 'nho';
+  document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho; });
+}
 async function loadBranchLists() {
   try {
+    const variant = encodeURIComponent(getProductVariant());
     const [backend, frontend] = await Promise.all([
-      fetch('/build-terminal/api/backend-branches').then(res => res.json()),
-      fetch('/build-terminal/api/frontend-branches').then(res => res.json())
+      fetch(`/build-terminal/api/backend-branches?product_variant=${variant}`).then(res => res.json()),
+      fetch(`/build-terminal/api/frontend-branches?product_variant=${variant}`).then(res => res.json())
     ]);
     fillBranchSelect('backend-branches', backend.branches);
     fillBranchSelect('frontend-branches', frontend.branches);
@@ -1158,7 +1207,11 @@ function applyI18n() {
 function setFormLocked(locked) {
   const terminalLocked = lastTerminalStatus !== 'running';
   const modeLocked = mode !== 'create';
-  document.querySelectorAll('#form input, #form select, #startJob').forEach(el => { el.disabled = locked || modeLocked || terminalLocked; });
+  const isNho = getProductVariant() === 'nho';
+  document.querySelectorAll('#form input, #form select, #startJob').forEach(el => {
+    const standardHidden = isNho && el.closest('.standard-only');
+    el.disabled = Boolean(standardHidden) || locked || modeLocked || terminalLocked;
+  });
   document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
 }
 
@@ -1171,8 +1224,13 @@ function fillFormFromJob(job) {
       el.checked = Boolean(request[el.name]);
       return;
     }
+    if (el.type === 'radio') {
+      el.checked = String(request[el.name]) === el.value;
+      return;
+    }
     el.value = request[el.name] == null ? '' : request[el.name];
   });
+  applyVariantVisibility();
 }
 
 function markSelectedJobRow(jobId) {
@@ -1254,6 +1312,13 @@ document.getElementById('stopTerminal').addEventListener('click', () => terminal
 document.getElementById('newJobMode').addEventListener('click', () => {
   enterCreateMode();
   refresh();
+});
+document.querySelectorAll('input[name="product_variant"]').forEach(el => {
+  el.addEventListener('change', () => {
+    applyVariantVisibility();
+    loadBranchLists();
+    setFormLocked(false);
+  });
 });
 document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
   const frame = document.getElementById('terminalFrame');
@@ -1503,7 +1568,10 @@ async function copyText(text) {
 function renderResult(job) {
   const outputs = job.outputs || {};
   const box = document.getElementById('result');
-  const pathList = outputs.product_dir ? pathRow(t('productDir'), outputs.product_dir) : `
+  const pathList = outputs.common_zip ? `
+      ${pathRow(t('productDir'), outputs.product_dir)}
+      ${pathRow(t('commonZip'), outputs.common_zip)}
+  ` : outputs.product_dir ? pathRow(t('productDir'), outputs.product_dir) : `
       ${pathRow('package.zip', outputs.package_zip)}
       ${pathRow('web.zip', outputs.web_zip)}
   `;
@@ -1556,6 +1624,7 @@ function renderResultIfChanged(job) {
 
 applyI18n();
 document.getElementById('organisation-dstart').value = firstDayOfCurrentMonth();
+applyVariantVisibility();
 refreshTerminal();
 loadBranchLists();
 refresh();
@@ -1663,6 +1732,34 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
 .panel { padding: 18px; margin-bottom: 16px; }
 .panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
 .form-panel .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.variant-field {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.variant-field legend {
+  margin: 0 8px 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 760;
+}
+.radio-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-weight: 760;
+}
+.radio-pill input { width: auto; }
 label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #262626; }
 .check-row {
   display: flex;
@@ -1934,13 +2031,18 @@ class Handler(BaseHTTPRequestHandler):
     def create_job(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        product_variant = str(payload.get("product_variant") or "standard").strip().lower()
+        if product_variant not in {"standard", "nho"}:
+            self.send_json({"error": "invalid product_variant"}, HTTPStatus.BAD_REQUEST)
+            return
+        payload["product_variant"] = product_variant
         build_backend = bool(str(payload.get("backend_branch") or "").strip())
         build_frontend = bool(str(payload.get("frontend_release_branch") or "").strip())
         if not build_backend and not build_frontend:
             self.send_json({"error": "missing build target"}, HTTPStatus.BAD_REQUEST)
             return
-        required = ["conf_server_host"] if build_frontend else []
-        if build_backend and build_frontend:
+        required = ["conf_server_host"] if product_variant == "standard" and build_frontend else []
+        if product_variant == "standard" and build_backend and build_frontend:
             required.extend(["postgresql_host", "organisation_name"])
         for key in required:
             if not str(payload.get(key) or "").strip():

@@ -485,6 +485,68 @@ def build_product_package(
         }
 
 
+def build_nho_common_package(
+    *,
+    output_root: Path,
+    build_id: str,
+    package_zip: Path | None = None,
+    web_zip: Path | None = None,
+    logger: Any | None = None,
+) -> dict[str, Any]:
+    """Build the NHO code-only common package.
+
+    NHO does not include customer environment config, SQL, help, or the standalone installer shell.
+    The output intentionally mirrors the historical upgrade package layout.
+    """
+    if package_zip is None and web_zip is None:
+        raise ValueError("NHO common package requires package.zip or web.zip")
+    if package_zip is not None and not package_zip.is_file():
+        raise FileNotFoundError(f"missing package.zip: {package_zip}")
+    if web_zip is not None and not web_zip.is_file():
+        raise FileNotFoundError(f"missing web.zip: {web_zip}")
+
+    delivery_root = output_root / build_id
+    if delivery_root.exists():
+        shutil.rmtree(delivery_root)
+    delivery_root.mkdir(parents=True, exist_ok=True)
+    common_zip = delivery_root / "共通.zip"
+    software_prefix = "共通/upgrade/実行環境資材/OneHrSuite/software/"
+    readme_lines = [
+        "NHO庶務事務 共通アップグレード資材",
+        "",
+        "配置ファイル:",
+    ]
+    if package_zip is not None:
+        readme_lines.append("- upgrade/実行環境資材/OneHrSuite/software/package.zip")
+    if web_zip is not None:
+        readme_lines.append("- upgrade/実行環境資材/OneHrSuite/software/web.zip")
+    readme = "\n".join(readme_lines) + "\n"
+
+    if logger:
+        logger("nho_common_zip_rebuild")
+    with zipfile.ZipFile(common_zip, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+        for dirname in [
+            "共通/",
+            "共通/upgrade/",
+            "共通/upgrade/実行環境資材/",
+            "共通/upgrade/実行環境資材/OneHrSuite/",
+            software_prefix,
+        ]:
+            zf.writestr(dirname, b"")
+        zf.writestr("共通/upgrade/readme.txt", readme.encode("utf-8"))
+        if package_zip is not None:
+            zf.write(package_zip, software_prefix + "package.zip")
+        if web_zip is not None:
+            zf.write(web_zip, software_prefix + "web.zip")
+    return {
+        "product_dir": str(delivery_root),
+        "common_zip": str(common_zip),
+        "package_zip": str(package_zip) if package_zip else "",
+        "web_zip": str(web_zip) if web_zip else "",
+        "size": common_zip.stat().st_size,
+    }
+
+
 def _replace_help_sql_if_present(web_zip: Path, target: Path) -> None:
     with zipfile.ZipFile(web_zip) as zf:
         try:

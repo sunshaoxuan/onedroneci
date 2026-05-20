@@ -395,7 +395,8 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "repeat(10, minmax(0, 1fr))" in console.STYLE_CSS
     assert "@keyframes orbit" in console.STYLE_CSS
     assert ".overall-progress li.running .progress-icon::after" in console.STYLE_CSS
-    assert "const pathList = outputs.product_dir ? pathRow(t('productDir'), outputs.product_dir)" in console.APP_JS
+    assert "outputs.common_zip" in console.APP_JS
+    assert "pathRow(t('commonZip'), outputs.common_zip)" in console.APP_JS
     assert "${pathRow(t('standaloneZip'), outputs.standalone_zip)}" not in console.APP_JS
     assert "${pathRow(t('versionTxt'), outputs.version_txt)}" not in console.APP_JS
     assert "async function copyText(text)" in console.APP_JS
@@ -502,8 +503,21 @@ def test_embedded_build_terminal_unlocks_only_after_remote_build_starts():
 def test_form_is_locked_unless_build_terminal_is_running():
     assert "const terminalLocked = lastTerminalStatus !== 'running'" in console.APP_JS
     assert "const modeLocked = mode !== 'create'" in console.APP_JS
-    assert "el.disabled = locked || modeLocked || terminalLocked" in console.APP_JS
+    assert "standardHidden" in console.APP_JS
+    assert "el.disabled = Boolean(standardHidden) || locked || modeLocked || terminalLocked" in console.APP_JS
     assert "if (!res.ok)" in console.APP_JS
+
+
+def test_host_console_supports_standard_and_nho_product_variants():
+    assert "name=\"product_variant\"" in console.INDEX_HTML
+    assert "value=\"standard\"" in console.INDEX_HTML
+    assert "value=\"nho\"" in console.INDEX_HTML
+    assert "variantStandard" in console.APP_JS
+    assert "variantNho" in console.APP_JS
+    assert "getProductVariant()" in console.APP_JS
+    assert "product_variant=${variant}" in console.APP_JS
+    assert "build_nho_common_package" in console.__dict__
+    assert "outputs.common_zip" in console.APP_JS
 
 
 def test_build_terminal_proxy_rewrites_absolute_assets():

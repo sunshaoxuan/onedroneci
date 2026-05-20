@@ -10,6 +10,7 @@ from standalone_packager import (
     BuildVersion,
     ProductSqlConfig,
     StandaloneConfig,
+    build_nho_common_package,
     build_product_package,
     default_organisation_dstart,
     patch_account_sql,
@@ -38,6 +39,40 @@ def make_template(path: Path) -> None:
         z.writestr(WEB_IN_STANDALONE_ZIP, b"old-web")
         z.writestr("OneHrStandalone/software/jdk.zip", b"fixed-jdk")
         z.writestr("OneHrStandalone/bin/kernel/start.ps1", "start")
+
+
+def zip_members(path: Path) -> set[str]:
+    with zipfile.ZipFile(path) as z:
+        return set(z.namelist())
+
+
+def test_build_nho_common_package_frontend_only(tmp_path):
+    web_zip = tmp_path / "web.zip"
+    web_zip.write_bytes(b"web")
+
+    result = build_nho_common_package(output_root=tmp_path / "out", build_id="job1", web_zip=web_zip)
+
+    common_zip = Path(result["common_zip"])
+    assert common_zip == tmp_path / "out" / "job1" / "共通.zip"
+    members = zip_members(common_zip)
+    assert "共通/upgrade/readme.txt" in members
+    assert "共通/upgrade/実行環境資材/OneHrSuite/software/web.zip" in members
+    assert "共通/upgrade/実行環境資材/OneHrSuite/software/package.zip" not in members
+
+
+def test_build_nho_common_package_backend_only_and_both(tmp_path):
+    package_zip = tmp_path / "package.zip"
+    web_zip = tmp_path / "web.zip"
+    package_zip.write_bytes(b"package")
+    web_zip.write_bytes(b"web")
+
+    backend_only = build_nho_common_package(output_root=tmp_path / "out", build_id="backend", package_zip=package_zip)
+    assert "共通/upgrade/実行環境資材/OneHrSuite/software/package.zip" in zip_members(Path(backend_only["common_zip"]))
+
+    both = build_nho_common_package(output_root=tmp_path / "out", build_id="both", package_zip=package_zip, web_zip=web_zip)
+    members = zip_members(Path(both["common_zip"]))
+    assert "共通/upgrade/実行環境資材/OneHrSuite/software/package.zip" in members
+    assert "共通/upgrade/実行環境資材/OneHrSuite/software/web.zip" in members
 
 
 def make_sql_templates(path: Path) -> None:

@@ -67,6 +67,45 @@ def test_build_console_page_has_i18n_without_breaking_api():
         assert step_id in server.APP_JS
 
 
+def test_build_console_supports_nho_variant_scripts_and_ui():
+    server = load_server()
+
+    assert "product_variant" in server.INDEX_HTML
+    assert "variantNho" in server.APP_JS
+    assert "getProductVariant()" in server.APP_JS
+    assert "product_variant=${variant}" in server.APP_JS
+    assert "collect-pkg.sh" in server.nho_build_command()
+    assert "zip -r package.zip ./package" in server.nho_build_command()
+    assert "ohr-web-nencho" in server.NHO_FRONTEND_RESTORE_SCRIPT
+    assert "yarn setup" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "yarn build" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "yarn bundle" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "ohr-cicd" not in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "HELP_DOCS" not in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "conf_prod" not in server.NHO_FRONTEND_BUILD_SCRIPT
+
+
+def test_create_nho_build_does_not_require_standard_customer_fields(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
+    monkeypatch.setattr(server, "EXECUTOR", "direct")
+
+    meta = server.create_build(
+        {
+            "product_variant": "nho",
+            "build_backend": False,
+            "build_frontend": True,
+            "frontend_release_branch": "release_20260316",
+        }
+    )
+
+    assert meta["request"]["product_variant"] == "nho"
+    assert meta["request"]["frontend_workspace_branch"] == server.NHO_FRONTEND_WORKSPACE_BRANCH
+    assert meta["request"]["frontend_feelin_branch"] == server.NHO_FRONTEND_FEELIN_BRANCH
+    assert meta["request"]["frontend_nencho_branch"] == "release_20260316"
+
+
 def test_build_console_embedded_mode_is_read_only_current_build_view():
     server = load_server()
 

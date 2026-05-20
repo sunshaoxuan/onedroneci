@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.0 - 2026-05-20
+
+### Added
+
+- 新增产品版本切换：`標準版` 与 `NHO版`。
+- 新增 NHO Direct 构建链路，使用独立后端、前端 workspace、五个前端子仓、工作区和 pnpm 缓存。
+- 新增 NHO `共通.zip` 二次合包，输出 `共通/upgrade/実行環境資材/OneHrSuite/software/package.zip` 与 `web.zip`。
+- 构建终端分支接口支持按 `product_variant` 分别读取標準版/NHO版 release 分支。
+- 主控台表单按产品版本隐藏或显示专用参数，NHO 不再要求标准版客户环境、SQL、help、conf 字段。
+
+### Changed
+
+- 標準版完整交付流程保持原逻辑；NHO版只生成代码共通包，不执行 SQL、数据连携、help、conf_prod 或 OneHrStandalone 合包。
+- 构建终端部署配置增加 NHO 仓库、工作区和缓存目录环境变量。
+- README 补充产品版本、NHO 输出结构和缓存隔离说明。
+
 ## 0.2.1 - 2026-05-15
 
 ### Added

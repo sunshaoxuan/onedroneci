@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-本仓库提供一套 Direct 方式的 OHR 构建与交付包生成工具。当前主线不启用 DroneCI，也不上传 Nexus；构建终端负责生成变化频繁的 `package.zip` 和 `web.zip`，宿主机主控台负责合成最终交付目录。
+本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
 ## 组件
 
@@ -13,10 +13,10 @@
 
 1. 主控台检查构建终端状态。
 2. 主控台向构建终端创建构建任务。
-3. 构建终端按所选分支生成：
+3. 构建终端按所选产品版本和分支生成：
    - 后端 `package.zip`
    - 前端 `web.zip`
-4. 前端 Direct 构建中：
+4. `標準版` 前端 Direct 构建中：
    - `conf_prod` 来自 `ohr-cicd generateConf.js`
    - help 来自 `ohr-help-docs + SVN`
    - 前端版本分支来自四个前端子项目共同存在的 `release_*` 分支
@@ -30,10 +30,25 @@
     - `製品\`
     - `データ連携\`
 
+## NHO版流程
+
+`NHO版` 与 `標準版` 仓库、工作区、缓存、页面参数和输出逻辑完全隔离。它只生成代码共通包，不处理客户环境配置、SQL、`conf_prod`、help 或 `OneHrStandalone`。
+
+- 后端仓库：`nhophr/ohr-back`
+- 前端 workspace：`nhophr/ohr-workspace`
+- 前端子仓：`ohr-feelin`、`ohr-micro-frontends`、`ohr-lowcode-engine`、`ohr-nocode-engine`、`ohr-web-nencho`
+- workspace / feelin 默认 `master`
+- micro-frontends / lowcode / nocode / web-nencho 使用页面选择的前端 release 分支
+- 输出到 `dist\standalone\<主控任务ID>\共通.zip`
+- ZIP 内固定结构：
+  - `共通/upgrade/readme.txt`
+  - `共通/upgrade/実行環境資材/OneHrSuite/software/package.zip`
+  - `共通/upgrade/実行環境資材/OneHrSuite/software/web.zip`
+
 ## 主控台能力
 
 - 默认日语，支持中文和英文。
-- 刷新后优先选中运行中的任务；没有运行中任务时选中最近任务。
+- 刷新后优先选中运行中的任务；没有运行中任务时进入新建模式，避免历史任务覆盖新输入。
 - 选中历史任务后自动回填只读构建参数。
 - 显示完整主控流程进度，一整行流程图标展示每个阶段。
 - 日志区域独立展示，日志刷新不会重启进度动画。
@@ -43,9 +58,9 @@
 
 ## 缓存与性能
 
-- 前端、help、`ohr-cicd`、数据连携仓库均采用增量 Git 同步。
+- 標準版前端、NHO前端、help、`ohr-cicd`、数据连携仓库均采用增量 Git 同步。
 - SVN 文档目录采用持久工作副本，已存在时执行 update。
-- pnpm 使用 `/opt/pnpm-cache`，yarn 使用 `/opt/yarn-cache`。
+- 標準版 pnpm 使用 `/opt/pnpm-cache`；NHO pnpm 使用 `/opt/nho-pnpm-cache`；yarn 使用 `/opt/yarn-cache`。
 - `ohr-workspace` 和 help 的 pnpm install 会按 lock/package 指纹跳过不必要安装。
 - help 构建按 Git revision、SVN revision、lock hash 复用发布 zip。
 - 数据连携仓库使用 shallow clone/fetch，并设置超时，避免首次 clone 静默挂住。

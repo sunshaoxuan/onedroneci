@@ -27,6 +27,30 @@ from drone_adapter import DroneBuildRef, DroneExecutorAdapter
 DATA_DIR = Path(os.environ.get("BUILD_CONSOLE_DATA_DIR", ROOT / "builds"))
 OHR_BACK_DIR = Path(os.environ.get("OHR_BACK_DIR", "/root/ohr-back"))
 ARTIFACT_ROOT = Path(os.environ.get("BUILD_ARTIFACT_ROOT", "/opt/ohr-build-artifacts"))
+NHO_BACK_DIR = Path(os.environ.get("NHO_BACK_DIR", "/root/nho-ohr-back"))
+NHO_BACK_GIT_URL = os.environ.get("NHO_BACK_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-back.git")
+NHO_FRONTEND_WORKSPACE_DIR = Path(os.environ.get("NHO_FRONTEND_WORKSPACE_DIR", "/opt/nho-ohr-workspace-src"))
+NHO_FRONTEND_WORKSPACE_GIT_URL = os.environ.get(
+    "NHO_FRONTEND_WORKSPACE_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-workspace.git"
+)
+NHO_FRONTEND_CHILD_REPOS = {
+    "frontend_micro_frontends_branch": os.environ.get(
+        "NHO_FRONTEND_MICRO_FRONTENDS_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-micro-frontends.git"
+    ),
+    "frontend_lowcode_engine_branch": os.environ.get(
+        "NHO_FRONTEND_LOWCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-lowcode-engine.git"
+    ),
+    "frontend_nocode_engine_branch": os.environ.get(
+        "NHO_FRONTEND_NOCODE_ENGINE_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-nocode-engine.git"
+    ),
+    "frontend_nencho_branch": os.environ.get(
+        "NHO_FRONTEND_NENCHO_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-web-nencho.git"
+    ),
+}
+NHO_FRONTEND_FEELIN_GIT_URL = os.environ.get("NHO_FRONTEND_FEELIN_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-feelin.git")
+NHO_FRONTEND_WORKSPACE_BRANCH = os.environ.get("NHO_FRONTEND_WORKSPACE_BRANCH", "master")
+NHO_FRONTEND_FEELIN_BRANCH = os.environ.get("NHO_FRONTEND_FEELIN_BRANCH", "master")
+NHO_PNPM_CACHE_DIR = os.environ.get("NHO_PNPM_CACHE_DIR", "/opt/nho-pnpm-cache")
 FRONTEND_WORKSPACE_DIR = Path(os.environ.get("FRONTEND_WORKSPACE_DIR", "/opt/ohr-workspace-src"))
 FRONTEND_WORKSPACE_GIT_URL = os.environ.get(
     "FRONTEND_WORKSPACE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-workspace.git"
@@ -227,6 +251,9 @@ def update_step(build_id: str, step_id: str, status: str, message: str | None = 
 
 
 def create_build(payload: dict[str, Any]) -> dict[str, Any]:
+    product_variant = str(payload.get("product_variant") or "standard").strip().lower()
+    if product_variant not in ("standard", "nho"):
+        raise ValueError("product_variant 仅允许 standard 或 nho")
     build_backend = bool(payload.get("build_backend", True))
     build_frontend = bool(payload.get("build_frontend", True))
     backend_branch = str(payload.get("backend_branch") or "").strip()
@@ -255,26 +282,27 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("请填写前端版本分支")
     if frontend_release_branch and not BRANCH_RE.fullmatch(frontend_release_branch):
         raise ValueError("前端版本分支名仅允许字母、数字、._/-")
-    if build_frontend and not help_docs_branch:
+    if product_variant == "standard" and build_frontend and not help_docs_branch:
         raise ValueError("请填写 Help 文档分支")
-    if help_docs_branch and not BRANCH_RE.fullmatch(help_docs_branch):
+    if product_variant == "standard" and help_docs_branch and not BRANCH_RE.fullmatch(help_docs_branch):
         raise ValueError("Help 文档分支名仅允许字母、数字、._/-")
-    if build_frontend and not conf_server_host:
+    if product_variant == "standard" and build_frontend and not conf_server_host:
         raise ValueError("请填写客户访问地址")
     if conf_server_host and not CONF_HOST_RE.fullmatch(conf_server_host):
         raise ValueError("客户访问地址仅允许字母、数字、点和中划线")
-    if build_frontend and not (1 <= conf_web_port <= 65535):
+    if product_variant == "standard" and build_frontend and not (1 <= conf_web_port <= 65535):
         raise ValueError("Web 端口必须在 1-65535 之间")
-    if build_frontend and conf_worker_processes < 1:
+    if product_variant == "standard" and build_frontend and conf_worker_processes < 1:
         raise ValueError("worker_processes 必须大于 0")
-    if build_frontend and conf_worker_connections < 1:
+    if product_variant == "standard" and build_frontend and conf_worker_connections < 1:
         raise ValueError("worker_connections 必须大于 0")
     # ohr-workspace 不跟随 release_*；它固定使用配置分支。用户选择的是四个子项目共同存在的版本分支。
-    frontend_workspace_branch = FRONTEND_WORKSPACE_BRANCH
-    frontend_feelin_branch = frontend_release_branch
+    frontend_workspace_branch = NHO_FRONTEND_WORKSPACE_BRANCH if product_variant == "nho" else FRONTEND_WORKSPACE_BRANCH
+    frontend_feelin_branch = NHO_FRONTEND_FEELIN_BRANCH if product_variant == "nho" else frontend_release_branch
     frontend_lowcode_engine_branch = frontend_release_branch
     frontend_micro_frontends_branch = frontend_release_branch
     frontend_nocode_engine_branch = frontend_release_branch
+    frontend_nencho_branch = frontend_release_branch
 
     if EXECUTOR == "drone":
         if not DRONE_CONTROL_REPO or not DRONE_TOKEN:
@@ -295,6 +323,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         "created_at": now(),
         "updated_at": now(),
         "request": {
+            "product_variant": product_variant,
             "backend_branch": backend_branch,
             "frontend_workspace_branch": frontend_workspace_branch,
             "frontend_release_branch": frontend_release_branch,
@@ -302,6 +331,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
             "frontend_lowcode_engine_branch": frontend_lowcode_engine_branch,
             "frontend_micro_frontends_branch": frontend_micro_frontends_branch,
             "frontend_nocode_engine_branch": frontend_nocode_engine_branch,
+            "frontend_nencho_branch": frontend_nencho_branch,
             "help_docs_branch": help_docs_branch,
             "conf_server_host": conf_server_host,
             "conf_web_port": conf_web_port,
@@ -338,17 +368,19 @@ def run_direct_build(build_id: str) -> None:
             raise BuildCancelled("构建已取消")
         meta = update_build(build_id, status="running")
         request = meta["request"]
+        product_variant = request.get("product_variant") or "standard"
         build_backend = bool(request.get("build_backend", True))
         build_frontend = bool(request.get("build_frontend", True))
         branch = request["backend_branch"]
         append_log(
             build_id,
-            f"构建开始：build_backend={build_backend}, build_frontend={build_frontend}, "
+            f"构建开始：product_variant={product_variant}, build_backend={build_backend}, build_frontend={build_frontend}, "
             f"backend_branch={branch or '-'}, frontend_release_branch={request.get('frontend_release_branch') or '-'}",
         )
 
         update_step(build_id, "validate", "running")
-        if build_backend and not OHR_BACK_DIR.is_dir():
+        back_dir = NHO_BACK_DIR if product_variant == "nho" else OHR_BACK_DIR
+        if product_variant == "standard" and build_backend and not back_dir.is_dir():
             raise RuntimeError(f"后端目录不存在：{OHR_BACK_DIR}")
         if build_frontend and not os.environ.get("OHR_BACK_GIT_TOKEN") and not os.environ.get("FRONTEND_GIT_TOKEN"):
             raise RuntimeError("需配置 OHR_BACK_GIT_TOKEN 或 FRONTEND_GIT_TOKEN 以克隆前端 workspace")
@@ -356,14 +388,17 @@ def run_direct_build(build_id: str) -> None:
 
         if build_backend:
             update_step(build_id, "checkout_backend", "running")
-            rc = run_command(build_id, checkout_command(branch), cwd=OHR_BACK_DIR)
+            checkout = nho_checkout_command(branch) if product_variant == "nho" else checkout_command(branch)
+            back_dir.mkdir(parents=True, exist_ok=True)
+            rc = run_command(build_id, checkout, cwd=back_dir)
             ensure_not_cancelled(build_id)
             if rc != 0:
                 raise RuntimeError("后端代码检出失败")
             update_step(build_id, "checkout_backend", "success")
 
             update_step(build_id, "build_backend", "running")
-            rc = run_command(build_id, build_command(), cwd=OHR_BACK_DIR, timeout=None)
+            build_script = nho_build_command() if product_variant == "nho" else build_command()
+            rc = run_command(build_id, build_script, cwd=back_dir, timeout=None)
             ensure_not_cancelled(build_id)
             if rc != 0:
                 raise RuntimeError("后端打包失败")
@@ -374,12 +409,14 @@ def run_direct_build(build_id: str) -> None:
 
         (ARTIFACT_ROOT / build_id).mkdir(parents=True, exist_ok=True)
         if build_frontend:
-            fe_env = direct_frontend_env(request, build_id)
+            fe_env = nho_frontend_env(request, build_id) if product_variant == "nho" else direct_frontend_env(request, build_id)
+            restore_script = NHO_FRONTEND_RESTORE_SCRIPT if product_variant == "nho" else DIRECT_FRONTEND_RESTORE_SCRIPT
+            build_script = NHO_FRONTEND_BUILD_SCRIPT if product_variant == "nho" else DIRECT_FRONTEND_BUILD_SCRIPT
 
             update_step(build_id, "restore_frontend", "running")
             rc = run_command(
                 build_id,
-                DIRECT_FRONTEND_RESTORE_SCRIPT,
+                restore_script,
                 cwd=Path("/"),
                 timeout=None,
                 extra_env=fe_env,
@@ -392,7 +429,7 @@ def run_direct_build(build_id: str) -> None:
             update_step(build_id, "build_frontend", "running")
             rc = run_command(
                 build_id,
-                DIRECT_FRONTEND_BUILD_SCRIPT,
+                build_script,
                 cwd=Path("/"),
                 timeout=None,
                 extra_env=fe_env,
@@ -406,7 +443,7 @@ def run_direct_build(build_id: str) -> None:
             update_step(build_id, "build_frontend", "skipped", "未选择前端构建")
 
         update_step(build_id, "collect_artifacts", "running")
-        pkg_src = OHR_BACK_DIR / "package.zip"
+        pkg_src = back_dir / "package.zip"
         web_src = ARTIFACT_ROOT / build_id / "web.zip"
         if build_backend and not pkg_src.is_file():
             raise RuntimeError(f"未找到产物：{pkg_src}")
@@ -668,8 +705,48 @@ sha256sum package.zip | head -1
 """
 
 
+def nho_checkout_command(branch: str) -> str:
+    repo = shell_quote(git_url_with_token(NHO_BACK_GIT_URL))
+    b = shell_quote(branch)
+    return f"""set -euo pipefail
+if [ -d .git ]; then
+  git remote set-url origin {repo}
+  git fetch origin {b} --prune
+  git checkout -B {b} FETCH_HEAD
+  git reset --hard FETCH_HEAD
+  git clean -fd
+else
+  find . -mindepth 1 -maxdepth 1 -exec rm -rf {{}} +
+  git clone --depth=1 -b {b} {repo} .
+fi
+git rev-parse --short HEAD
+"""
+
+
+def nho_build_command() -> str:
+    return r"""set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+if ! command -v zip >/dev/null 2>&1; then apt-get update -qy && apt-get install -y zip; fi
+rm -rf ./package ./package.zip
+mvn -B clean package -Dmaven.test.skip
+chmod +x ./collect-pkg.sh
+./collect-pkg.sh
+if [ ! -d ./package ]; then
+  echo "NHO package directory was not generated: ./package"
+  exit 8
+fi
+zip -r package.zip ./package
+ls -lh package.zip
+sha256sum package.zip | head -1
+"""
+
+
 def workspace_git_url_with_token() -> str:
     return git_url_with_token(FRONTEND_WORKSPACE_GIT_URL)
+
+
+def nho_workspace_git_url_with_token() -> str:
+    return git_url_with_token(NHO_FRONTEND_WORKSPACE_GIT_URL)
 
 
 def git_url_with_token(base: str) -> str:
@@ -775,6 +852,83 @@ sync_frontend_repo ohr-micro-frontends "https://${FRONTEND_GIT_HOST}/ohr/ohr-mic
 sync_frontend_repo ohr-nocode-engine "https://${FRONTEND_GIT_HOST}/ohr/ohr-nocode-engine.git" "$NOCODE_ENGINE_BRANCH"
 ohr-cli run-tasks --task install-modules-ohr
 npm run setup:rm-yalc
+"""
+
+
+NHO_FRONTEND_RESTORE_SCRIPT = r"""set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export HOME="${HOME:-/root}"
+BASE="$OHR_FRONTEND_WORKDIR"
+mkdir -p "$(dirname "$BASE")"
+if [ ! -d "$BASE/.git" ]; then
+  rm -rf "$BASE"
+  git clone "$GIT_SYNC_URL" "$BASE"
+fi
+cd "$BASE"
+git remote set-url origin "$GIT_SYNC_URL"
+git fetch origin "$FRONTEND_WS_BRANCH" --prune
+git checkout -B "$FRONTEND_WS_BRANCH" "origin/$FRONTEND_WS_BRANCH"
+git reset --hard "origin/$FRONTEND_WS_BRANCH"
+git clean -fd -e node_modules -e .ci-cache -e .cache -e .turbo -e .vite
+npm i -g pnpm@9.4.0 --registry=https://registry.npmmirror.com/
+npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
+pnpm config set store-dir "$NHO_PNPM_CACHE_DIR" || true
+npm uninstall -g ohr-cli || true
+npm install -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
+if [ -n "${FRONTEND_GIT_TOKEN:-}" ]; then
+  git config --global url."https://oauth2:${FRONTEND_GIT_TOKEN}@${FRONTEND_GIT_HOST}/".insteadOf "https://${FRONTEND_GIT_HOST}/"
+fi
+sync_nho_repo() {
+  repo_dir="$1"
+  repo_url="$2"
+  repo_branch="$3"
+  if [ -d "$repo_dir/.git" ]; then
+    echo "[sync nho $repo_dir] fetch $repo_branch"
+    git -C "$repo_dir" remote set-url origin "$repo_url"
+    git -C "$repo_dir" fetch origin "$repo_branch" --prune
+    git -C "$repo_dir" checkout -B "$repo_branch" "origin/$repo_branch"
+    git -C "$repo_dir" reset --hard "origin/$repo_branch"
+    git -C "$repo_dir" clean -fd -e node_modules -e .ci-cache -e .cache -e .turbo -e .vite
+  else
+    rm -rf "$repo_dir"
+    echo "[sync nho $repo_dir] clone $repo_branch"
+    git clone --depth=1 -b "$repo_branch" "$repo_url" "$repo_dir"
+  fi
+}
+sync_nho_repo ohr-feelin "$NHO_FRONTEND_FEELIN_GIT_URL" "$FRONTEND_FEELIN_BRANCH"
+sync_nho_repo ohr-micro-frontends "$NHO_FRONTEND_MICRO_FRONTENDS_GIT_URL" "$FRONTEND_MF_BRANCH"
+sync_nho_repo ohr-lowcode-engine "$NHO_FRONTEND_LOWCODE_ENGINE_GIT_URL" "$FRONTEND_LOWCODE_BRANCH"
+sync_nho_repo ohr-nocode-engine "$NHO_FRONTEND_NOCODE_ENGINE_GIT_URL" "$FRONTEND_NOCODE_BRANCH"
+sync_nho_repo ohr-web-nencho "$NHO_FRONTEND_NENCHO_GIT_URL" "$FRONTEND_NENCHO_BRANCH"
+"""
+
+
+NHO_FRONTEND_BUILD_SCRIPT = r"""set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export HOME="${HOME:-/root}"
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
+cd "$OHR_FRONTEND_WORKDIR"
+npm i -g pnpm@9.4.0 --registry=https://registry.npmmirror.com/
+npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
+pnpm config set store-dir "$NHO_PNPM_CACHE_DIR" || true
+npm uninstall -g ohr-cli || true
+npm install -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
+yarn config set registry https://registry.npmjs.org
+yarn config set enableMirror false || true
+yarn config set checksumBehavior ignore || true
+find . -maxdepth 1 -type f -name 'release_*.zip' -delete
+find . -maxdepth 1 -type d -name 'release_*' -exec rm -rf {} +
+yarn setup
+yarn build
+yarn bundle
+bundle_zip="$(find . -maxdepth 1 -type f -name 'release_*.zip' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
+if [ -z "$bundle_zip" ] || [ ! -f "$bundle_zip" ]; then
+  echo "NHO 前端发布包生成失败：yarn bundle 未生成 release_*.zip"
+  exit 7
+fi
+mkdir -p "$(dirname "$OUT_WEB_ZIP")"
+cp "$bundle_zip" "$OUT_WEB_ZIP"
+ls -lh "$OUT_WEB_ZIP"
 """
 
 
@@ -1065,7 +1219,37 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
     }
 
 
-def list_backend_release_branches(limit: int = 200) -> list[str]:
+def nho_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
+    rel = req["frontend_release_branch"]
+    token = os.environ.get("FRONTEND_GIT_TOKEN") or os.environ.get("OHR_BACK_GIT_TOKEN", "")
+    host = urllib.parse.urlparse(NHO_FRONTEND_WORKSPACE_GIT_URL).hostname or "upds7.ujob100.com"
+    return {
+        "GIT_SYNC_URL": nho_workspace_git_url_with_token(),
+        "FRONTEND_GIT_TOKEN": token,
+        "FRONTEND_GIT_HOST": host,
+        "NPM_AUTH_B64": npm_auth_b64_value(),
+        "OHR_FRONTEND_WORKDIR": str(NHO_FRONTEND_WORKSPACE_DIR),
+        "FRONTEND_WS_BRANCH": req.get("frontend_workspace_branch") or NHO_FRONTEND_WORKSPACE_BRANCH,
+        "FRONTEND_REL_BRANCH": rel,
+        "FRONTEND_FEELIN_BRANCH": req.get("frontend_feelin_branch") or NHO_FRONTEND_FEELIN_BRANCH,
+        "FRONTEND_LOWCODE_BRANCH": req.get("frontend_lowcode_engine_branch") or rel,
+        "FRONTEND_MF_BRANCH": req.get("frontend_micro_frontends_branch") or rel,
+        "FRONTEND_NOCODE_BRANCH": req.get("frontend_nocode_engine_branch") or rel,
+        "FRONTEND_NENCHO_BRANCH": req.get("frontend_nencho_branch") or rel,
+        "NHO_FRONTEND_FEELIN_GIT_URL": git_url_with_token(NHO_FRONTEND_FEELIN_GIT_URL),
+        "NHO_FRONTEND_MICRO_FRONTENDS_GIT_URL": git_url_with_token(NHO_FRONTEND_CHILD_REPOS["frontend_micro_frontends_branch"]),
+        "NHO_FRONTEND_LOWCODE_ENGINE_GIT_URL": git_url_with_token(NHO_FRONTEND_CHILD_REPOS["frontend_lowcode_engine_branch"]),
+        "NHO_FRONTEND_NOCODE_ENGINE_GIT_URL": git_url_with_token(NHO_FRONTEND_CHILD_REPOS["frontend_nocode_engine_branch"]),
+        "NHO_FRONTEND_NENCHO_GIT_URL": git_url_with_token(NHO_FRONTEND_CHILD_REPOS["frontend_nencho_branch"]),
+        "NHO_PNPM_CACHE_DIR": NHO_PNPM_CACHE_DIR,
+        "OHR_BUILD_ID": build_id,
+        "OUT_WEB_ZIP": str(ARTIFACT_ROOT / build_id / "web.zip"),
+    }
+
+
+def list_backend_release_branches(product_variant: str = "standard", limit: int = 200) -> list[str]:
+    if product_variant == "nho":
+        return list_release_branches_for_url(NHO_BACK_GIT_URL, limit)
     git_token = os.environ.get("OHR_BACK_GIT_TOKEN", "")
     remote = "origin"
     if git_token:
@@ -1124,17 +1308,18 @@ def list_release_branches_for_url(url: str, limit: int = 500) -> list[str]:
     return branches[:limit]
 
 
-def list_frontend_release_branches(limit: int = 200) -> list[str]:
+def list_frontend_release_branches(product_variant: str = "standard", limit: int = 200) -> list[str]:
     """列出四个前端子项目共同存在的 release_* 分支；ohr-workspace 使用 FRONTEND_WORKSPACE_BRANCH。"""
-    branch_sets = [set(list_release_branches_for_url(url)) for url in FRONTEND_CHILD_REPOS.values()]
+    repo_urls = NHO_FRONTEND_CHILD_REPOS.values() if product_variant == "nho" else FRONTEND_CHILD_REPOS.values()
+    branch_sets = [set(list_release_branches_for_url(url)) for url in repo_urls]
     if not branch_sets:
         return []
     common = set.intersection(*branch_sets)
     return sorted(common, reverse=True)[:limit]
 
 
-def list_frontend_workspace_branches(limit: int = 200) -> list[str]:
-    return list_frontend_release_branches(limit)
+def list_frontend_workspace_branches(product_variant: str = "standard", limit: int = 200) -> list[str]:
+    return list_frontend_release_branches(product_variant, limit)
 
 
 def run_command(
@@ -1273,9 +1458,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/builds":
             return self.send_json({"builds": list_builds()})
         if path == "/api/backend-branches":
-            return self.send_json({"branches": list_backend_release_branches()})
+            qs = urllib.parse.parse_qs(parsed.query)
+            product_variant = str(qs.get("product_variant", ["standard"])[0] or "standard").lower()
+            return self.send_json({"branches": list_backend_release_branches(product_variant)})
         if path == "/api/frontend-branches":
-            return self.send_json({"branches": list_frontend_workspace_branches()})
+            qs = urllib.parse.parse_qs(parsed.query)
+            product_variant = str(qs.get("product_variant", ["standard"])[0] or "standard").lower()
+            return self.send_json({"branches": list_frontend_workspace_branches(product_variant)})
         m = re.fullmatch(r"/api/builds/([^/]+)", path)
         if m:
             return self.send_build(m.group(1))
@@ -1433,6 +1622,11 @@ INDEX_HTML = """<!doctype html>
       </div>
       <form id="build-form">
         <div class="target-row">
+          <span class="field-caption" data-i18n="productVariant">製品バージョン</span>
+          <label class="toggle-option"><input name="product_variant" type="radio" value="standard" checked> <span data-i18n="variantStandard">標準版</span></label>
+          <label class="toggle-option"><input name="product_variant" type="radio" value="nho"> <span data-i18n="variantNho">NHO版</span></label>
+        </div>
+        <div class="target-row">
           <label class="toggle-option"><input id="toggle-backend" type="checkbox" checked> <span data-i18n="buildBackend">バックエンド package.zip を構築</span></label>
           <label class="toggle-option"><input id="toggle-frontend" type="checkbox" checked> <span data-i18n="buildFrontend">フロントエンド web.zip を構築</span></label>
         </div>
@@ -1447,18 +1641,18 @@ INDEX_HTML = """<!doctype html>
             <input id="input-frontend-release" list="frontend-branches" placeholder="例如 release_20260325" autocomplete="off">
             <datalist id="frontend-branches"></datalist>
           </div>
-          <div class="field-block">
+          <div class="field-block standard-only">
             <label for="input-help-docs-branch" data-i18n="helpBranch">Help 文書ブランチ</label>
             <input id="input-help-docs-branch" name="help_docs_branch" value="release_ci" autocomplete="off">
           </div>
         </div>
-        <details class="sync-hint">
+        <details class="sync-hint standard-only">
           <summary data-i18n="frontendRuleTitle">フロントエンド分岐ルール</summary>
           <p class="muted" data-i18n="frontendRuleDesc">ohr-workspace は release_* 分岐を使用せず、構築時は master 固定です。選択した版本分岐は ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends に使用します。</p>
         </details>
-        <p class="muted source-note" data-i18n="directSourceDesc">Direct 方式：conf_prod は ohr-cicd から生成し、help は ohr-help-docs + SVN から生成します。</p>
-        <div class="subsection-title" data-i18n="customerConfig">顧客設定</div>
-        <div class="form-grid four">
+        <p class="muted source-note standard-only" data-i18n="directSourceDesc">Direct 方式：conf_prod は ohr-cicd から生成し、help は ohr-help-docs + SVN から生成します。</p>
+        <div class="subsection-title standard-only" data-i18n="customerConfig">顧客設定</div>
+        <div class="form-grid four standard-only">
           <div class="field-block">
             <label for="input-conf-server-host" data-i18n="customerHost">顧客アクセスアドレス</label>
             <input id="input-conf-server-host" name="conf_server_host" placeholder="例如 192.168.70.136" autocomplete="off">
@@ -1531,6 +1725,9 @@ const I18N = {
     modeDesc: 'direct：ビルド端末上で package.zip と web.zip を生成します',
     paramsTitle: 'ビルドパラメータ',
     paramsDesc: 'バックエンド分岐はバックエンドリポジトリから取得し、フロントエンド版本分岐は四つの子プロジェクトに共通する release_* 分岐を使用します。ohr-workspace は master 固定です。',
+    productVariant: '製品バージョン',
+    variantStandard: '標準版',
+    variantNho: 'NHO版',
     buildBackend: 'バックエンド package.zip を構築',
     buildFrontend: 'フロントエンド web.zip を構築',
     backendBranch: 'バックエンドブランチ',
@@ -1581,6 +1778,9 @@ const I18N = {
     modeDesc: 'direct：由构建终端直接构建并产出 package.zip + web.zip',
     paramsTitle: '构建参数',
     paramsDesc: '后端分支来自后端仓库；前端版本分支来自四个子项目共同存在的 release_* 分支。ohr-workspace 固定使用 master。',
+    productVariant: '产品版本',
+    variantStandard: '标准版',
+    variantNho: 'NHO版',
     buildBackend: '构建后端 package.zip',
     buildFrontend: '构建前端 web.zip',
     backendBranch: '后端分支',
@@ -1631,6 +1831,9 @@ const I18N = {
     modeDesc: 'direct: package.zip and web.zip are built on the build terminal',
     paramsTitle: 'Build parameters',
     paramsDesc: 'The backend branch comes from the backend repository; the frontend release branch must exist in the four frontend child projects. ohr-workspace uses master.',
+    productVariant: 'Product version',
+    variantStandard: 'Standard',
+    variantNho: 'NHO',
     buildBackend: 'Build backend package.zip',
     buildFrontend: 'Build frontend web.zip',
     backendBranch: 'Backend branch',
@@ -1753,6 +1956,8 @@ const terminalStatuses = ['success', 'failed', 'cancelled'];
 document.getElementById('build-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = new FormData(event.target);
+  const productVariant = getProductVariant();
+  const isNho = productVariant === 'nho';
   const buildBackend = document.getElementById('toggle-backend').checked;
   const buildFrontend = document.getElementById('toggle-frontend').checked;
   const backendBranch = (form.get('backend_branch') || '').trim();
@@ -1778,28 +1983,29 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
     alert(t('needFrontend'));
     return;
   }
-  if (buildFrontend && !helpDocsBranch) {
+  if (!isNho && buildFrontend && !helpDocsBranch) {
     setFormLocked(false);
     alert(t('needHelp'));
     return;
   }
-  if (buildFrontend && !confServerHost) {
+  if (!isNho && buildFrontend && !confServerHost) {
     setFormLocked(false);
     alert(t('needCustomer'));
     return;
   }
-  if (buildFrontend && (!Number.isInteger(confWebPort) || confWebPort < 1 || confWebPort > 65535)) {
+  if (!isNho && buildFrontend && (!Number.isInteger(confWebPort) || confWebPort < 1 || confWebPort > 65535)) {
     setFormLocked(false);
     alert(t('badPort'));
     return;
   }
-  if (buildFrontend && (!Number.isInteger(confWorkerProcesses) || confWorkerProcesses < 1 || !Number.isInteger(confWorkerConnections) || confWorkerConnections < 1)) {
+  if (!isNho && buildFrontend && (!Number.isInteger(confWorkerProcesses) || confWorkerProcesses < 1 || !Number.isInteger(confWorkerConnections) || confWorkerConnections < 1)) {
     setFormLocked(false);
     alert(t('badWorker'));
     return;
   }
   setFormLocked(true);
   const payload = {
+    product_variant: productVariant,
     build_backend: buildBackend,
     build_frontend: buildFrontend,
     backend_branch: backendBranch,
@@ -1881,8 +2087,9 @@ function syncBuildTargetInputs() {
   ];
   backendInput.disabled = !backendToggle.checked;
   frontendInput.disabled = !frontendToggle.checked;
-  helpDocsInput.disabled = !frontendToggle.checked;
-  confInputs.forEach(input => { input.disabled = !frontendToggle.checked; });
+  const isNho = getProductVariant() === 'nho';
+  helpDocsInput.disabled = isNho || !frontendToggle.checked;
+  confInputs.forEach(input => { input.disabled = isNho || !frontendToggle.checked; });
 }
 
 (function wireBuildTargetToggles() {
@@ -1896,6 +2103,24 @@ function syncBuildTargetInputs() {
   frontendToggle.addEventListener('change', syncIfEditable);
   syncBuildTargetInputs();
 })();
+
+function getProductVariant() {
+  const checked = document.querySelector('input[name="product_variant"]:checked');
+  return checked ? checked.value : 'standard';
+}
+
+function applyVariantVisibility() {
+  const isNho = getProductVariant() === 'nho';
+  document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho; });
+  syncBuildTargetInputs();
+}
+
+document.querySelectorAll('input[name="product_variant"]').forEach(el => {
+  el.addEventListener('change', () => {
+    applyVariantVisibility();
+    loadBranchLists();
+  });
+});
 
 function getFrontendWorkspaceBranch() {
   const input = document.getElementById('input-frontend-release');
@@ -1915,9 +2140,10 @@ function fillDatalist(id, branches) {
 
 async function loadBranchLists() {
   try {
+    const variant = encodeURIComponent(getProductVariant());
     const [be, fe] = await Promise.all([
-      fetch('/api/backend-branches').then(r => r.json()),
-      fetch('/api/frontend-branches').then(r => r.json())
+      fetch(`/api/backend-branches?product_variant=${variant}`).then(r => r.json()),
+      fetch(`/api/frontend-branches?product_variant=${variant}`).then(r => r.json())
     ]);
     fillDatalist('backend-branches', be.branches);
     fillDatalist('frontend-branches', fe.branches);
@@ -2068,6 +2294,7 @@ function renderDetail(build) {
 }
 
 applyI18n();
+applyVariantVisibility();
 loadBranchLists();
 applyEmbeddedMode();
 if (!embeddedMode) {
