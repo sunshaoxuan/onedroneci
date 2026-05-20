@@ -1,6 +1,6 @@
 [project]
 name = "hv-vm-tools"
-version = "0.3.8"
+version = "0.3.9"
 description = "本机 Hyper-V 宿主机上对固定 IP 虚拟机做连通性检查、可选 SSH 与宿主机 Hyper-V 管理"
 requires-python = ">=3.10"
 dependencies = ["cryptography>=42.0"]

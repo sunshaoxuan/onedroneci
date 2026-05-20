@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.8`
+当前版本：`0.3.9`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -46,6 +46,7 @@
 - 前端子仓：`ohr-feelin`、`ohr-micro-frontends`、`ohr-lowcode-engine`、`ohr-nocode-engine`、`ohr-web-nencho`
 - workspace / feelin 默认 `master`
 - micro-frontends / lowcode / nocode / web-nencho 使用页面选择的前端 release 分支
+- 选择资材编号后，主控台后端会要求构建终端读取对应 SVN 目录的 `製品/リリースチェックリスト.xlsx`，解析 `リリース作業` 页签并自动回填本次前后端发版分支；Excel 中为 `無し` 时清空对应分支。
 - 输出到 `dist\standalone\<主控任务ID>\共通.zip`
 - ZIP 内固定结构：
   - `共通/upgrade/readme.txt`

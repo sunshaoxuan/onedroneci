@@ -411,6 +411,22 @@ def test_nho_material_numbers_are_loaded_from_build_terminal_svn(monkeypatch):
     assert "svn-user" in called[0]
 
 
+def test_extract_nho_release_branches_from_rows():
+    server = load_server()
+    rows = [
+        ["①Frontend"],
+        ["No", "gitlab-branch", "tag名"],
+        ["1", "release_20260316", ""],
+        ["②Backend"],
+        ["No", "gitlab-branch", "tag名"],
+        ["1", "無し", ""],
+        ["③汎用マスタデータ"],
+    ]
+
+    assert server.branch_from_release_section(rows, "Frontend") == "release_20260316"
+    assert server.branch_from_release_section(rows, "Backend") == ""
+
+
 def test_list_release_branches_for_url_parses_refs(monkeypatch):
     server = load_server()
 

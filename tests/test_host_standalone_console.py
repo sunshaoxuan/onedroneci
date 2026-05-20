@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.8"
+    assert console.APP_VERSION == "0.3.9"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -170,6 +170,8 @@ def test_host_console_uses_build_terminal_branch_lists_via_proxy():
     assert "branchListRequestSeq" in console.APP_JS
     assert "getProductVariant() !== expectedVariant" in console.APP_JS
     assert "clearBranchInputs()" in console.APP_JS
+    assert "/api/nho-material-release-branches" in console.APP_JS
+    assert "loadNhoMaterialReleaseBranches" in console.APP_JS
     assert "event.key !== 'Enter'" in console.APP_JS
     assert "event.preventDefault()" in console.APP_JS
     assert "chooseComboItem(firstVisible)" in console.APP_JS

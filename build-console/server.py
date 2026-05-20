@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import re
@@ -13,11 +14,13 @@ import time
 import urllib.parse
 import urllib.error
 import urllib.request
+import zipfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parent
@@ -110,6 +113,7 @@ DRONE_CONTROL_BRANCH = os.environ.get("DRONE_CONTROL_BRANCH", "master")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 CONF_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$")
 NHO_MATERIAL_RE = re.compile(r"^(\d{8})リリース作業$")
+XLSX_NS = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 DIRECT_STEP_IDS = (
     "validate",
     "checkout_backend",
@@ -1438,6 +1442,146 @@ def list_nho_material_numbers(force_refresh: bool = False, limit: int = 200) -> 
     return numbers[:limit]
 
 
+def svn_auth_command(base: list[str], svn_username: str, svn_password: str) -> list[str]:
+    command = [*base, "--non-interactive", "--trust-server-cert", "--no-auth-cache"]
+    if svn_username:
+        command.extend(["--username", svn_username])
+    if svn_password:
+        command.extend(["--password", svn_password])
+    return command
+
+
+def run_svn_text(args: list[str], timeout: int = 60) -> str:
+    svn_bin = shutil.which("svn")
+    if not svn_bin:
+        raise RuntimeError("svn command is not available")
+    proc = subprocess.run([svn_bin, *args], capture_output=True, text=True, timeout=timeout)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "svn command failed").strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else "svn command failed")
+    return proc.stdout
+
+
+def run_svn_binary(args: list[str], timeout: int = 120) -> bytes:
+    svn_bin = shutil.which("svn")
+    if not svn_bin:
+        raise RuntimeError("svn command is not available")
+    proc = subprocess.run([svn_bin, *args], capture_output=True, timeout=timeout)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or b"svn command failed")
+        text = detail.decode("utf-8", "replace") if isinstance(detail, bytes) else str(detail)
+        lines = text.strip().splitlines()
+        raise RuntimeError(lines[-1] if lines else "svn command failed")
+    return proc.stdout
+
+
+def cell_ref_to_row_col(ref: str) -> tuple[int, int]:
+    match = re.fullmatch(r"([A-Z]+)(\d+)", ref)
+    if not match:
+        return 0, 0
+    col = 0
+    for ch in match.group(1):
+        col = col * 26 + ord(ch) - ord("A") + 1
+    return int(match.group(2)), col
+
+
+def read_xlsx_sheet_rows(xlsx_bytes: bytes, sheet_name: str) -> list[list[str]]:
+    with zipfile.ZipFile(io.BytesIO(xlsx_bytes)) as archive:
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+        rel_map = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels}
+        sheet_target = ""
+        rel_key = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+        for sheet in workbook.findall("a:sheets/a:sheet", XLSX_NS):
+            if sheet.attrib.get("name") == sheet_name:
+                sheet_target = rel_map[sheet.attrib[rel_key]].lstrip("/")
+                break
+        if not sheet_target:
+            raise RuntimeError(f"sheet not found: {sheet_name}")
+
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            for si in shared_root.findall("a:si", XLSX_NS):
+                shared_strings.append("".join(t.text or "" for t in si.findall(".//a:t", XLSX_NS)))
+
+        sheet_path = "xl/" + sheet_target
+        sheet_root = ET.fromstring(archive.read(sheet_path))
+        rows: list[list[str]] = []
+        for row in sheet_root.findall("a:sheetData/a:row", XLSX_NS):
+            values: dict[int, str] = {}
+            for cell in row.findall("a:c", XLSX_NS):
+                _, col = cell_ref_to_row_col(cell.attrib.get("r", ""))
+                value_node = cell.find("a:v", XLSX_NS)
+                value = ""
+                if value_node is not None and value_node.text is not None:
+                    value = value_node.text
+                    if cell.attrib.get("t") == "s":
+                        value = shared_strings[int(value)]
+                if col:
+                    values[col] = str(value).strip()
+            max_col = max(values) if values else 0
+            rows.append([values.get(idx, "") for idx in range(1, max_col + 1)])
+        return rows
+
+
+def normalize_release_branch(value: str) -> str:
+    text = str(value or "").strip()
+    return "" if text in {"無し", "なし", "無", "无", "None", "none"} else text
+
+
+def branch_from_release_section(rows: list[list[str]], section_marker: str) -> str:
+    section_re = re.compile(rf"^[①②③④⑤⑥⑦⑧⑨⑩]\s*{re.escape(section_marker)}\b")
+    start_idx = next((idx for idx, row in enumerate(rows) if any(section_re.search(cell or "") for cell in row)), -1)
+    if start_idx < 0:
+        return ""
+    end_idx = len(rows)
+    for idx in range(start_idx + 1, len(rows)):
+        if any(re.match(r"^[①②③④⑤⑥⑦⑧⑨⑩]", cell or "") for cell in rows[idx]):
+            end_idx = idx
+            break
+    for idx in range(start_idx + 1, end_idx):
+        row = rows[idx]
+        try:
+            branch_col = row.index("gitlab-branch")
+        except ValueError:
+            continue
+        for value_row in rows[idx + 1 : end_idx]:
+            if branch_col < len(value_row):
+                branch = normalize_release_branch(value_row[branch_col])
+                if branch or value_row[branch_col].strip() in {"無し", "なし", "無", "无"}:
+                    return branch
+    return ""
+
+
+def extract_nho_release_branches_from_xlsx(xlsx_bytes: bytes) -> dict[str, str]:
+    rows = read_xlsx_sheet_rows(xlsx_bytes, "リリース作業")
+    return {
+        "frontend_branch": branch_from_release_section(rows, "Frontend"),
+        "backend_branch": branch_from_release_section(rows, "Backend"),
+    }
+
+
+def get_nho_material_release_branches(material_number: str) -> dict[str, str]:
+    if not re.fullmatch(r"\d{8}", material_number or ""):
+        raise RuntimeError("invalid material_number")
+    svn_url = os.environ.get("NHO_MATERIAL_SVN_URL", NHO_MATERIAL_SVN_URL).rstrip("/")
+    svn_username = os.environ.get("NHO_MATERIAL_SVN_USERNAME", NHO_MATERIAL_SVN_USERNAME)
+    svn_password = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", NHO_MATERIAL_SVN_PASSWORD)
+    product_url = f"{svn_url}/{material_number}リリース作業/製品"
+    ls_args = svn_auth_command(["ls"], svn_username, svn_password)
+    files = run_svn_text([*ls_args, product_url]).splitlines()
+    checklist = next((name.strip().rstrip("/") for name in files if "リリースチェックリスト" in name and name.lower().endswith((".xlsx", ".xlsm"))), "")
+    if not checklist:
+        raise RuntimeError("リリースチェックリスト Excel が見つかりません")
+    cat_args = svn_auth_command(["cat"], svn_username, svn_password)
+    source_url = f"{product_url}/{checklist}"
+    result = extract_nho_release_branches_from_xlsx(run_svn_binary([*cat_args, source_url]))
+    result["material_number"] = material_number
+    result["source"] = source_url
+    return result
+
+
 def run_command(
     build_id: str,
     command: str,
@@ -1598,6 +1742,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"material_numbers": list_nho_material_numbers(force_refresh=force)})
             except Exception as exc:
                 return self.send_json({"material_numbers": [], "error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+        if path == "/api/nho-material-release-branches":
+            qs = urllib.parse.parse_qs(parsed.query)
+            material_number = str(qs.get("material_number", [""])[0] or "").strip()
+            try:
+                return self.send_json(get_nho_material_release_branches(material_number))
+            except Exception as exc:
+                return self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
         m = re.fullmatch(r"/api/builds/([^/]+)", path)
         if m:
             return self.send_build(m.group(1))

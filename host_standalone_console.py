@@ -37,7 +37,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.8"
+APP_VERSION = "0.3.9"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1116,6 +1116,7 @@ function chooseComboItem(item) {
     : document.getElementById(target);
   if (input) input.value = item.dataset.value || item.textContent || '';
   closeMaterialMenu();
+  if (target === 'material_number') loadNhoMaterialReleaseBranches(input && input.value);
 }
 function fillBranchSelect(id, branches) {
   const input = document.getElementById(id);
@@ -1232,6 +1233,23 @@ async function loadMaterialNumbers() {
     console.warn('failed to load NHO material numbers', error);
     fillDatalist('material-numbers', []);
     fillMaterialSelect([], true);
+  }
+}
+async function loadNhoMaterialReleaseBranches(materialNumber) {
+  if (getProductVariant() !== 'nho') return;
+  const value = String(materialNumber || '').trim();
+  if (!/^\d{8}$/.test(value)) return;
+  try {
+    const res = await fetch(`/api/nho-material-release-branches?material_number=${encodeURIComponent(value)}`);
+    const data = await res.json();
+    if (data.error) {
+      console.warn('failed to load NHO release branches', data.error);
+      return;
+    }
+    document.getElementById('backend-branches').value = data.backend_branch || '';
+    document.getElementById('frontend-branches').value = data.frontend_branch || '';
+  } catch (error) {
+    console.warn('failed to load NHO release branches', error);
   }
 }
 function translateLogText(text) {
@@ -1533,6 +1551,9 @@ document.querySelectorAll('.material-combo input').forEach(input => {
       chooseComboItem(firstVisible);
     }
   });
+});
+document.querySelector('input[name="material_number"]').addEventListener('change', event => {
+  loadNhoMaterialReleaseBranches(event.target.value);
 });
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.material-combo')) closeMaterialMenu();
@@ -2368,6 +2389,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.proxy_build_terminal("GET", parsed)
         if parsed.path == "/api/jobs":
             return self.send_json({"jobs": [public_job(job) for job in list_jobs()]})
+        if parsed.path == "/api/nho-material-release-branches":
+            query = urllib.parse.parse_qs(parsed.query)
+            material_number = str((query.get("material_number") or [""])[0]).strip()
+            try:
+                data = remote_json(
+                    REMOTE_BUILD_CONSOLE_URL,
+                    f"/api/nho-material-release-branches?material_number={urllib.parse.quote(material_number)}",
+                )
+                return self.send_json(data)
+            except Exception as exc:
+                return self.send_json({"error": redact_build_terminal(str(exc))}, HTTPStatus.BAD_GATEWAY)
         if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/log"):
             job_id = parsed.path.split("/")[3]
             query = urllib.parse.parse_qs(parsed.query)
