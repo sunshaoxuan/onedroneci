@@ -13,6 +13,21 @@ NHO版当前目标是生成代码共通包 `共通.zip`，不生成完整安装�
 - 后端分支：不为空时构建 `package.zip`
 - 前端分支：不为空时构建 `web.zip`
 
+资材编号支持手工输入，也支持从构建终端读取 SVN 候选。构建终端访问：
+
+```text
+http://3.115.155.21/svn/nho4phr/大連側/97.リリース作業
+```
+
+凡目录名符合 `YYYYMMDDリリース作業`，会提取前缀 `YYYYMMDD` 作为资材编号候选。主控台不直接访问该 SVN，只通过构建终端代理接口取得候选清单。
+
+如果该 SVN 需要认证，在构建终端的 `build-console.env` 中配置：
+
+```text
+NHO_MATERIAL_SVN_USERNAME=<SVN用户>
+NHO_MATERIAL_SVN_PASSWORD=<SVN密码>
+```
+
 以下標準版字段会隐藏，不参与 NHO 构造：
 
 - Help 分支

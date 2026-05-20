@@ -12,8 +12,10 @@ import threading
 import time
 import urllib.parse
 import urllib.error
+import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +55,13 @@ NHO_FRONTEND_FEELIN_GIT_URL = os.environ.get("NHO_FRONTEND_FEELIN_GIT_URL", "htt
 NHO_FRONTEND_WORKSPACE_BRANCH = os.environ.get("NHO_FRONTEND_WORKSPACE_BRANCH", "master")
 NHO_FRONTEND_FEELIN_BRANCH = os.environ.get("NHO_FRONTEND_FEELIN_BRANCH", "master")
 NHO_PNPM_CACHE_DIR = os.environ.get("NHO_PNPM_CACHE_DIR", "/opt/nho-pnpm-cache")
+NHO_MATERIAL_SVN_URL = os.environ.get(
+    "NHO_MATERIAL_SVN_URL",
+    "http://3.115.155.21/svn/nho4phr/大連側/97.リリース作業",
+)
+NHO_MATERIAL_SVN_USERNAME = os.environ.get("NHO_MATERIAL_SVN_USERNAME", "")
+NHO_MATERIAL_SVN_PASSWORD = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", "")
+NHO_MATERIAL_CACHE_SECONDS = int(os.environ.get("NHO_MATERIAL_CACHE_SECONDS", "300"))
 FRONTEND_WORKSPACE_DIR = Path(os.environ.get("FRONTEND_WORKSPACE_DIR", "/opt/ohr-workspace-src"))
 FRONTEND_WORKSPACE_GIT_URL = os.environ.get(
     "FRONTEND_WORKSPACE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-workspace.git"
@@ -100,6 +109,7 @@ DRONE_CONTROL_REPO = os.environ.get("DRONE_CONTROL_REPO", "")
 DRONE_CONTROL_BRANCH = os.environ.get("DRONE_CONTROL_BRANCH", "master")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 CONF_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$")
+NHO_MATERIAL_RE = re.compile(r"^(\d{8})リリース作業$")
 DIRECT_STEP_IDS = (
     "validate",
     "checkout_backend",
@@ -113,6 +123,20 @@ BUILD_LOCK = threading.Lock()
 BUILD_THREADS: dict[str, threading.Thread] = {}
 BUILD_PROCS: dict[str, subprocess.Popen[str]] = {}
 CANCELLED_BUILDS: set[str] = set()
+NHO_MATERIAL_CACHE: dict[str, Any] = {"expires_at": 0.0, "numbers": []}
+
+
+class SvnIndexParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a":
+            return
+        for key, value in attrs:
+            if key.lower() == "href" and value:
+                self.hrefs.append(value)
 
 
 class BuildCancelled(RuntimeError):
@@ -1337,6 +1361,44 @@ def list_frontend_workspace_branches(product_variant: str = "standard", limit: i
     return list_frontend_release_branches(product_variant, limit)
 
 
+def quote_url(url: str) -> str:
+    return urllib.parse.quote(url, safe="/:%#?&=@[]!$&'()*+,;")
+
+
+def list_nho_material_numbers(force_refresh: bool = False, limit: int = 200) -> list[str]:
+    now_ts = time.time()
+    cached = list(NHO_MATERIAL_CACHE.get("numbers") or [])
+    if cached and not force_refresh and now_ts < float(NHO_MATERIAL_CACHE.get("expires_at") or 0):
+        return cached[:limit]
+
+    svn_url = os.environ.get("NHO_MATERIAL_SVN_URL", NHO_MATERIAL_SVN_URL)
+    svn_username = os.environ.get("NHO_MATERIAL_SVN_USERNAME", NHO_MATERIAL_SVN_USERNAME)
+    svn_password = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", NHO_MATERIAL_SVN_PASSWORD)
+    headers = {}
+    if svn_username or svn_password:
+        token = f"{svn_username}:{svn_password}".encode("utf-8")
+        headers["Authorization"] = "Basic " + base64.b64encode(token).decode("ascii")
+    req = urllib.request.Request(quote_url(svn_url.rstrip("/") + "/"), headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as response:
+        html = response.read().decode("utf-8", "replace")
+    parser = SvnIndexParser()
+    parser.feed(html)
+    numbers: list[str] = []
+    for href in parser.hrefs:
+        if href in ("../", "./") or href.startswith("?"):
+            continue
+        name = urllib.parse.unquote(href.rstrip("/"))
+        if "/" in name or "\\" in name:
+            continue
+        match = NHO_MATERIAL_RE.fullmatch(name)
+        if match:
+            numbers.append(match.group(1))
+    numbers = sorted(set(numbers), reverse=True)
+    NHO_MATERIAL_CACHE["numbers"] = numbers
+    NHO_MATERIAL_CACHE["expires_at"] = now_ts + NHO_MATERIAL_CACHE_SECONDS
+    return numbers[:limit]
+
+
 def run_command(
     build_id: str,
     command: str,
@@ -1490,6 +1552,13 @@ class Handler(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             product_variant = str(qs.get("product_variant", ["standard"])[0] or "standard").lower()
             return self.send_json({"branches": list_frontend_workspace_branches(product_variant)})
+        if path == "/api/nho-material-numbers":
+            qs = urllib.parse.parse_qs(parsed.query)
+            force = str(qs.get("refresh", [""])[0]).lower() in ("1", "true", "yes")
+            try:
+                return self.send_json({"material_numbers": list_nho_material_numbers(force_refresh=force)})
+            except Exception as exc:
+                return self.send_json({"material_numbers": [], "error": str(exc)}, HTTPStatus.BAD_GATEWAY)
         m = re.fullmatch(r"/api/builds/([^/]+)", path)
         if m:
             return self.send_build(m.group(1))

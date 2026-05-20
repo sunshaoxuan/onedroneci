@@ -521,7 +521,10 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "value=\"standard\"" in console.INDEX_HTML
     assert "value=\"nho\"" in console.INDEX_HTML
     assert 'name="material_number"' in console.INDEX_HTML
+    assert 'list="material-numbers"' in console.INDEX_HTML
     assert "materialNumber" in console.APP_JS
+    assert "/build-terminal/api/nho-material-numbers" in console.APP_JS
+    assert "getProductVariant() !== 'nho'" in console.APP_JS
     assert "variantStandard" in console.APP_JS
     assert "variantNho" in console.APP_JS
     assert "getProductVariant()" in console.APP_JS

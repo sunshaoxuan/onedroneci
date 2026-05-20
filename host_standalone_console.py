@@ -693,7 +693,7 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="product_variant" type="radio" value="standard" checked><span data-i18n="variantStandard">標準版</span></label>
           <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
         </fieldset>
-        <label><span data-i18n="materialNumber">資材番号</span><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：2026-05-20-001"></label>
+        <label><span data-i18n="materialNumber">資材番号</span><input name="material_number" list="material-numbers" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><datalist id="material-numbers"></datalist></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches"><option value=""></option></select></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches"><option value=""></option></select></label>
         <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
@@ -1066,6 +1066,16 @@ function fillBranchSelect(id, branches) {
     select.value = previous;
   }
 }
+function fillDatalist(id, values) {
+  const list = document.getElementById(id);
+  if (!list) return;
+  list.innerHTML = '';
+  (values || []).forEach(value => {
+    const option = document.createElement('option');
+    option.value = value;
+    list.appendChild(option);
+  });
+}
 function getProductVariant() {
   const checked = document.querySelector('input[name="product_variant"]:checked');
   return checked ? checked.value : 'standard';
@@ -1085,6 +1095,20 @@ async function loadBranchLists() {
     fillBranchSelect('frontend-branches', frontend.branches);
   } catch (error) {
     console.warn('failed to load branch lists', error);
+  }
+}
+async function loadMaterialNumbers() {
+  if (getProductVariant() !== 'nho') {
+    fillDatalist('material-numbers', []);
+    return;
+  }
+  try {
+    const res = await fetch('/build-terminal/api/nho-material-numbers');
+    const data = await res.json();
+    fillDatalist('material-numbers', data.material_numbers || []);
+  } catch (error) {
+    console.warn('failed to load NHO material numbers', error);
+    fillDatalist('material-numbers', []);
   }
 }
 function translateLogText(text) {
@@ -1309,6 +1333,7 @@ async function refreshTerminal() {
   const data = await res.json();
   renderTerminal(data.status);
   if (data.status === 'running') loadBranchLists();
+  if (data.status === 'running') loadMaterialNumbers();
   setFormLocked(['queued', 'running'].includes(selectedJob && selectedJob.status));
   return data;
 }
@@ -1346,6 +1371,7 @@ document.querySelectorAll('input[name="product_variant"]').forEach(el => {
     enterCreateMode();
     applyVariantVisibility();
     loadBranchLists();
+    loadMaterialNumbers();
     setFormLocked(false);
     refresh();
   });
@@ -1659,6 +1685,7 @@ document.getElementById('organisation-dstart').value = firstDayOfCurrentMonth();
 applyVariantVisibility();
 refreshTerminal();
 loadBranchLists();
+loadMaterialNumbers();
 refresh();
 timer = setInterval(refresh, 5000);
 """
@@ -2133,6 +2160,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+        except urllib.error.HTTPError as exc:
+            body = exc.read()
+            content_type = exc.headers.get("Content-Type", "application/json")
+            self.send_response(exc.code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         except Exception:
             self.send_text(
                 "<!doctype html><meta charset='utf-8'><body>ビルド端末コンソールを表示できません。</body>",

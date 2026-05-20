@@ -383,6 +383,42 @@ def test_variant_branch_lists_use_variant_gitlab_projects(monkeypatch):
     assert calls == list(server.NHO_FRONTEND_CHILD_REPOS.values())
 
 
+def test_nho_material_numbers_are_loaded_from_build_terminal_svn(monkeypatch):
+    server = load_server()
+    server.NHO_MATERIAL_CACHE["numbers"] = []
+    server.NHO_MATERIAL_CACHE["expires_at"] = 0
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return (
+                '<a href="../">../</a>'
+                '<a href="20260316%E3%83%AA%E3%83%AA%E3%83%BC%E3%82%B9%E4%BD%9C%E6%A5%AD/">20260316リリース作業/</a>'
+                '<a href="memo/">memo/</a>'
+                '<a href="20260325%E3%83%AA%E3%83%AA%E3%83%BC%E3%82%B9%E4%BD%9C%E6%A5%AD/">20260325リリース作業/</a>'
+            ).encode("utf-8")
+
+    called = []
+
+    def fake_urlopen(req, timeout=30):
+        called.append(req)
+        return Response()
+
+    monkeypatch.setattr(server.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_URL", "http://example.test/svn/大連側/97.リリース作業")
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_USERNAME", "svn-user")
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_PASSWORD", "svn-pass")
+
+    assert server.list_nho_material_numbers(force_refresh=True) == ["20260325", "20260316"]
+    assert called and "%E5%A4%A7%E9%80%A3%E5%81%B4" in called[0].full_url
+    assert called[0].get_header("Authorization", "").startswith("Basic ")
+
+
 def test_list_release_branches_for_url_parses_refs(monkeypatch):
     server = load_server()
 
