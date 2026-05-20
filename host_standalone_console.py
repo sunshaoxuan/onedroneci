@@ -720,7 +720,7 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="product_variant" type="radio" value="standard" checked><span data-i18n="variantStandard">標準版</span></label>
           <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
         </fieldset>
-        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" list="material-numbers" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><select id="material-number-select" class="nho-only" aria-label="NHO material number candidates"></select></div><datalist id="material-numbers"></datalist></label>
+        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" list="material-numbers" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle nho-only" type="button" aria-label="NHO material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div><datalist id="material-numbers"></datalist></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches"><option value=""></option></select></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches"><option value=""></option></select></label>
         <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
@@ -1109,22 +1109,33 @@ function fillDatalist(id, values) {
     list.appendChild(option);
   });
 }
+function closeMaterialMenu() {
+  const menu = document.getElementById('material-number-menu');
+  const toggle = document.getElementById('material-number-toggle');
+  if (menu) menu.hidden = true;
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
 function fillMaterialSelect(values, failed = false) {
-  const select = document.getElementById('material-number-select');
-  if (!select) return;
-  const previous = select.value;
-  select.innerHTML = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = failed ? t('materialNumberLoadFailed') : t('materialNumberSelect');
-  select.appendChild(placeholder);
-  (values || []).forEach(value => {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = value;
-    select.appendChild(option);
+  const menu = document.getElementById('material-number-menu');
+  if (!menu) return;
+  menu.innerHTML = '';
+  const items = values || [];
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'material-menu-empty';
+    empty.textContent = failed ? t('materialNumberLoadFailed') : t('materialNumberSelect');
+    menu.appendChild(empty);
+    closeMaterialMenu();
+    return;
+  }
+  items.forEach(value => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'material-menu-item';
+    item.textContent = value;
+    item.dataset.value = value;
+    menu.appendChild(item);
   });
-  if (previous && (values || []).includes(previous)) select.value = previous;
 }
 function getProductVariant() {
   const checked = document.querySelector('input[name="product_variant"]:checked');
@@ -1314,6 +1325,10 @@ function setFormLocked(locked) {
     const nhoHidden = !isNho && el.closest('.nho-only');
     el.disabled = Boolean(standardHidden) || Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
   });
+  document.querySelectorAll('#form button.nho-only').forEach(el => {
+    const nhoHidden = !isNho;
+    el.disabled = Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
+  });
   document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
 }
 
@@ -1423,10 +1438,22 @@ document.getElementById('newJobMode').addEventListener('click', () => {
   enterCreateMode();
   refresh();
 });
-document.getElementById('material-number-select').addEventListener('change', (event) => {
-  const value = event.target.value;
-  if (!value) return;
-  document.querySelector('input[name="material_number"]').value = value;
+document.getElementById('material-number-toggle').addEventListener('click', () => {
+  const menu = document.getElementById('material-number-menu');
+  const toggle = document.getElementById('material-number-toggle');
+  if (!menu || toggle.disabled) return;
+  const willOpen = menu.hidden;
+  menu.hidden = !willOpen;
+  toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+});
+document.getElementById('material-number-menu').addEventListener('click', (event) => {
+  const item = event.target.closest('.material-menu-item');
+  if (!item) return;
+  document.querySelector('input[name="material_number"]').value = item.dataset.value || item.textContent || '';
+  closeMaterialMenu();
+});
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('.material-combo')) closeMaterialMenu();
 });
 document.querySelectorAll('input[name="product_variant"]').forEach(el => {
   el.addEventListener('change', () => {
@@ -1893,35 +1920,77 @@ label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #2626
   display: block;
 }
 .material-combo input {
-  padding-right: 54px;
+  padding-right: 48px;
 }
-.material-combo select {
+.material-toggle {
   position: absolute;
-  inset: 0 0 0 auto;
-  width: 44px;
-  min-height: 40px;
-  border-radius: 0 8px 8px 0;
-  border-color: var(--line);
-  border-left-color: transparent;
-  background-color: transparent;
-  font-size: 0;
-  color: transparent;
-  padding: 0 8px;
-}
-.material-combo select option {
-  font-size: 13px;
+  top: 1px;
+  right: 1px;
+  width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0 7px 7px 0;
+  background: #fff;
   color: #111;
+  box-shadow: none;
+  font-size: 18px;
+  line-height: 1;
 }
-.material-combo select:focus {
-  border-color: #111;
-  box-shadow: 0 0 0 3px var(--focus);
+.material-toggle:hover {
+  background: #f5f5f5;
+  box-shadow: none;
 }
-.material-combo select[hidden] {
+.material-toggle:focus {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.material-toggle[hidden] {
   display: none;
 }
-.material-combo select[hidden] + input,
-.material-combo:has(select[hidden]) input {
+.material-combo:has(.material-toggle[hidden]) input {
   padding-right: 11px;
+}
+.material-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .10);
+  padding: 6px;
+}
+.material-menu[hidden] {
+  display: none;
+}
+.material-menu-item {
+  width: 100%;
+  min-height: 34px;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  color: #111;
+  box-shadow: none;
+  padding: 7px 10px;
+  text-align: left;
+  font-weight: 620;
+}
+.material-menu-item:hover,
+.material-menu-item:focus {
+  background: #f5f5f5;
+  box-shadow: none;
+}
+.material-menu-empty {
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
 }
 .check-row {
   display: flex;

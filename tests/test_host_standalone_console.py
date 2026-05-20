@@ -551,7 +551,8 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "value=\"nho\"" in console.INDEX_HTML
     assert 'name="material_number"' in console.INDEX_HTML
     assert 'list="material-numbers"' in console.INDEX_HTML
-    assert 'id="material-number-select"' in console.INDEX_HTML
+    assert 'id="material-number-toggle"' in console.INDEX_HTML
+    assert 'id="material-number-menu"' in console.INDEX_HTML
     assert "required-field material-field" in console.INDEX_HTML
     assert "materialNumber" in console.APP_JS
     assert "/build-terminal/api/nho-material-numbers" in console.APP_JS
@@ -559,6 +560,7 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "fillMaterialSelect" in console.APP_JS
     assert "materialNumberLoadFailed" in console.APP_JS
     assert "input[name=\"material_number\"]" in console.APP_JS
+    assert "closeMaterialMenu" in console.APP_JS
     assert "variantStandard" in console.APP_JS
     assert "variantNho" in console.APP_JS
     assert "getProductVariant()" in console.APP_JS
