@@ -721,7 +721,7 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="product_variant" type="radio" value="standard" checked><span data-i18n="variantStandard">標準版</span></label>
           <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
         </fieldset>
-        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" list="material-numbers" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle nho-only" type="button" aria-label="NHO material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div><datalist id="material-numbers"></datalist></label>
+        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle nho-only" type="button" aria-label="NHO material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches"><option value=""></option></select></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches"><option value=""></option></select></label>
         <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
@@ -1101,14 +1101,7 @@ function fillBranchSelect(id, branches) {
   }
 }
 function fillDatalist(id, values) {
-  const list = document.getElementById(id);
-  if (!list) return;
-  list.innerHTML = '';
-  (values || []).forEach(value => {
-    const option = document.createElement('option');
-    option.value = value;
-    list.appendChild(option);
-  });
+  return;
 }
 function closeMaterialMenu() {
   const menu = document.getElementById('material-number-menu');
@@ -1310,7 +1303,6 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
   document.getElementById('language').value = lang;
-  fillMaterialSelect(Array.from(document.getElementById('material-numbers').options).map(option => option.value));
   if (mode === 'create') {
     document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
   }

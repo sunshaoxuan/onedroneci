@@ -556,7 +556,8 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "value=\"standard\"" in console.INDEX_HTML
     assert "value=\"nho\"" in console.INDEX_HTML
     assert 'name="material_number"' in console.INDEX_HTML
-    assert 'list="material-numbers"' in console.INDEX_HTML
+    assert 'list="material-numbers"' not in console.INDEX_HTML
+    assert "<datalist" not in console.INDEX_HTML
     assert 'id="material-number-toggle"' in console.INDEX_HTML
     assert 'id="material-number-menu"' in console.INDEX_HTML
     assert "required-field material-field" in console.INDEX_HTML
