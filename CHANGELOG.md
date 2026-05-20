@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.4 - 2026-05-20
+
+### Added
+
+- 主控台標準版/NHO版共同新增“資材番号/资材编号/Material number”构成参数，用于人工校验交付资材体系。
+- `version.txt` 第一行 `資材:` 改为写入页面填写的资材编号；NHO版输出目录也会生成 `version.txt`，并在 `共通.zip` 内包含 `共通/version.txt`。
+
 ## 0.3.3 - 2026-05-20
 
 ### Fixed

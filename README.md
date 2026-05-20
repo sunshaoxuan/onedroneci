@@ -25,7 +25,7 @@
 6. 主控台从 SVN 取得最新 `1.tenant` / `2.ohr` SQL 资材。
 7. 主控台修改 `2.ohr/4.account.sql` 中的机构名称和开始日。
 8. 主控台从 `data-synchronization.git` 的 `updsv7phr/PHR` 复制 `データ連携`。
-9. 主控台写入 `version.txt`，重建 `OneHrStandalone.zip`。
+9. 主控台把页面填写的资材编号与前后端分支写入 `version.txt`，重建 `OneHrStandalone.zip`。
 10. 最终输出到 `dist\standalone\<构建终端构建ID>\`：
     - `製品\`
     - `データ連携\`

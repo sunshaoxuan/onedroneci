@@ -65,9 +65,9 @@
   データ連携/
 ```
 
-`version.txt` 记录：
+`version.txt` 记录页面填写的资材编号与本次构建分支：
 
-- `資材:<构建终端构建ID>`
+- `資材:<资材编号>`
 - `前台分支：<frontend_release_branch>`
 - `后台分支：<backend_branch>`
 
@@ -78,12 +78,14 @@ NHO版构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/<主控任务ID>/
 ```text
 <主控任务ID>/
   共通.zip
+  version.txt
 ```
 
 `共通.zip` 内部结构为：
 
 ```text
 共通/
+  version.txt
   upgrade/
     readme.txt
     実行環境資材/

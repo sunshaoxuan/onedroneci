@@ -50,12 +50,21 @@ def test_build_nho_common_package_frontend_only(tmp_path):
     web_zip = tmp_path / "web.zip"
     web_zip.write_bytes(b"web")
 
-    result = build_nho_common_package(output_root=tmp_path / "out", build_id="job1", web_zip=web_zip)
+    result = build_nho_common_package(
+        output_root=tmp_path / "out",
+        build_id="job1",
+        web_zip=web_zip,
+        version=BuildVersion("job1", "NHO-M-001", "-", "release_front"),
+    )
 
     common_zip = Path(result["common_zip"])
     assert common_zip == tmp_path / "out" / "job1" / "共通.zip"
+    assert Path(result["version_txt"]).read_text(encoding="utf-8") == (
+        "資材:NHO-M-001\n前台分支：release_front\n后台分支：-\n"
+    )
     members = zip_members(common_zip)
     assert "共通/upgrade/readme.txt" in members
+    assert "共通/version.txt" in members
     assert "共通/upgrade/実行環境資材/OneHrSuite/software/web.zip" in members
     assert "共通/upgrade/実行環境資材/OneHrSuite/software/package.zip" not in members
 
@@ -89,8 +98,8 @@ def make_sql_templates(path: Path) -> None:
 
 
 def test_render_version_txt_records_branches():
-    assert render_version_txt(BuildVersion("b1", "release_back", "release_front")) == (
-        "資材:b1\n前台分支：release_front\n后台分支：release_back\n"
+    assert render_version_txt(BuildVersion("build-1", "M-001", "release_back", "release_front")) == (
+        "資材:M-001\n前台分支：release_front\n后台分支：release_back\n"
     )
 
 
@@ -145,7 +154,7 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
         output_root=output,
         package_zip=package_zip,
         web_zip=web_zip,
-        version=BuildVersion("build-1", "release_back", "release_front"),
+        version=BuildVersion("build-1", "M-001", "release_back", "release_front"),
         config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
         sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
         data_sync_git_url=str(data_sync_repo),
@@ -158,7 +167,7 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert product_dir.is_dir()
     assert (delivery_root / "データ連携" / "00_all_updsv7tophr.sql").read_text(encoding="utf-8") == "data sync"
     assert (product_dir / "version.txt").read_text(encoding="utf-8") == (
-        "資材:build-1\n前台分支：release_front\n后台分支：release_back\n"
+        "資材:M-001\n前台分支：release_front\n后台分支：release_back\n"
     )
     assert (product_dir / "1.tenant" / "ohr_help.sql").read_text(encoding="utf-8") == "new help sql"
     account_sql = (product_dir / "2.ohr" / "4.account.sql").read_text(encoding="utf-8")
@@ -366,7 +375,7 @@ def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
         output_root=output,
         package_zip=package_zip,
         web_zip=web_zip,
-        version=BuildVersion("build-logs", "release_back", "release_front"),
+        version=BuildVersion("build-logs", "M-LOGS", "release_back", "release_front"),
         config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
         sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
         data_sync_git_url="https://example.test/data.git",

@@ -48,6 +48,7 @@ class StandaloneConfig:
 @dataclass(frozen=True)
 class BuildVersion:
     build_id: str
+    material_number: str
     backend_branch: str
     frontend_branch: str
 
@@ -126,7 +127,7 @@ def init_template_cache(source_product_dir: Path, template_zip: Path | None = No
 def render_version_txt(version: BuildVersion) -> str:
     return "\n".join(
         [
-            f"資材:{version.build_id}",
+            f"資材:{version.material_number}",
             f"前台分支：{version.frontend_branch}",
             f"后台分支：{version.backend_branch}",
             "",
@@ -491,6 +492,7 @@ def build_nho_common_package(
     build_id: str,
     package_zip: Path | None = None,
     web_zip: Path | None = None,
+    version: BuildVersion | None = None,
     logger: Any | None = None,
 ) -> dict[str, Any]:
     """Build the NHO code-only common package.
@@ -510,6 +512,7 @@ def build_nho_common_package(
         shutil.rmtree(delivery_root)
     delivery_root.mkdir(parents=True, exist_ok=True)
     common_zip = delivery_root / "共通.zip"
+    version_txt = delivery_root / "version.txt"
     software_prefix = "共通/upgrade/実行環境資材/OneHrSuite/software/"
     readme_lines = [
         "NHO庶務事務 共通アップグレード資材",
@@ -521,6 +524,9 @@ def build_nho_common_package(
     if web_zip is not None:
         readme_lines.append("- upgrade/実行環境資材/OneHrSuite/software/web.zip")
     readme = "\n".join(readme_lines) + "\n"
+    version_text = render_version_txt(version) if version else ""
+    if version_text:
+        version_txt.write_text(version_text, encoding="utf-8")
 
     if logger:
         logger("nho_common_zip_rebuild")
@@ -534,6 +540,8 @@ def build_nho_common_package(
         ]:
             zf.writestr(dirname, b"")
         zf.writestr("共通/upgrade/readme.txt", readme.encode("utf-8"))
+        if version_text:
+            zf.writestr("共通/version.txt", version_text.encode("utf-8"))
         if package_zip is not None:
             zf.write(package_zip, software_prefix + "package.zip")
         if web_zip is not None:
@@ -543,6 +551,7 @@ def build_nho_common_package(
         "common_zip": str(common_zip),
         "package_zip": str(package_zip) if package_zip else "",
         "web_zip": str(web_zip) if web_zip else "",
+        "version_txt": str(version_txt) if version_text else "",
         "size": common_zip.stat().st_size,
     }
 

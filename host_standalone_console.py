@@ -465,6 +465,7 @@ def run_job(job_id: str) -> None:
         req = dict(job["request"])
         remote_id = job.get("remote_build_id")
     product_variant = str(req.get("product_variant") or "standard").lower()
+    material_number = str(req.get("material_number") or remote_id or job_id).strip()
     build_backend = bool(str(req.get("backend_branch") or "").strip())
     build_frontend = bool(str(req.get("frontend_release_branch") or "").strip())
     work_dir = job_dir(job_id)
@@ -541,6 +542,12 @@ def run_job(job_id: str) -> None:
                 build_id=job_id,
                 package_zip=package_zip,
                 web_zip=web_zip,
+                version=BuildVersion(
+                    build_id=job_id,
+                    material_number=material_number,
+                    backend_branch=req.get("backend_branch") or "-",
+                    frontend_branch=req.get("frontend_release_branch") or "-",
+                ),
                 logger=nho_package_log,
             )
             update_progress(job_id, "standalone_zip", "success")
@@ -574,6 +581,7 @@ def run_job(job_id: str) -> None:
             web_zip=web_zip,
             version=BuildVersion(
                 build_id=remote_id,
+                material_number=material_number,
                 backend_branch=req.get("backend_branch") or "-",
                 frontend_branch=req.get("frontend_release_branch") or "-",
             ),
@@ -685,6 +693,7 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="product_variant" type="radio" value="standard" checked><span data-i18n="variantStandard">標準版</span></label>
           <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
         </fieldset>
+        <label><span data-i18n="materialNumber">資材番号</span><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：2026-05-20-001"></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches"><option value=""></option></select></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches"><option value=""></option></select></label>
         <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
@@ -771,6 +780,8 @@ const I18N = {
     productVariant: '製品バージョン',
     variantStandard: '標準版',
     variantNho: 'NHO版',
+    materialNumber: '資材番号',
+    materialNumberPlaceholder: '例：2026-05-20-001',
     stopJob: '停止',
     startJob: '構造を開始',
     backendBranch: 'バックエンドブランチ',
@@ -854,6 +865,8 @@ const I18N = {
     productVariant: '产品版本',
     variantStandard: '标准版',
     variantNho: 'NHO版',
+    materialNumber: '资材编号',
+    materialNumberPlaceholder: '例如：2026-05-20-001',
     stopJob: '停止',
     startJob: '开始构造',
     backendBranch: '后端分支',
@@ -937,6 +950,8 @@ const I18N = {
     productVariant: 'Product version',
     variantStandard: 'Standard',
     variantNho: 'NHO',
+    materialNumber: 'Material number',
+    materialNumberPlaceholder: 'Example: 2026-05-20-001',
     stopJob: 'Stop',
     startJob: 'Start build',
     backendBranch: 'Backend branch',
@@ -2045,6 +2060,9 @@ class Handler(BaseHTTPRequestHandler):
         build_frontend = bool(str(payload.get("frontend_release_branch") or "").strip())
         if not build_backend and not build_frontend:
             self.send_json({"error": "missing build target"}, HTTPStatus.BAD_REQUEST)
+            return
+        if not str(payload.get("material_number") or "").strip():
+            self.send_json({"error": "missing material_number"}, HTTPStatus.BAD_REQUEST)
             return
         required = ["conf_server_host"] if product_variant == "standard" and build_frontend else []
         if product_variant == "standard" and build_backend and build_frontend:
