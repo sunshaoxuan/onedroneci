@@ -722,8 +722,8 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
         </fieldset>
         <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle nho-only" type="button" aria-label="NHO material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
-        <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches"><option value=""></option></select></label>
-        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches"><option value=""></option></select></label>
+        <label><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
+        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
         <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
         <label class="standard-only required-field"><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
         <label class="standard-only"><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
@@ -1081,33 +1081,41 @@ function token() {
 }
 function authHeaders(extra = {}) { return {...extra, 'X-Management-Token': token()}; }
 function fillBranchSelect(id, branches) {
-  const select = document.getElementById(id);
-  if (!select) return;
-  const previous = select.value;
-  select.innerHTML = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = '';
-  placeholder.selected = true;
-  select.appendChild(placeholder);
+  const input = document.getElementById(id);
+  const menu = document.getElementById(`${id}-menu`);
+  if (!input || !menu) return;
+  menu.innerHTML = '';
   (branches || []).forEach(branch => {
-    const option = document.createElement('option');
-    option.value = branch;
-    option.textContent = branch;
-    select.appendChild(option);
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'material-menu-item';
+    item.textContent = branch;
+    item.dataset.value = branch;
+    item.dataset.target = id;
+    menu.appendChild(item);
   });
-  if (previous && (branches || []).includes(previous)) {
-    select.value = previous;
+  if (!(branches || []).length) {
+    const empty = document.createElement('div');
+    empty.className = 'material-menu-empty';
+    empty.textContent = '';
+    menu.appendChild(empty);
   }
 }
 function fillDatalist(id, values) {
   return;
 }
 function closeMaterialMenu() {
-  const menu = document.getElementById('material-number-menu');
-  const toggle = document.getElementById('material-number-toggle');
-  if (menu) menu.hidden = true;
-  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  document.querySelectorAll('.material-menu').forEach(menu => { menu.hidden = true; });
+  document.querySelectorAll('.material-toggle').forEach(toggle => { toggle.setAttribute('aria-expanded', 'false'); });
+}
+function toggleComboMenu(toggleId, menuId) {
+  const menu = document.getElementById(menuId);
+  const toggle = document.getElementById(toggleId);
+  if (!menu || !toggle || toggle.disabled) return;
+  const willOpen = menu.hidden;
+  closeMaterialMenu();
+  menu.hidden = !willOpen;
+  toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
 }
 function fillMaterialSelect(values, failed = false) {
   const menu = document.getElementById('material-number-menu');
@@ -1128,6 +1136,7 @@ function fillMaterialSelect(values, failed = false) {
     item.className = 'material-menu-item';
     item.textContent = value;
     item.dataset.value = value;
+    item.dataset.target = 'material_number';
     menu.appendChild(item);
   });
 }
@@ -1313,7 +1322,7 @@ function setFormLocked(locked) {
   const terminalLocked = lastTerminalStatus !== 'running';
   const modeLocked = mode !== 'create';
   const isNho = getProductVariant() === 'nho';
-  document.querySelectorAll('#form input, #form select, #startJob').forEach(el => {
+  document.querySelectorAll('#form input, #form select, #form button.material-toggle, #startJob').forEach(el => {
     const standardHidden = isNho && el.closest('.standard-only');
     const nhoHidden = !isNho && el.closest('.nho-only');
     el.disabled = Boolean(standardHidden) || Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
@@ -1431,19 +1440,24 @@ document.getElementById('newJobMode').addEventListener('click', () => {
   enterCreateMode();
   refresh();
 });
-document.getElementById('material-number-toggle').addEventListener('click', () => {
-  const menu = document.getElementById('material-number-menu');
-  const toggle = document.getElementById('material-number-toggle');
-  if (!menu || toggle.disabled) return;
-  const willOpen = menu.hidden;
-  menu.hidden = !willOpen;
-  toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+[
+  ['material-number-toggle', 'material-number-menu'],
+  ['backend-branches-toggle', 'backend-branches-menu'],
+  ['frontend-branches-toggle', 'frontend-branches-menu']
+].forEach(([toggleId, menuId]) => {
+  document.getElementById(toggleId).addEventListener('click', () => toggleComboMenu(toggleId, menuId));
 });
-document.getElementById('material-number-menu').addEventListener('click', (event) => {
-  const item = event.target.closest('.material-menu-item');
-  if (!item) return;
-  document.querySelector('input[name="material_number"]').value = item.dataset.value || item.textContent || '';
-  closeMaterialMenu();
+document.querySelectorAll('.material-menu').forEach(menu => {
+  menu.addEventListener('click', (event) => {
+    const item = event.target.closest('.material-menu-item');
+    if (!item) return;
+    const target = item.dataset.target || 'material_number';
+    const input = target === 'material_number'
+      ? document.querySelector('input[name="material_number"]')
+      : document.getElementById(target);
+    if (input) input.value = item.dataset.value || item.textContent || '';
+    closeMaterialMenu();
+  });
 });
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.material-combo')) closeMaterialMenu();
