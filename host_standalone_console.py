@@ -814,6 +814,7 @@ const I18N = {
     materialNumberPlaceholder: '例：2026-05-20-001',
     materialNumberSelect: '候補から選択',
     materialNumberLoadFailed: '候補を取得できません。手入力してください',
+    comboNoMatches: '一致する候補がありません',
     stopJob: '停止',
     startJob: '構造を開始',
     backendBranch: 'バックエンドブランチ',
@@ -903,6 +904,7 @@ const I18N = {
     materialNumberPlaceholder: '例如：2026-05-20-001',
     materialNumberSelect: '从候选中选择',
     materialNumberLoadFailed: '候选取得失败，请手工输入',
+    comboNoMatches: '没有匹配的候选',
     stopJob: '停止',
     startJob: '开始构造',
     backendBranch: '后端分支',
@@ -992,6 +994,7 @@ const I18N = {
     materialNumberPlaceholder: 'Example: 2026-05-20-001',
     materialNumberSelect: 'Select candidate',
     materialNumberLoadFailed: 'Could not load candidates; enter manually',
+    comboNoMatches: 'No matching candidates',
     stopJob: 'Stop',
     startJob: 'Start build',
     backendBranch: 'Backend branch',
@@ -1080,6 +1083,30 @@ function token() {
   return found ? decodeURIComponent(found.split('=').slice(1).join('=')) : '';
 }
 function authHeaders(extra = {}) { return {...extra, 'X-Management-Token': token()}; }
+function comboInputForMenu(menu) {
+  const combo = menu && menu.closest('.material-combo');
+  return combo ? combo.querySelector('input') : null;
+}
+function filterComboMenu(menu) {
+  const input = comboInputForMenu(menu);
+  if (!menu || !input) return;
+  const keyword = String(input.value || '').trim().toLowerCase();
+  let visibleCount = 0;
+  menu.querySelectorAll('.material-menu-item').forEach(item => {
+    const text = String(item.dataset.value || item.textContent || '').toLowerCase();
+    const visible = !keyword || text.includes(keyword);
+    item.hidden = !visible;
+    if (visible) visibleCount += 1;
+  });
+  let empty = menu.querySelector('.material-menu-filter-empty');
+  if (!empty) {
+    empty = document.createElement('div');
+    empty.className = 'material-menu-empty material-menu-filter-empty';
+    empty.textContent = t('comboNoMatches');
+    menu.appendChild(empty);
+  }
+  empty.hidden = visibleCount !== 0 || !keyword;
+}
 function fillBranchSelect(id, branches) {
   const input = document.getElementById(id);
   const menu = document.getElementById(`${id}-menu`);
@@ -1100,6 +1127,7 @@ function fillBranchSelect(id, branches) {
     empty.textContent = '';
     menu.appendChild(empty);
   }
+  filterComboMenu(menu);
 }
 function fillDatalist(id, values) {
   return;
@@ -1114,6 +1142,7 @@ function toggleComboMenu(toggleId, menuId) {
   if (!menu || !toggle || toggle.disabled) return;
   const willOpen = menu.hidden;
   closeMaterialMenu();
+  filterComboMenu(menu);
   menu.hidden = !willOpen;
   toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
 }
@@ -1139,6 +1168,7 @@ function fillMaterialSelect(values, failed = false) {
     item.dataset.target = 'material_number';
     menu.appendChild(item);
   });
+  filterComboMenu(menu);
 }
 function getProductVariant() {
   const checked = document.querySelector('input[name="product_variant"]:checked');
@@ -1457,6 +1487,22 @@ document.querySelectorAll('.material-menu').forEach(menu => {
       : document.getElementById(target);
     if (input) input.value = item.dataset.value || item.textContent || '';
     closeMaterialMenu();
+  });
+});
+document.querySelectorAll('.material-combo input').forEach(input => {
+  input.addEventListener('input', () => {
+    const combo = input.closest('.material-combo');
+    const menu = combo && combo.querySelector('.material-menu');
+    const toggle = combo && combo.querySelector('.material-toggle');
+    if (!menu || !toggle || toggle.hidden || toggle.disabled) return;
+    filterComboMenu(menu);
+    menu.hidden = false;
+    toggle.setAttribute('aria-expanded', 'true');
+  });
+  input.addEventListener('focus', () => {
+    const combo = input.closest('.material-combo');
+    const menu = combo && combo.querySelector('.material-menu');
+    if (menu && !menu.hidden) filterComboMenu(menu);
   });
 });
 document.addEventListener('click', (event) => {

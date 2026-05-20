@@ -164,6 +164,9 @@ def test_host_console_uses_build_terminal_branch_lists_via_proxy():
     assert "fillBranchSelect('backend-branches'" in console.APP_JS
     assert "fillBranchSelect('frontend-branches'" in console.APP_JS
     assert "toggleComboMenu" in console.APP_JS
+    assert "filterComboMenu" in console.APP_JS
+    assert "text.includes(keyword)" in console.APP_JS
+    assert "comboNoMatches" in console.APP_JS
     assert "if (data.status === 'running') loadBranchLists();" in console.APP_JS
     assert "select.value = preferred" not in console.APP_JS
 
