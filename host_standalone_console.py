@@ -192,7 +192,34 @@ def redact_build_terminal(text: str, lang: str = "ja-JP") -> str:
     return redacted
 
 
+def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    product_variant = str(payload.get("product_variant") or "standard").strip().lower()
+    if product_variant not in {"standard", "nho"}:
+        return payload, "invalid product_variant"
+    payload["product_variant"] = product_variant
+
+    if not str(payload.get("material_number") or "").strip():
+        return payload, "missing material_number"
+
+    build_backend = bool(str(payload.get("backend_branch") or "").strip())
+    build_frontend = bool(str(payload.get("frontend_release_branch") or "").strip())
+    if not build_backend and not build_frontend:
+        return payload, "missing build target"
+
+    required = ["conf_server_host"] if product_variant == "standard" and build_frontend else []
+    if product_variant == "standard" and build_backend and build_frontend:
+        required.extend(["postgresql_host", "organisation_name"])
+    for key in required:
+        if not str(payload.get(key) or "").strip():
+            return payload, f"missing {key}"
+    return payload, None
+
+
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(payload)
+    payload, error = validate_job_payload(payload)
+    if error:
+        raise ValueError(error)
     job_id = new_job_id()
     with LOCK:
         while job_id in JOBS or job_metadata_path(job_id).exists():
@@ -465,7 +492,7 @@ def run_job(job_id: str) -> None:
         req = dict(job["request"])
         remote_id = job.get("remote_build_id")
     product_variant = str(req.get("product_variant") or "standard").lower()
-    material_number = str(req.get("material_number") or remote_id or job_id).strip()
+    material_number = str(req.get("material_number") or "").strip()
     build_backend = bool(str(req.get("backend_branch") or "").strip())
     build_frontend = bool(str(req.get("frontend_release_branch") or "").strip())
     work_dir = job_dir(job_id)
@@ -2091,26 +2118,10 @@ class Handler(BaseHTTPRequestHandler):
     def create_job(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-        product_variant = str(payload.get("product_variant") or "standard").strip().lower()
-        if product_variant not in {"standard", "nho"}:
-            self.send_json({"error": "invalid product_variant"}, HTTPStatus.BAD_REQUEST)
+        payload, validation_error = validate_job_payload(payload)
+        if validation_error:
+            self.send_json({"error": validation_error}, HTTPStatus.BAD_REQUEST)
             return
-        payload["product_variant"] = product_variant
-        build_backend = bool(str(payload.get("backend_branch") or "").strip())
-        build_frontend = bool(str(payload.get("frontend_release_branch") or "").strip())
-        if not build_backend and not build_frontend:
-            self.send_json({"error": "missing build target"}, HTTPStatus.BAD_REQUEST)
-            return
-        if not str(payload.get("material_number") or "").strip():
-            self.send_json({"error": "missing material_number"}, HTTPStatus.BAD_REQUEST)
-            return
-        required = ["conf_server_host"] if product_variant == "standard" and build_frontend else []
-        if product_variant == "standard" and build_backend and build_frontend:
-            required.extend(["postgresql_host", "organisation_name"])
-        for key in required:
-            if not str(payload.get(key) or "").strip():
-                self.send_json({"error": f"missing {key}"}, HTTPStatus.BAD_REQUEST)
-                return
         try:
             terminal = build_terminal_status()
         except Exception as exc:
@@ -2119,7 +2130,11 @@ class Handler(BaseHTTPRequestHandler):
         if terminal["status"] != "running":
             self.send_json({"error": "build_terminal_unavailable", "terminal": terminal}, HTTPStatus.BAD_GATEWAY)
             return
-        job = create_job(payload)
+        try:
+            job = create_job(payload)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         self.send_json(job)
 
     def send_job_log(self, job_id: str, offset: int) -> None:

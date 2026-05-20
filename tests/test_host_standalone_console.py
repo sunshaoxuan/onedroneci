@@ -185,10 +185,12 @@ def test_create_job_persists_metadata_and_log(tmp_path, monkeypatch):
 
     job = console.create_job(
         {
+            "material_number": "20260520",
             "backend_branch": "release_back",
             "frontend_release_branch": "release_front",
             "conf_server_host": "example.local",
             "postgresql_host": "db.local",
+            "organisation_name": "Example Org",
             "ui_language": "zh-CN",
         }
     )
@@ -211,10 +213,12 @@ def test_batch_log_write_keeps_metadata_small(tmp_path, monkeypatch):
     console.JOBS.clear()
     job = console.create_job(
         {
+            "material_number": "20260520",
             "backend_branch": "release_back",
             "frontend_release_branch": "release_front",
             "conf_server_host": "example.local",
             "postgresql_host": "db.local",
+            "organisation_name": "Example Org",
         }
     )
 
@@ -224,6 +228,30 @@ def test_batch_log_write_keeps_metadata_small(tmp_path, monkeypatch):
     assert len(stored["log"]) == 200
     assert stored["log"][0].endswith("line-50")
     assert "line-0" in (tmp_path / job["id"] / "job.log").read_text(encoding="utf-8")
+
+
+def test_material_number_is_required_for_standard_and_nho_jobs():
+    for product_variant in ("standard", "nho"):
+        payload, error = console.validate_job_payload(
+            {
+                "product_variant": product_variant,
+                "backend_branch": "release_back",
+                "frontend_release_branch": "",
+                "material_number": " ",
+            }
+        )
+        assert error == "missing material_number"
+
+        payload, error = console.validate_job_payload(
+            {
+                "product_variant": product_variant,
+                "backend_branch": "release_back",
+                "frontend_release_branch": "",
+                "material_number": "20260520",
+            }
+        )
+        assert error is None
+        assert payload["product_variant"] == product_variant
 
 
 def test_delete_finished_job_removes_host_and_remote_artifacts(tmp_path, monkeypatch):
