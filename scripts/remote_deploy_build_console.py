@@ -73,6 +73,7 @@ def render_env() -> str:
         "NHO_PNPM_CACHE_DIR": base.get("NHO_PNPM_CACHE_DIR", "/opt/nho-pnpm-cache"),
         "NHO_YARN_CACHE_DIR": base.get("NHO_YARN_CACHE_DIR", "/opt/nho-yarn-cache"),
         "NHO_MAVEN_CACHE_DIR": base.get("NHO_MAVEN_CACHE_DIR", "/opt/nho-maven-cache"),
+        "NHO_BACK_MAVEN_IMAGE": base.get("NHO_BACK_MAVEN_IMAGE", "maven:3.9.6-eclipse-temurin-22"),
         "NHO_MATERIAL_SVN_URL": base.get("NHO_MATERIAL_SVN_URL", "http://3.115.155.21/svn/nho4phr/大連側/97.リリース作業"),
         "NHO_MATERIAL_SVN_USERNAME": base.get("NHO_MATERIAL_SVN_USERNAME", ""),
         "NHO_MATERIAL_SVN_PASSWORD": base.get("NHO_MATERIAL_SVN_PASSWORD", ""),

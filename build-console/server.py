@@ -60,6 +60,7 @@ NHO_FRONTEND_FEELIN_BRANCH = os.environ.get("NHO_FRONTEND_FEELIN_BRANCH", "maste
 NHO_PNPM_CACHE_DIR = os.environ.get("NHO_PNPM_CACHE_DIR", "/opt/nho-pnpm-cache")
 NHO_YARN_CACHE_DIR = os.environ.get("NHO_YARN_CACHE_DIR", "/opt/nho-yarn-cache")
 NHO_MAVEN_CACHE_DIR = os.environ.get("NHO_MAVEN_CACHE_DIR", "/opt/nho-maven-cache")
+NHO_BACK_MAVEN_IMAGE = os.environ.get("NHO_BACK_MAVEN_IMAGE", "maven:3.9.6-eclipse-temurin-22")
 NHO_MATERIAL_SVN_URL = os.environ.get(
     "NHO_MATERIAL_SVN_URL",
     "http://3.115.155.21/svn/nho4phr/大連側/97.リリース作業",
@@ -798,17 +799,47 @@ git rev-parse --short HEAD
 
 def nho_build_command() -> str:
     cache_dir = shell_quote(NHO_MAVEN_CACHE_DIR)
+    image = shell_quote(NHO_BACK_MAVEN_IMAGE)
+    user = xml_escape(os.environ.get("MAVEN_ONEHR_USERNAME", "admin"))
+    raw_pwd = os.environ.get("MAVEN_ONEHR_PASSWORD", "")
+    if not raw_pwd:
+        raise RuntimeError("需配置 MAVEN_ONEHR_PASSWORD")
+    pwd = xml_escape(raw_pwd)
+    settings = f"""<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <servers>
+    <server><id>onehr</id><username>{user}</username><password>{pwd}</password></server>
+    <server><id>onehr-releases</id><username>{user}</username><password>{pwd}</password></server>
+    <server><id>onehr-snapshots</id><username>{user}</username><password>{pwd}</password></server>
+  </servers>
+</settings>
+"""
     return f"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 if ! command -v zip >/dev/null 2>&1; then apt-get update -qy && apt-get install -y zip; fi
 mkdir -p {cache_dir}
+mkdir -p .ci-cache
+cat > .ci-cache/nho-maven-settings.xml <<'EOF'
+{settings}
+EOF
+chmod 600 .ci-cache/nho-maven-settings.xml
 rm -rf ./package ./package.zip
-mvn -B -Dmaven.repo.local={cache_dir} clean package -Dmaven.test.skip
-chmod +x ./collect-pkg.sh
-./collect-pkg.sh
+docker run --rm \\
+  -e MAVEN_OPTS="-Xmx2048m -Xms256m -XX:+UseG1GC -Dmaven.compiler.fork=true -Dmaven.compiler.meminitial=256m -Dmaven.compiler.maxmem=1536m" \\
+  -v "$PWD":/workspace \\
+  -v {cache_dir}:/root/.m2/repository \\
+  -v "$PWD/.ci-cache/nho-maven-settings.xml":/root/.m2/settings.xml:ro \\
+  -w /workspace \\
+  {image} \\
+  bash -lc 'java -version && mvn -version | head -8 && chmod +x ./collect-pkg.sh && ./collect-pkg.sh'
 if [ ! -d ./package ]; then
   echo "NHO package directory was not generated: ./package"
   exit 8
+fi
+if ! find ./package -maxdepth 1 -type f -name '*.jar' | grep -q .; then
+  echo "NHO package directory has no jar files; collect-pkg.sh likely failed."
+  exit 9
 fi
 zip -r package.zip ./package
 ls -lh package.zip

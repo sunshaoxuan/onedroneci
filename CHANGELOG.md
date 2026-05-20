@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.11 - 2026-05-20
+
+### Fixed
+
+- NHO版后端构建固定使用 `maven:3.9.6-eclipse-temurin-22` 执行仓库内 `collect-pkg.sh`，避免系统 JDK24 触发 Lombok / javac `TypeTag UNKNOWN` 编译失败。
+- JDK22 容器内挂载 Maven settings 与 NHO Maven 缓存，确保私有 Nexus 依赖可认证下载，并在 `collect-pkg.sh` 未生成 jar 时明确失败。
+
 ## 0.3.10 - 2026-05-20
 
 ### Changed

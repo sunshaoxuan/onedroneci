@@ -76,6 +76,8 @@ NHO 工作区也独立于標準版：
 - 后端：`NHO_BACK_DIR`，默认 `/root/nho-ohr-back`
 - 前端 workspace：`NHO_FRONTEND_WORKSPACE_DIR`，默认 `/opt/nho-ohr-workspace-src`
 - pnpm store：`NHO_PNPM_CACHE_DIR`，默认 `/opt/nho-pnpm-cache`
+- yarn cache：`NHO_YARN_CACHE_DIR`，默认 `/opt/nho-yarn-cache`
+- Maven cache：`NHO_MAVEN_CACHE_DIR`，默认 `/opt/nho-maven-cache`
 
 ## 4. NHO 后端流程
 
@@ -91,17 +93,19 @@ nhophr/ohr-back
 
 1. 若 `NHO_BACK_DIR` 已存在 `.git`，执行 fetch / checkout / reset。
 2. 若不存在，首次 clone 页面选择的后端分支。
-3. 执行：
+3. 使用 `NHO_BACK_MAVEN_IMAGE` 指定的 JDK22/Maven 容器执行仓库内脚本，默认镜像：
 
 ```text
-mvn clean package -Dmaven.test.skip
+maven:3.9.6-eclipse-temurin-22
 ```
 
-4. 执行仓库内：
+4. 容器内执行仓库内：
 
 ```text
 collect-pkg.sh
 ```
+
+该脚本自身会执行 `mvn clean package -Dmaven.test.skip`，因此 Direct 流程不在宿主机 JDK 上重复执行 Maven，避免 NHO 后端被系统 JDK 版本影响。容器会挂载 NHO 专用 Maven 缓存与 Maven settings，用于私有 Nexus 依赖认证下载。
 
 5. 将生成的 `./package` 压缩为：
 
@@ -110,6 +114,8 @@ package.zip
 ```
 
 zip 内保持 `package/...` 结构。
+
+如果 `collect-pkg.sh` 没有生成任何 jar，Direct 流程会直接失败，不允许继续生成空的 `package.zip`。
 
 ## 5. NHO 前端仓库
 
@@ -258,6 +264,7 @@ NHO版明确不执行：
 
 - 如果分支下拉不符合预期，先确认页面产品版本是否为 `NHO版`。
 - 如果 NHO 前端分支缺失，检查该分支是否同时存在于 NHO 的 micro-frontends / lowcode / nocode / web-nencho。
+- 如果后端出现 `TypeTag UNKNOWN` 之类 javac / Lombok 错误，确认 NHO 后端是否通过 `maven:3.9.6-eclipse-temurin-22` 执行 `collect-pkg.sh`，不要落回宿主机 JDK。
 - 如果后端产物缺失，检查 `collect-pkg.sh` 是否生成 `./package`。
 - 如果 `共通.zip` 只包含一个 zip，确认页面是否只选择了后端或前端之一。
 - 如果 NHO 构造中出现 `conf_prod`、Help、SQL 或数据连携日志，说明流程发生串线，应立即停止并检查 `product_variant`。

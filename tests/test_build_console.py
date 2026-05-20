@@ -67,7 +67,8 @@ def test_build_console_page_has_i18n_without_breaking_api():
         assert step_id in server.APP_JS
 
 
-def test_build_console_supports_nho_variant_scripts_and_ui():
+def test_build_console_supports_nho_variant_scripts_and_ui(monkeypatch):
+    monkeypatch.setenv("MAVEN_ONEHR_PASSWORD", "test-password")
     server = load_server()
 
     assert "product_variant" in server.INDEX_HTML
@@ -75,8 +76,12 @@ def test_build_console_supports_nho_variant_scripts_and_ui():
     assert "getProductVariant()" in server.APP_JS
     assert "product_variant=${variant}" in server.APP_JS
     assert "collect-pkg.sh" in server.nho_build_command()
-    assert "-Dmaven.repo.local=" in server.nho_build_command()
+    assert "maven:3.9.6-eclipse-temurin-22" in server.nho_build_command()
+    assert "docker run --rm" in server.nho_build_command()
     assert "/opt/nho-maven-cache" in server.nho_build_command()
+    assert ":/root/.m2/repository" in server.nho_build_command()
+    assert "/root/.m2/settings.xml:ro" in server.nho_build_command()
+    assert "NHO package directory has no jar files" in server.nho_build_command()
     assert "[hidden], .standard-only[hidden] { display: none !important; }" in server.STYLE_CSS
     assert "zip -r package.zip ./package" in server.nho_build_command()
     assert "ohr-web-nencho" in server.NHO_FRONTEND_RESTORE_SCRIPT
