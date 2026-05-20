@@ -1889,15 +1889,39 @@ label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #2626
   font-weight: 900;
 }
 .material-combo {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, .45fr);
-  gap: 8px;
+  position: relative;
+  display: block;
+}
+.material-combo input {
+  padding-right: 54px;
+}
+.material-combo select {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 44px;
+  min-height: 40px;
+  border-radius: 0 8px 8px 0;
+  border-color: var(--line);
+  border-left-color: transparent;
+  background-color: transparent;
+  font-size: 0;
+  color: transparent;
+  padding: 0 8px;
+}
+.material-combo select option {
+  font-size: 13px;
+  color: #111;
+}
+.material-combo select:focus {
+  border-color: #111;
+  box-shadow: 0 0 0 3px var(--focus);
 }
 .material-combo select[hidden] {
   display: none;
 }
-.material-combo:has(select[hidden]) {
-  grid-template-columns: minmax(0, 1fr);
+.material-combo select[hidden] + input,
+.material-combo:has(select[hidden]) input {
+  padding-right: 11px;
 }
 .check-row {
   display: flex;
