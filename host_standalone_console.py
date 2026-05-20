@@ -1908,17 +1908,58 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   font-weight: 760;
 }
 .radio-pill {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-height: 40px;
-  padding: 0 12px;
+  padding: 0 14px 0 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+  color: #111;
   font-weight: 760;
+  cursor: pointer;
+  transition: border-color .14s ease, background .14s ease, box-shadow .14s ease;
 }
-.radio-pill input { width: auto; }
+.radio-pill:hover {
+  border-color: var(--line-strong);
+  background: #fafafa;
+}
+.radio-pill:has(input:checked) {
+  border-color: #111;
+  background: #f7f7f7;
+  box-shadow: inset 0 0 0 1px #111;
+}
+.radio-pill:has(input:focus-visible) {
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.radio-pill input {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  border: 1px solid #a3a3a3;
+  border-radius: 999px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+}
+.radio-pill input::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #111;
+  transform: scale(0);
+  transition: transform .12s ease;
+}
+.radio-pill input:checked {
+  border-color: #111;
+}
+.radio-pill input:checked::before {
+  transform: scale(1);
+}
 label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #262626; }
 .required-field > span::after {
   content: " *";
@@ -1930,22 +1971,21 @@ label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #2626
   display: block;
 }
 .material-combo input {
-  padding-right: 48px;
+  padding-right: 44px;
 }
 .material-toggle {
   position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 38px;
-  min-height: 38px;
+  top: 4px;
+  right: 4px;
+  width: 30px;
+  min-height: 32px;
   padding: 0;
   border: 0;
-  border-left: 1px solid var(--line);
-  border-radius: 0 7px 7px 0;
-  background: #fff;
+  border-radius: 6px;
+  background: transparent;
   color: #111;
   box-shadow: none;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
 }
 .material-toggle:hover {
@@ -1953,7 +1993,11 @@ label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #2626
   box-shadow: none;
 }
 .material-toggle:focus {
-  box-shadow: inset 0 0 0 2px var(--focus);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.material-toggle[aria-expanded="true"] {
+  background: #f5f5f5;
 }
 .material-toggle[hidden] {
   display: none;
