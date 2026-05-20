@@ -1913,7 +1913,7 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   align-items: center;
   gap: 8px;
   min-height: 40px;
-  padding: 0 14px 0 13px;
+  padding: 0 14px 0 34px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -1935,30 +1935,43 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   box-shadow: 0 0 0 3px var(--focus);
 }
 .radio-pill input {
-  appearance: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.radio-pill::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 50%;
   width: 13px;
   height: 13px;
-  margin: 0;
   border: 1px solid #a3a3a3;
   border-radius: 999px;
   background: #fff;
-  display: grid;
-  place-items: center;
+  transform: translateY(-50%);
+  box-sizing: border-box;
 }
-.radio-pill input::before {
+.radio-pill::after {
   content: "";
+  position: absolute;
+  left: 17px;
+  top: 50%;
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: #111;
-  transform: scale(0);
+  transform: translateY(-50%) scale(0);
   transition: transform .12s ease;
 }
-.radio-pill input:checked {
+.radio-pill:has(input:checked)::before {
   border-color: #111;
 }
-.radio-pill input:checked::before {
-  transform: scale(1);
+.radio-pill:has(input:checked)::after {
+  transform: translateY(-50%) scale(1);
 }
 label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #262626; }
 .required-field > span::after {
