@@ -540,7 +540,8 @@ def test_form_is_locked_unless_build_terminal_is_running():
     assert "const terminalLocked = lastTerminalStatus !== 'running'" in console.APP_JS
     assert "const modeLocked = mode !== 'create'" in console.APP_JS
     assert "standardHidden" in console.APP_JS
-    assert "el.disabled = Boolean(standardHidden) || locked || modeLocked || terminalLocked" in console.APP_JS
+    assert "nhoHidden" in console.APP_JS
+    assert "el.disabled = Boolean(standardHidden) || Boolean(nhoHidden) || locked || modeLocked || terminalLocked" in console.APP_JS
     assert "if (!res.ok)" in console.APP_JS
 
 
@@ -550,9 +551,14 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "value=\"nho\"" in console.INDEX_HTML
     assert 'name="material_number"' in console.INDEX_HTML
     assert 'list="material-numbers"' in console.INDEX_HTML
+    assert 'id="material-number-select"' in console.INDEX_HTML
+    assert "required-field material-field" in console.INDEX_HTML
     assert "materialNumber" in console.APP_JS
     assert "/build-terminal/api/nho-material-numbers" in console.APP_JS
     assert "getProductVariant() !== 'nho'" in console.APP_JS
+    assert "fillMaterialSelect" in console.APP_JS
+    assert "materialNumberLoadFailed" in console.APP_JS
+    assert "input[name=\"material_number\"]" in console.APP_JS
     assert "variantStandard" in console.APP_JS
     assert "variantNho" in console.APP_JS
     assert "getProductVariant()" in console.APP_JS

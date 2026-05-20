@@ -720,14 +720,14 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="product_variant" type="radio" value="standard" checked><span data-i18n="variantStandard">標準版</span></label>
           <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
         </fieldset>
-        <label><span data-i18n="materialNumber">資材番号</span><input name="material_number" list="material-numbers" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><datalist id="material-numbers"></datalist></label>
+        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" list="material-numbers" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><select id="material-number-select" class="nho-only" aria-label="NHO material number candidates"></select></div><datalist id="material-numbers"></datalist></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><select name="backend_branch" id="backend-branches"><option value=""></option></select></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><select name="frontend_release_branch" id="frontend-branches"><option value=""></option></select></label>
         <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
-        <label class="standard-only"><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
+        <label class="standard-only required-field"><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
         <label class="standard-only"><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
         <label class="check-row standard-only"><input name="conf_enable_https" type="checkbox"><span data-i18n="enableHttps">HTTPS / 443 設定を生成</span></label>
-        <label class="standard-only"><span data-i18n="postgresHost">PostgreSQL Host</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
+        <label class="standard-only required-field"><span data-i18n="postgresHost">PostgreSQL Host</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
         <label class="standard-only"><span data-i18n="postgresPort">PostgreSQL Port</span><input name="postgresql_port" type="number" value="5432"></label>
         <label class="standard-only"><span data-i18n="postgresUser">PostgreSQL User</span><input name="postgresql_user" value="postgres"></label>
         <label class="standard-only"><span data-i18n="postgresPassword">PostgreSQL Password</span><input name="postgresql_password" value="password"></label>
@@ -811,6 +811,8 @@ const I18N = {
     variantNho: 'NHO版',
     materialNumber: '資材番号',
     materialNumberPlaceholder: '例：2026-05-20-001',
+    materialNumberSelect: '候補から選択',
+    materialNumberLoadFailed: '候補を取得できません。手入力してください',
     stopJob: '停止',
     startJob: '構造を開始',
     backendBranch: 'バックエンドブランチ',
@@ -898,6 +900,8 @@ const I18N = {
     variantNho: 'NHO版',
     materialNumber: '资材编号',
     materialNumberPlaceholder: '例如：2026-05-20-001',
+    materialNumberSelect: '从候选中选择',
+    materialNumberLoadFailed: '候选取得失败，请手工输入',
     stopJob: '停止',
     startJob: '开始构造',
     backendBranch: '后端分支',
@@ -985,6 +989,8 @@ const I18N = {
     variantNho: 'NHO',
     materialNumber: 'Material number',
     materialNumberPlaceholder: 'Example: 2026-05-20-001',
+    materialNumberSelect: 'Select candidate',
+    materialNumberLoadFailed: 'Could not load candidates; enter manually',
     stopJob: 'Stop',
     startJob: 'Start build',
     backendBranch: 'Backend branch',
@@ -1103,6 +1109,23 @@ function fillDatalist(id, values) {
     list.appendChild(option);
   });
 }
+function fillMaterialSelect(values, failed = false) {
+  const select = document.getElementById('material-number-select');
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = failed ? t('materialNumberLoadFailed') : t('materialNumberSelect');
+  select.appendChild(placeholder);
+  (values || []).forEach(value => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+  if (previous && (values || []).includes(previous)) select.value = previous;
+}
 function getProductVariant() {
   const checked = document.querySelector('input[name="product_variant"]:checked');
   return checked ? checked.value : 'standard';
@@ -1110,6 +1133,7 @@ function getProductVariant() {
 function applyVariantVisibility() {
   const isNho = getProductVariant() === 'nho';
   document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho; });
+  document.querySelectorAll('.nho-only').forEach(el => { el.hidden = !isNho; });
 }
 async function loadBranchLists() {
   try {
@@ -1127,15 +1151,19 @@ async function loadBranchLists() {
 async function loadMaterialNumbers() {
   if (getProductVariant() !== 'nho') {
     fillDatalist('material-numbers', []);
+    fillMaterialSelect([]);
     return;
   }
   try {
     const res = await fetch('/build-terminal/api/nho-material-numbers');
     const data = await res.json();
-    fillDatalist('material-numbers', data.material_numbers || []);
+    const values = data.material_numbers || [];
+    fillDatalist('material-numbers', values);
+    fillMaterialSelect(values, !values.length && Boolean(data.error));
   } catch (error) {
     console.warn('failed to load NHO material numbers', error);
     fillDatalist('material-numbers', []);
+    fillMaterialSelect([], true);
   }
 }
 function translateLogText(text) {
@@ -1270,6 +1298,7 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
   document.getElementById('language').value = lang;
+  fillMaterialSelect(Array.from(document.getElementById('material-numbers').options).map(option => option.value));
   if (mode === 'create') {
     document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
   }
@@ -1282,7 +1311,8 @@ function setFormLocked(locked) {
   const isNho = getProductVariant() === 'nho';
   document.querySelectorAll('#form input, #form select, #startJob').forEach(el => {
     const standardHidden = isNho && el.closest('.standard-only');
-    el.disabled = Boolean(standardHidden) || locked || modeLocked || terminalLocked;
+    const nhoHidden = !isNho && el.closest('.nho-only');
+    el.disabled = Boolean(standardHidden) || Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
   });
   document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
 }
@@ -1392,6 +1422,11 @@ document.getElementById('stopTerminal').addEventListener('click', () => terminal
 document.getElementById('newJobMode').addEventListener('click', () => {
   enterCreateMode();
   refresh();
+});
+document.getElementById('material-number-select').addEventListener('change', (event) => {
+  const value = event.target.value;
+  if (!value) return;
+  document.querySelector('input[name="material_number"]').value = value;
 });
 document.querySelectorAll('input[name="product_variant"]').forEach(el => {
   el.addEventListener('change', () => {
@@ -1848,6 +1883,22 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
 }
 .radio-pill input { width: auto; }
 label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #262626; }
+.required-field > span::after {
+  content: " *";
+  color: var(--danger);
+  font-weight: 900;
+}
+.material-combo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, .45fr);
+  gap: 8px;
+}
+.material-combo select[hidden] {
+  display: none;
+}
+.material-combo:has(select[hidden]) {
+  grid-template-columns: minmax(0, 1fr);
+}
 .check-row {
   display: flex;
   align-items: center;
