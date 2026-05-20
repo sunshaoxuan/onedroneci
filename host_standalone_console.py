@@ -1945,33 +1945,33 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
 .radio-pill::before {
   content: "";
   position: absolute;
-  left: 13px;
+  left: 20px;
   top: 50%;
   width: 13px;
   height: 13px;
   border: 1px solid #a3a3a3;
   border-radius: 999px;
   background: #fff;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   box-sizing: border-box;
 }
 .radio-pill::after {
   content: "";
   position: absolute;
-  left: 17px;
+  left: 20px;
   top: 50%;
   width: 7px;
   height: 7px;
   border-radius: 999px;
   background: #111;
-  transform: translateY(-50%) scale(0);
+  transform: translate(-50%, -50%) scale(0);
   transition: transform .12s ease;
 }
 .radio-pill:has(input:checked)::before {
   border-color: #111;
 }
 .radio-pill:has(input:checked)::after {
-  transform: translateY(-50%) scale(1);
+  transform: translate(-50%, -50%) scale(1);
 }
 label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #262626; }
 .required-field > span::after {
