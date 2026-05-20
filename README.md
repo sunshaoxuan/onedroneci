@@ -30,6 +30,11 @@
     - `製品\`
     - `データ連携\`
 
+完整过程说明：
+
+- [标准版构造过程](docs/STANDARD_BUILD_PROCESS.md)
+- [NHO版构造过程](docs/NHO_BUILD_PROCESS.md)
+
 ## NHO版流程
 
 `NHO版` 与 `標準版` 仓库、工作区、缓存、页面参数和输出逻辑完全隔离。它只生成代码共通包，不处理客户环境配置、SQL、`conf_prod`、help 或 `OneHrStandalone`。

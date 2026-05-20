@@ -1,0 +1,248 @@
+# NHO版构造过程
+
+本文说明“庶务事务 NHO版”的完整 Direct 构造过程。NHO版与標準版属于同一产品的不同版本，但构造来源、页面字段、缓存、工作区和最终输出都严格隔离。
+
+NHO版当前目标是生成代码共通包 `共通.zip`，不生成完整安装环境包。
+
+## 1. 输入参数
+
+主控台页面在选择 `NHO版` 后只保留实际使用字段：
+
+- 产品版本：`NHO版`
+- 资材编号：写入 NHO 输出目录的 `version.txt`，并写入 `共通.zip` 内的 `共通/version.txt`
+- 后端分支：不为空时构建 `package.zip`
+- 前端分支：不为空时构建 `web.zip`
+
+以下標準版字段会隐藏，不参与 NHO 构造：
+
+- Help 分支
+- 客户访问地址、Web 端口、HTTPS / 443 选项
+- PostgreSQL 配置
+- 应用服务主机名、OHR 服务端口
+- 客户机构名、机构开始日
+- SQL、数据连携、`conf_prod`、Help 相关参数
+
+后端和前端可以只选其一。只选后端时 `共通.zip` 只包含 `package.zip`；只选前端时只包含 `web.zip`；两者都选则同时包含两枚 zip。
+
+## 2. 主控台编排
+
+主控台 `host_standalone_console.py` 负责：
+
+1. 检查构建终端状态。
+2. 创建 NHO 主控任务并落盘 `metadata.json` / `job.log`。
+3. 向构建终端发送 `product_variant=nho`、前后端构建开关与分支。
+4. 轮询构建终端状态与日志。
+5. 下载构建终端产物。
+6. 跳过標準版专用 SQL、数据连携、Help、`conf_prod` 与完整安装包步骤。
+7. 调用 `build_nho_common_package` 合成 NHO `共通.zip`。
+
+主控台仍展示统一十步进度，但 NHO版中以下步骤会被标记为 skipped：
+
+- SQL 资材
+- 数据连携
+- `4.account.sql`
+- Help SQL
+
+最终 ZIP 步骤表示生成 `共通.zip`。
+
+## 3. 构建终端隔离目录
+
+构建终端按产品版本分目录保存 NHO 构建记录与共享产物：
+
+```text
+BUILD_CONSOLE_DATA_DIR/nho/<build_id>/
+BUILD_ARTIFACT_ROOT/nho/<build_id>/
+```
+
+这与標準版的 `standard/<build_id>/` 完全分开，避免历史、缓存和构建产物互相污染。
+
+NHO 工作区也独立于標準版：
+
+- 后端：`NHO_BACK_DIR`，默认 `/root/nho-ohr-back`
+- 前端 workspace：`NHO_FRONTEND_WORKSPACE_DIR`，默认 `/opt/nho-ohr-workspace-src`
+- pnpm store：`NHO_PNPM_CACHE_DIR`，默认 `/opt/nho-pnpm-cache`
+
+## 4. NHO 后端流程
+
+后端仓库：
+
+```text
+nhophr/ohr-back
+```
+
+分支候选来自 NHO GitLab 项目 `nhophr/ohr-back`，不复用標準版 `ohr/ohr-back` 清单。
+
+主要动作：
+
+1. 若 `NHO_BACK_DIR` 已存在 `.git`，执行 fetch / checkout / reset。
+2. 若不存在，首次 clone 页面选择的后端分支。
+3. 执行：
+
+```text
+mvn clean package -Dmaven.test.skip
+```
+
+4. 执行仓库内：
+
+```text
+collect-pkg.sh
+```
+
+5. 将生成的 `./package` 压缩为：
+
+```text
+package.zip
+```
+
+zip 内保持 `package/...` 结构。
+
+## 5. NHO 前端仓库
+
+NHO 前端使用独立 `nhophr/*` 仓库：
+
+- `nhophr/ohr-workspace`
+- `nhophr/ohr-feelin`
+- `nhophr/ohr-micro-frontends`
+- `nhophr/ohr-lowcode-engine`
+- `nhophr/ohr-nocode-engine`
+- `nhophr/ohr-web-nencho`
+
+分支规则：
+
+- `ohr-workspace` 使用 `NHO_FRONTEND_WORKSPACE_BRANCH`，默认 `master`
+- `ohr-feelin` 使用 `NHO_FRONTEND_FEELIN_BRANCH`，默认 `master`
+- `ohr-micro-frontends` 使用页面选择的 NHO 前端 release 分支
+- `ohr-lowcode-engine` 使用页面选择的 NHO 前端 release 分支
+- `ohr-nocode-engine` 使用页面选择的 NHO 前端 release 分支
+- `ohr-web-nencho` 使用页面选择的 NHO 前端 release 分支
+
+前端分支候选来自 NHO 前端子仓共同存在的 release 分支，不复用標準版前端清单。
+
+## 6. NHO 前端构建流程
+
+主要动作：
+
+1. 增量同步 `nhophr/ohr-workspace`。
+2. 增量同步五个 NHO 前端子仓。
+3. 设置 NHO 专用 pnpm store。
+4. 执行：
+
+```text
+yarn setup
+yarn build
+yarn bundle
+```
+
+5. 从 workspace 生成的 `release_*.zip` 取得前端发布包。
+6. 将其保存为构建终端产物 `web.zip`。
+
+NHO 前端不会执行以下標準版动作：
+
+- `npm run build`
+- `npm run bundle`
+- `ohr-cicd generateConf.js`
+- Help Git/SVN 构建
+- `conf_prod` 注入
+
+## 7. 构建终端产物
+
+构建终端成功后按所选构建目标提供：
+
+```text
+BUILD_ARTIFACT_ROOT/nho/<build_id>/package.zip
+BUILD_ARTIFACT_ROOT/nho/<build_id>/web.zip
+```
+
+主控台通过构建终端 artifact API 下载对应文件到：
+
+```text
+HOST_STANDALONE_DATA_DIR/<job_id>/
+  metadata.json
+  job.log
+  package.zip  # 选择后端时存在
+  web.zip      # 选择前端时存在
+```
+
+## 8. NHO 共通.zip 合包
+
+主控台调用 `standalone_packager.py` 中的 `build_nho_common_package`。
+
+输出目录：
+
+```text
+STANDALONE_OUTPUT_DIR/<主控任务ID>/
+  共通.zip
+  version.txt
+```
+
+`共通.zip` 内固定结构：
+
+```text
+共通/
+  version.txt
+  upgrade/
+    readme.txt
+    実行環境資材/
+      OneHrSuite/
+        software/
+          package.zip  # 选择后端时存在
+          web.zip      # 选择前端时存在
+```
+
+`readme.txt` 会列出本次包含的文件。
+
+## 9. version.txt
+
+NHO版输出目录和 `共通.zip` 内都会生成 `version.txt`。
+
+内容格式：
+
+```text
+資材:<资材编号>
+前台分支：<前端分支或 ->
+后台分支：<后端分支或 ->
+```
+
+资材编号来自页面输入，供人工与前后端分支号一起核验。
+
+## 10. NHO 不执行的步骤
+
+NHO版明确不执行：
+
+- 客户环境配置生成
+- `conf_prod`
+- Help 构建
+- Help SQL 覆盖
+- SQL SVN `1.tenant` / `2.ohr`
+- `4.account.sql` 客户机构名修改
+- 数据连携 Git 获取
+- `OneHrStandalone.zip` 重建
+- PostgreSQL / OHR service `config.ini` 替换
+- 固定中间件包处理
+
+这些内容属于標準版完整交付包逻辑，不能混入 NHO 代码共通包。
+
+## 11. 与標準版的主要差异
+
+| 项目 | 標準版 | NHO版 |
+| --- | --- | --- |
+| 产品版本参数 | `standard` | `nho` |
+| 后端仓库 | `ohr/ohr-back` | `nhophr/ohr-back` |
+| 前端仓库 | `ohr/*` | `nhophr/*` |
+| 前端子仓数量 | 4 个 | 5 个，包含 `ohr-web-nencho` |
+| 页面字段 | 客户环境、DB、机构、Help 等完整字段 | 只保留资材编号、前后端分支 |
+| conf_prod | 从 `ohr-cicd` 生成 | 不生成 |
+| Help | `ohr-help-docs + SVN` 构建 | 不构建 |
+| SQL | 从 SVN 获取并改 `4.account.sql` | 不处理 |
+| 数据连携 | 获取并复制 | 不处理 |
+| 输出 | `製品/` + `データ連携/` | `共通.zip` + `version.txt` |
+| 输出根 | 构建终端构建 ID | 主控任务 ID |
+| 固定中间件 | 保留在 `OneHrStandalone.zip` 模板中 | 不包含 |
+
+## 12. 失败排查重点
+
+- 如果分支下拉不符合预期，先确认页面产品版本是否为 `NHO版`。
+- 如果 NHO 前端分支缺失，检查该分支是否同时存在于 NHO 的 micro-frontends / lowcode / nocode / web-nencho。
+- 如果后端产物缺失，检查 `collect-pkg.sh` 是否生成 `./package`。
+- 如果 `共通.zip` 只包含一个 zip，确认页面是否只选择了后端或前端之一。
+- 如果 NHO 构造中出现 `conf_prod`、Help、SQL 或数据连携日志，说明流程发生串线，应立即停止并检查 `product_variant`。
