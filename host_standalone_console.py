@@ -1071,6 +1071,7 @@ let heartbeatTick = 0;
 let lastTerminalStatus = 'unknown';
 let lastRenderedResultSignature = '';
 let lastFilledJobId = null;
+let branchListRequestSeq = 0;
 const MAX_LOG_LINES = 1600;
 
 function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N['ja-JP'][key] || key; }
@@ -1138,6 +1139,15 @@ function fillBranchSelect(id, branches) {
   }
   filterComboMenu(menu);
 }
+function clearBranchInputs() {
+  ['backend-branches', 'frontend-branches'].forEach(id => {
+    const input = document.getElementById(id);
+    const menu = document.getElementById(`${id}-menu`);
+    if (input) input.value = '';
+    if (menu) menu.innerHTML = '';
+  });
+  closeMaterialMenu();
+}
 function fillDatalist(id, values) {
   return;
 }
@@ -1189,12 +1199,17 @@ function applyVariantVisibility() {
   document.querySelectorAll('.nho-only').forEach(el => { el.hidden = !isNho; });
 }
 async function loadBranchLists() {
+  const expectedVariant = getProductVariant();
+  const requestSeq = ++branchListRequestSeq;
+  fillBranchSelect('backend-branches', []);
+  fillBranchSelect('frontend-branches', []);
   try {
-    const variant = encodeURIComponent(getProductVariant());
+    const variant = encodeURIComponent(expectedVariant);
     const [backend, frontend] = await Promise.all([
       fetch(`/build-terminal/api/backend-branches?product_variant=${variant}`).then(res => res.json()),
       fetch(`/build-terminal/api/frontend-branches?product_variant=${variant}`).then(res => res.json())
     ]);
+    if (requestSeq !== branchListRequestSeq || getProductVariant() !== expectedVariant) return;
     fillBranchSelect('backend-branches', backend.branches);
     fillBranchSelect('frontend-branches', frontend.branches);
   } catch (error) {
@@ -1525,6 +1540,7 @@ document.addEventListener('click', (event) => {
 document.querySelectorAll('input[name="product_variant"]').forEach(el => {
   el.addEventListener('change', () => {
     enterCreateMode();
+    clearBranchInputs();
     applyVariantVisibility();
     loadBranchLists();
     loadMaterialNumbers();

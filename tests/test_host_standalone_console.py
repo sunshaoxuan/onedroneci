@@ -167,6 +167,9 @@ def test_host_console_uses_build_terminal_branch_lists_via_proxy():
     assert "filterComboMenu" in console.APP_JS
     assert "text.includes(keyword)" in console.APP_JS
     assert "comboNoMatches" in console.APP_JS
+    assert "branchListRequestSeq" in console.APP_JS
+    assert "getProductVariant() !== expectedVariant" in console.APP_JS
+    assert "clearBranchInputs()" in console.APP_JS
     assert "event.key !== 'Enter'" in console.APP_JS
     assert "event.preventDefault()" in console.APP_JS
     assert "chooseComboItem(firstVisible)" in console.APP_JS
