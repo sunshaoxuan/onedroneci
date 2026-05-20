@@ -523,6 +523,7 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "visibleJobs.forEach(job =>" in console.APP_JS
     assert "enterCreateMode();" in console.APP_JS
     assert "document.querySelectorAll('.standard-only')" in console.APP_JS
+    assert "[hidden], .standard-only[hidden] { display: none !important; }" in console.STYLE_CSS
 
 
 def test_build_terminal_proxy_rewrites_absolute_assets():

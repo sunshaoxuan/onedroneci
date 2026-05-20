@@ -75,6 +75,7 @@ def test_build_console_supports_nho_variant_scripts_and_ui():
     assert "getProductVariant()" in server.APP_JS
     assert "product_variant=${variant}" in server.APP_JS
     assert "collect-pkg.sh" in server.nho_build_command()
+    assert "[hidden], .standard-only[hidden] { display: none !important; }" in server.STYLE_CSS
     assert "zip -r package.zip ./package" in server.nho_build_command()
     assert "ohr-web-nencho" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "yarn setup" in server.NHO_FRONTEND_BUILD_SCRIPT

@@ -2351,6 +2351,7 @@ STYLE_CSS = """
   --shadow: 0 1px 2px rgba(0, 0, 0, .03);
   --focus: rgba(17, 17, 17, .12);
 }
+[hidden], .standard-only[hidden] { display: none !important; }
 * { box-sizing: border-box; }
 body {
   margin: 0;

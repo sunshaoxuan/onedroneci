@@ -1651,6 +1651,7 @@ STYLE_CSS = """
   --surface: #ffffff;
   --focus: rgba(17, 17, 17, .12);
 }
+[hidden], .standard-only[hidden] { display: none !important; }
 * { box-sizing: border-box; }
 body {
   margin: 0;
