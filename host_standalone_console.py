@@ -1107,6 +1107,15 @@ function filterComboMenu(menu) {
   }
   empty.hidden = visibleCount !== 0 || !keyword;
 }
+function chooseComboItem(item) {
+  if (!item) return;
+  const target = item.dataset.target || 'material_number';
+  const input = target === 'material_number'
+    ? document.querySelector('input[name="material_number"]')
+    : document.getElementById(target);
+  if (input) input.value = item.dataset.value || item.textContent || '';
+  closeMaterialMenu();
+}
 function fillBranchSelect(id, branches) {
   const input = document.getElementById(id);
   const menu = document.getElementById(`${id}-menu`);
@@ -1481,12 +1490,7 @@ document.querySelectorAll('.material-menu').forEach(menu => {
   menu.addEventListener('click', (event) => {
     const item = event.target.closest('.material-menu-item');
     if (!item) return;
-    const target = item.dataset.target || 'material_number';
-    const input = target === 'material_number'
-      ? document.querySelector('input[name="material_number"]')
-      : document.getElementById(target);
-    if (input) input.value = item.dataset.value || item.textContent || '';
-    closeMaterialMenu();
+    chooseComboItem(item);
   });
 });
 document.querySelectorAll('.material-combo input').forEach(input => {
@@ -1503,6 +1507,16 @@ document.querySelectorAll('.material-combo input').forEach(input => {
     const combo = input.closest('.material-combo');
     const menu = combo && combo.querySelector('.material-menu');
     if (menu && !menu.hidden) filterComboMenu(menu);
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    const combo = input.closest('.material-combo');
+    const menu = combo && combo.querySelector('.material-menu');
+    const firstVisible = menu && Array.from(menu.querySelectorAll('.material-menu-item')).find(item => !item.hidden);
+    if (firstVisible) {
+      event.preventDefault();
+      chooseComboItem(firstVisible);
+    }
   });
 });
 document.addEventListener('click', (event) => {
