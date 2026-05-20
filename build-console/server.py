@@ -1365,6 +1365,46 @@ def quote_url(url: str) -> str:
     return urllib.parse.quote(url, safe="/:%#?&=@[]!$&'()*+,;")
 
 
+def parse_nho_material_names(names: list[str], limit: int = 200) -> list[str]:
+    numbers: list[str] = []
+    for raw_name in names:
+        name = urllib.parse.unquote(raw_name.strip().rstrip("/"))
+        if not name or name in ("..", ".") or "/" in name or "\\" in name:
+            continue
+        match = NHO_MATERIAL_RE.fullmatch(name)
+        if match:
+            numbers.append(match.group(1))
+    return sorted(set(numbers), reverse=True)[:limit]
+
+
+def list_nho_material_numbers_with_svn(
+    svn_url: str,
+    svn_username: str,
+    svn_password: str,
+    limit: int = 200,
+) -> list[str]:
+    svn_bin = shutil.which("svn")
+    if not svn_bin:
+        raise RuntimeError("svn command is not available")
+    command = [
+        svn_bin,
+        "ls",
+        "--non-interactive",
+        "--trust-server-cert",
+        "--no-auth-cache",
+    ]
+    if svn_username:
+        command.extend(["--username", svn_username])
+    if svn_password:
+        command.extend(["--password", svn_password])
+    command.append(svn_url.rstrip("/"))
+    proc = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "svn ls failed").strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else "svn ls failed")
+    return parse_nho_material_names(proc.stdout.splitlines(), limit)
+
+
 def list_nho_material_numbers(force_refresh: bool = False, limit: int = 200) -> list[str]:
     now_ts = time.time()
     cached = list(NHO_MATERIAL_CACHE.get("numbers") or [])
@@ -1374,6 +1414,15 @@ def list_nho_material_numbers(force_refresh: bool = False, limit: int = 200) -> 
     svn_url = os.environ.get("NHO_MATERIAL_SVN_URL", NHO_MATERIAL_SVN_URL)
     svn_username = os.environ.get("NHO_MATERIAL_SVN_USERNAME", NHO_MATERIAL_SVN_USERNAME)
     svn_password = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", NHO_MATERIAL_SVN_PASSWORD)
+    try:
+        numbers = list_nho_material_numbers_with_svn(svn_url, svn_username, svn_password, limit)
+        NHO_MATERIAL_CACHE["numbers"] = numbers
+        NHO_MATERIAL_CACHE["expires_at"] = now_ts + int(os.environ.get("NHO_MATERIAL_CACHE_SECONDS", str(NHO_MATERIAL_CACHE_SECONDS)))
+        return numbers[:limit]
+    except RuntimeError:
+        if svn_username or svn_password:
+            raise
+
     headers = {}
     if svn_username or svn_password:
         token = f"{svn_username}:{svn_password}".encode("utf-8")
@@ -1383,19 +1432,9 @@ def list_nho_material_numbers(force_refresh: bool = False, limit: int = 200) -> 
         html = response.read().decode("utf-8", "replace")
     parser = SvnIndexParser()
     parser.feed(html)
-    numbers: list[str] = []
-    for href in parser.hrefs:
-        if href in ("../", "./") or href.startswith("?"):
-            continue
-        name = urllib.parse.unquote(href.rstrip("/"))
-        if "/" in name or "\\" in name:
-            continue
-        match = NHO_MATERIAL_RE.fullmatch(name)
-        if match:
-            numbers.append(match.group(1))
-    numbers = sorted(set(numbers), reverse=True)
+    numbers = parse_nho_material_names(parser.hrefs, limit)
     NHO_MATERIAL_CACHE["numbers"] = numbers
-    NHO_MATERIAL_CACHE["expires_at"] = now_ts + NHO_MATERIAL_CACHE_SECONDS
+    NHO_MATERIAL_CACHE["expires_at"] = now_ts + int(os.environ.get("NHO_MATERIAL_CACHE_SECONDS", str(NHO_MATERIAL_CACHE_SECONDS)))
     return numbers[:limit]
 
 
