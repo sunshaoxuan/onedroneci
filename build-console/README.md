@@ -11,6 +11,7 @@
 - 標準版 direct 前端构建中，`conf_prod` 由 `ohr-cicd` 的 `generateConf.js` 生成；`help` 由 `ohr-help-docs` 加持久 SVN 文档目录实时构建，不走 Nexus。
 - NHO版 direct 前端构建执行 `yarn setup`、`yarn build`、`yarn bundle`，不执行標準版的 `ohr-cicd`、help、`conf_prod`。
 - 成功后下载 **`package.zip`** 与 **`web.zip`**（路径见 API 说明）。
+- 构建记录和共享产物按产品版本分目录保存：`BUILD_CONSOLE_DATA_DIR/standard/<build_id>`、`BUILD_CONSOLE_DATA_DIR/nho/<build_id>`，以及 `BUILD_ARTIFACT_ROOT/standard|nho/<build_id>`。
 - 支持删除已结束构建，删除时同步清理构建记录和 `BUILD_ARTIFACT_ROOT/<build_id>`。
 - **执行器**由 `BUILD_EXECUTOR` 控制：
   - **`direct`**：在 CI 本机线程内执行克隆、Maven、前端构建等（见 `server.py`）。

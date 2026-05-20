@@ -266,7 +266,7 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
     assert meta["request"]["conf_enable_https"] is True
     assert meta["request"]["conf_worker_processes"] == 1
     assert meta["request"]["conf_worker_connections"] == 1024
-    assert (tmp_path / meta["id"] / "metadata.json").is_file()
+    assert (tmp_path / "standard" / meta["id"] / "metadata.json").is_file()
     assert [step["id"] for step in meta["steps"]] == list(server.DIRECT_STEP_IDS)
 
 
@@ -308,6 +308,17 @@ def test_delete_finished_build_removes_metadata_and_artifacts(tmp_path, monkeypa
     assert server.delete_build(build_id) == {"ok": True, "id": build_id}
     assert not server.build_dir(build_id).exists()
     assert not (server.ARTIFACT_ROOT / build_id).exists()
+
+
+def test_product_variant_build_and_artifact_roots_are_isolated(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path / "builds")
+    monkeypatch.setattr(server, "ARTIFACT_ROOT", tmp_path / "artifacts")
+
+    assert server.build_dir("b1", "standard") == tmp_path / "builds" / "standard" / "b1"
+    assert server.build_dir("b1", "nho") == tmp_path / "builds" / "nho" / "b1"
+    assert server.shared_artifact_path("b1", "web.zip", "standard") == tmp_path / "artifacts" / "standard" / "b1" / "web.zip"
+    assert server.shared_artifact_path("b1", "web.zip", "nho") == tmp_path / "artifacts" / "nho" / "b1" / "web.zip"
 
 
 def test_delete_running_build_is_rejected(tmp_path, monkeypatch):

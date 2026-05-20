@@ -54,11 +54,13 @@
 - 日志区域独立展示，日志刷新不会重启进度动画。
 - 构建机控制台通过 `/build-terminal/` 同源代理嵌入，不向页面暴露构建终端地址。
 - 已结束任务可删除；删除会清理主控历史、主控中间产物、最终交付目录、构建终端历史和构建终端产物。
+- 构造历史按当前产品版本过滤展示，`標準版` 与 `NHO版` 不混在同一张历史列表里。
 - 可配置 Hyper-V 虚拟机名称后，在页面查看、启动、关闭构建终端。
 
 ## 缓存与性能
 
 - 標準版前端、NHO前端、help、`ohr-cicd`、数据连携仓库均采用增量 Git 同步。
+- 构建终端记录和共享产物按 `standard/<build_id>`、`nho/<build_id>` 分目录保存。
 - SVN 文档目录采用持久工作副本，已存在时执行 update。
 - 標準版 pnpm 使用 `/opt/pnpm-cache`；NHO pnpm 使用 `/opt/nho-pnpm-cache`；yarn 使用 `/opt/yarn-cache`。
 - `ohr-workspace` 和 help 的 pnpm install 会按 lock/package 指纹跳过不必要安装。

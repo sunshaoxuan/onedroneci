@@ -1315,9 +1315,11 @@ document.getElementById('newJobMode').addEventListener('click', () => {
 });
 document.querySelectorAll('input[name="product_variant"]').forEach(el => {
   el.addEventListener('change', () => {
+    enterCreateMode();
     applyVariantVisibility();
     loadBranchLists();
     setFormLocked(false);
+    refresh();
   });
 });
 document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
@@ -1385,10 +1387,12 @@ document.getElementById('form').addEventListener('submit', async (event) => {
 async function refresh() {
   const res = await fetch('/api/jobs');
   const data = await res.json();
+  const currentVariant = getProductVariant();
+  const visibleJobs = data.jobs.filter(job => ((job.request && job.request.product_variant) || 'standard') === currentVariant);
   const jobs = document.getElementById('jobs');
   jobs.innerHTML = '';
-  const activeJob = data.jobs.find(job => ['queued', 'running'].includes(job.status));
-  if (!data.jobs.length) {
+  const activeJob = visibleJobs.find(job => ['queued', 'running'].includes(job.status));
+  if (!visibleJobs.length) {
     jobs.innerHTML = `<div class="empty-state">${t('noTask')}</div>`;
     if (mode !== 'create') enterCreateMode();
     return;
@@ -1404,7 +1408,7 @@ async function refresh() {
   } else if (!activeJob && mode === 'active') {
     enterCreateMode();
   }
-  data.jobs.forEach(job => {
+  visibleJobs.forEach(job => {
     const btn = document.createElement('div');
     btn.className = mode !== 'create' && job.id === selected ? 'job active' : 'job';
     btn.dataset.jobId = job.id;

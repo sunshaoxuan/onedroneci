@@ -27,6 +27,7 @@ from drone_adapter import DroneBuildRef, DroneExecutorAdapter
 DATA_DIR = Path(os.environ.get("BUILD_CONSOLE_DATA_DIR", ROOT / "builds"))
 OHR_BACK_DIR = Path(os.environ.get("OHR_BACK_DIR", "/root/ohr-back"))
 ARTIFACT_ROOT = Path(os.environ.get("BUILD_ARTIFACT_ROOT", "/opt/ohr-build-artifacts"))
+PRODUCT_VARIANTS = ("standard", "nho")
 NHO_BACK_DIR = Path(os.environ.get("NHO_BACK_DIR", "/root/nho-ohr-back"))
 NHO_BACK_GIT_URL = os.environ.get("NHO_BACK_GIT_URL", "https://upds7.ujob100.com/nhophr/ohr-back.git")
 NHO_FRONTEND_WORKSPACE_DIR = Path(os.environ.get("NHO_FRONTEND_WORKSPACE_DIR", "/opt/nho-ohr-workspace-src"))
@@ -164,24 +165,61 @@ def isoish() -> str:
     return time.strftime("%Y%m%d%H%M%S")
 
 
-def build_dir(build_id: str) -> Path:
+def normalise_product_variant(product_variant: str | None) -> str:
+    value = str(product_variant or "standard").strip().lower()
+    return value if value in PRODUCT_VARIANTS else "standard"
+
+
+def variant_build_root(product_variant: str) -> Path:
+    return DATA_DIR / normalise_product_variant(product_variant)
+
+
+def variant_artifact_root(product_variant: str) -> Path:
+    return ARTIFACT_ROOT / normalise_product_variant(product_variant)
+
+
+def build_dir(build_id: str, product_variant: str | None = None) -> Path:
+    if product_variant:
+        return variant_build_root(product_variant) / build_id
+    for variant in PRODUCT_VARIANTS:
+        candidate = variant_build_root(variant) / build_id
+        if candidate.exists():
+            return candidate
+    legacy = DATA_DIR / build_id
+    if legacy.exists():
+        return legacy
     return DATA_DIR / build_id
 
 
-def metadata_path(build_id: str) -> Path:
-    return build_dir(build_id) / "metadata.json"
+def metadata_path(build_id: str, product_variant: str | None = None) -> Path:
+    return build_dir(build_id, product_variant) / "metadata.json"
 
 
-def log_path(build_id: str) -> Path:
-    return build_dir(build_id) / "build.log"
+def log_path(build_id: str, product_variant: str | None = None) -> Path:
+    return build_dir(build_id, product_variant) / "build.log"
 
 
-def artifact_path(build_id: str, name: str = "package.zip") -> Path:
-    return build_dir(build_id) / name
+def artifact_path(build_id: str, name: str = "package.zip", product_variant: str | None = None) -> Path:
+    return build_dir(build_id, product_variant) / name
 
 
-def shared_artifact_path(build_id: str, name: str) -> Path:
+def shared_artifact_path(build_id: str, name: str, product_variant: str | None = None) -> Path:
+    if product_variant:
+        return variant_artifact_root(product_variant) / build_id / name
+    for variant in PRODUCT_VARIANTS:
+        candidate = variant_artifact_root(variant) / build_id / name
+        if candidate.exists():
+            return candidate
+    legacy = ARTIFACT_ROOT / build_id / name
+    if legacy.exists():
+        return legacy
     return ARTIFACT_ROOT / build_id / name
+
+
+def build_id_exists(build_id: str) -> bool:
+    if (DATA_DIR / build_id).exists():
+        return True
+    return any((variant_build_root(variant) / build_id).exists() for variant in PRODUCT_VARIANTS)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -310,12 +348,12 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
 
     build_id = isoish()
     suffix = 1
-    while build_dir(build_id).exists():
+    while build_id_exists(build_id):
         suffix += 1
         build_id = f"{isoish()}-{suffix}"
 
-    build_dir(build_id).mkdir(parents=True, exist_ok=False)
-    log_path(build_id).write_text("", encoding="utf-8")
+    build_dir(build_id, product_variant).mkdir(parents=True, exist_ok=False)
+    log_path(build_id, product_variant).write_text("", encoding="utf-8")
     meta = {
         "id": build_id,
         "executor": EXECUTOR,
@@ -407,7 +445,7 @@ def run_direct_build(build_id: str) -> None:
             update_step(build_id, "checkout_backend", "skipped", "未选择后端构建")
             update_step(build_id, "build_backend", "skipped", "未选择后端构建")
 
-        (ARTIFACT_ROOT / build_id).mkdir(parents=True, exist_ok=True)
+        variant_artifact_root(product_variant).joinpath(build_id).mkdir(parents=True, exist_ok=True)
         if build_frontend:
             fe_env = nho_frontend_env(request, build_id) if product_variant == "nho" else direct_frontend_env(request, build_id)
             restore_script = NHO_FRONTEND_RESTORE_SCRIPT if product_variant == "nho" else DIRECT_FRONTEND_RESTORE_SCRIPT
@@ -444,19 +482,19 @@ def run_direct_build(build_id: str) -> None:
 
         update_step(build_id, "collect_artifacts", "running")
         pkg_src = back_dir / "package.zip"
-        web_src = ARTIFACT_ROOT / build_id / "web.zip"
+        web_src = shared_artifact_path(build_id, "web.zip", product_variant)
         if build_backend and not pkg_src.is_file():
             raise RuntimeError(f"未找到产物：{pkg_src}")
         if build_frontend and not web_src.is_file():
             raise RuntimeError(f"未找到产物：{web_src}")
         if build_backend:
-            shutil.copy2(pkg_src, artifact_path(build_id, "package.zip"))
-            shutil.copy2(pkg_src, shared_artifact_path(build_id, "package.zip"))
+            shutil.copy2(pkg_src, artifact_path(build_id, "package.zip", product_variant))
+            shutil.copy2(pkg_src, shared_artifact_path(build_id, "package.zip", product_variant))
         if build_frontend:
-            shutil.copy2(web_src, artifact_path(build_id, "web.zip"))
+            shutil.copy2(web_src, artifact_path(build_id, "web.zip", product_variant))
         artifacts = []
         for name in ("package.zip", "web.zip"):
-            p = artifact_path(build_id, name)
+            p = artifact_path(build_id, name, product_variant)
             if p.is_file():
                 artifacts.append({"name": name, "size": p.stat().st_size, "path": str(p)})
         update_build(build_id, artifact=artifacts[0] if artifacts else None, artifacts=artifacts)
@@ -553,9 +591,10 @@ def steps_from_drone_build(build: dict[str, Any]) -> list[dict[str, Any]]:
 
 def sync_artifacts(meta: dict[str, Any]) -> None:
     build_id = meta["id"]
+    product_variant = normalise_product_variant((meta.get("request") or {}).get("product_variant"))
     artifacts = []
     for name in ("package.zip", "web.zip"):
-        path = shared_artifact_path(build_id, name)
+        path = shared_artifact_path(build_id, name, product_variant)
         if path.is_file():
             artifacts.append({"name": name, "size": path.stat().st_size, "path": str(path)})
     meta["artifacts"] = artifacts
@@ -641,12 +680,15 @@ def delete_build(build_id: str) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(build_id)
     meta = read_json(path)
+    product_variant = normalise_product_variant((meta.get("request") or {}).get("product_variant"))
     if meta.get("status") in ("queued", "running"):
         return {"ok": False, "error": "build_running"}
     BUILD_THREADS.pop(build_id, None)
     BUILD_PROCS.pop(build_id, None)
     CANCELLED_BUILDS.discard(build_id)
-    shutil.rmtree(build_dir(build_id), ignore_errors=True)
+    shutil.rmtree(build_dir(build_id, product_variant), ignore_errors=True)
+    shutil.rmtree(DATA_DIR / build_id, ignore_errors=True)
+    shutil.rmtree(variant_artifact_root(product_variant) / build_id, ignore_errors=True)
     shutil.rmtree(ARTIFACT_ROOT / build_id, ignore_errors=True)
     return {"ok": True, "id": build_id}
 
@@ -1215,7 +1257,7 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "CONF_WORKER_PROCESSES": str(req.get("conf_worker_processes") or 1),
         "CONF_WORKER_CONNECTIONS": str(req.get("conf_worker_connections") or 1024),
         "OHR_BUILD_ID": build_id,
-        "OUT_WEB_ZIP": str(ARTIFACT_ROOT / build_id / "web.zip"),
+        "OUT_WEB_ZIP": str(shared_artifact_path(build_id, "web.zip", "standard")),
     }
 
 
@@ -1243,7 +1285,7 @@ def nho_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "NHO_FRONTEND_NENCHO_GIT_URL": git_url_with_token(NHO_FRONTEND_CHILD_REPOS["frontend_nencho_branch"]),
         "NHO_PNPM_CACHE_DIR": NHO_PNPM_CACHE_DIR,
         "OHR_BUILD_ID": build_id,
-        "OUT_WEB_ZIP": str(ARTIFACT_ROOT / build_id / "web.zip"),
+        "OUT_WEB_ZIP": str(shared_artifact_path(build_id, "web.zip", "nho")),
     }
 
 
@@ -1384,20 +1426,30 @@ def redact_secrets(text: str) -> str:
 def list_builds() -> list[dict[str, Any]]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     builds = []
-    for path in sorted(DATA_DIR.iterdir(), reverse=True):
-        mp = path / "metadata.json"
+    metadata_files: list[Path] = []
+    for path in DATA_DIR.iterdir():
+        if path.name in PRODUCT_VARIANTS and path.is_dir():
+            metadata_files.extend(child / "metadata.json" for child in path.iterdir())
+            continue
+        metadata_files.append(path / "metadata.json")
+    for mp in metadata_files:
         if mp.is_file():
             try:
                 builds.append(read_json(mp))
             except json.JSONDecodeError:
                 continue
-    return builds
+    return sorted(builds, key=lambda item: item.get("created_at") or item.get("id") or "", reverse=True)
 
 
 def mark_unfinished_builds_failed(reason: str = "build_console_restarted_while_running") -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    metadata_files: list[Path] = []
     for path in DATA_DIR.iterdir():
-        mp = path / "metadata.json"
+        if path.name in PRODUCT_VARIANTS and path.is_dir():
+            metadata_files.extend(child / "metadata.json" for child in path.iterdir())
+            continue
+        metadata_files.append(path / "metadata.json")
+    for mp in metadata_files:
         if not mp.is_file():
             continue
         try:
@@ -1540,11 +1592,13 @@ class Handler(BaseHTTPRequestHandler):
     def send_artifact(self, build_id: str, name: str) -> None:
         if name not in ("package.zip", "web.zip"):
             return self.send_error(HTTPStatus.NOT_FOUND)
+        product_variant = None
         if metadata_path(build_id).is_file():
-            sync_drone_build(build_id)
-        path = shared_artifact_path(build_id, name)
+            meta = sync_drone_build(build_id)
+            product_variant = (meta.get("request") or {}).get("product_variant")
+        path = shared_artifact_path(build_id, name, product_variant)
         if not path.is_file():
-            path = artifact_path(build_id, name)
+            path = artifact_path(build_id, name, product_variant)
         if not path.is_file():
             return self.send_error(HTTPStatus.NOT_FOUND)
         self.send_response(HTTPStatus.OK)

@@ -376,7 +376,7 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "mode = 'active'" in console.APP_JS
     assert "mode = ['queued', 'running'].includes(job.status) ? 'active' : 'view'" in console.APP_JS
     assert "if (!selected && data.jobs.length)" not in console.APP_JS
-    assert "const activeJob = data.jobs.find(job => ['queued', 'running'].includes(job.status))" in console.APP_JS
+    assert "const activeJob = visibleJobs.find(job => ['queued', 'running'].includes(job.status))" in console.APP_JS
     assert "if (activeJob && (mode !== 'active' || selected !== activeJob.id))" in console.APP_JS
     assert "mode === 'create' && !activeJob" in console.APP_JS
     assert "if (mode !== 'create' && lastFilledJobId !== job.id)" in console.APP_JS
@@ -518,6 +518,11 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "product_variant=${variant}" in console.APP_JS
     assert "build_nho_common_package" in console.__dict__
     assert "outputs.common_zip" in console.APP_JS
+    assert "const visibleJobs = data.jobs.filter" in console.APP_JS
+    assert "((job.request && job.request.product_variant) || 'standard') === currentVariant" in console.APP_JS
+    assert "visibleJobs.forEach(job =>" in console.APP_JS
+    assert "enterCreateMode();" in console.APP_JS
+    assert "document.querySelectorAll('.standard-only')" in console.APP_JS
 
 
 def test_build_terminal_proxy_rewrites_absolute_assets():
