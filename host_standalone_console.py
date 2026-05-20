@@ -37,6 +37,7 @@ from standalone_packager import (
 )
 
 
+APP_VERSION = "0.3.8"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -677,7 +678,7 @@ INDEX_HTML = """<!doctype html>
     <header class="hero">
       <div>
         <p class="eyebrow">SHOMU JIMU SYSTEM BUILDER</p>
-        <h1 data-i18n="title">庶務事務システム构造器</h1>
+        <h1><span data-i18n="title">庶務事務システム构造器</span><span class="app-version">v__APP_VERSION__</span></h1>
         <p class="subcopy" data-i18n="subtitle">構築成果物と固定資材を組み合わせ、正式な製品交付パッケージを生成します。</p>
       </div>
       <div class="hero-actions">
@@ -1822,7 +1823,24 @@ body {
   text-transform: uppercase;
 }
 h1, h2 { margin: 0; letter-spacing: 0; }
-h1 { font-size: 42px; line-height: 1.05; font-weight: 760; }
+h1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 42px;
+  line-height: 1.05;
+  font-weight: 760;
+}
+.app-version {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 760;
+}
 h2 { font-size: 20px; font-weight: 720; }
 .subcopy { max-width: 720px; margin: 12px 0 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
 .hero-actions { display: grid; gap: 8px; min-width: 180px; }
@@ -2202,7 +2220,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/":
-            return self.send_text(INDEX_HTML, "text/html; charset=utf-8", set_token=True)
+            return self.send_text(INDEX_HTML.replace("__APP_VERSION__", APP_VERSION), "text/html; charset=utf-8", set_token=True)
         if parsed.path == "/app.js":
             return self.send_text(APP_JS, "application/javascript; charset=utf-8")
         if parsed.path == "/style.css":

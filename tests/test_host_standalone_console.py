@@ -19,6 +19,12 @@ def test_default_host_console_bind_is_fixed():
     assert console.PORT == 8091
 
 
+def test_host_console_displays_app_version():
+    assert console.APP_VERSION == "0.3.8"
+    assert "v__APP_VERSION__" in console.INDEX_HTML
+    assert ".app-version" in console.STYLE_CSS
+
+
 def test_start_script_stops_process_occupying_fixed_port():
     script = Path("scripts/start_host_standalone_console.ps1").read_text(encoding="utf-8")
     assert "Get-NetTCPConnection -LocalPort $Port -State Listen" in script
