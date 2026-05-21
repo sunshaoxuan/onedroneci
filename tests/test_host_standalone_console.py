@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.14"
+    assert console.APP_VERSION == "0.3.15"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -450,7 +450,7 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "overall-progress" in console.APP_JS
     assert "function visibleProgressSteps(job)" in console.APP_JS
     assert "product_variant) || 'standard'" in console.APP_JS
-    assert "['sql_assets', 'data_sync_assets', 'account_sql', 'help_sql']" in console.APP_JS
+    assert "['data_sync_assets', 'account_sql', 'help_sql']" in console.APP_JS
     assert "return progress.filter(step => !hidden.has(step.id))" in console.APP_JS
     assert "const progress = visibleProgressSteps(job)" in console.APP_JS
     assert "progressSteps" in console.APP_JS
@@ -594,6 +594,8 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "getProductVariant()" in console.APP_JS
     assert "product_variant=${variant}" in console.APP_JS
     assert "build_nho_common_package" in console.__dict__
+    assert "nho-material-database-assets" in Path("host_standalone_console.py").read_text(encoding="utf-8")
+    assert "database_assets_zip=database_assets_zip" in Path("host_standalone_console.py").read_text(encoding="utf-8")
     assert "outputs.common_zip" in console.APP_JS
     assert "const visibleJobs = data.jobs.filter" in console.APP_JS
     assert "((job.request && job.request.product_variant) || 'standard') === currentVariant" in console.APP_JS

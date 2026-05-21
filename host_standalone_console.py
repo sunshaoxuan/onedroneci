@@ -33,11 +33,12 @@ from standalone_packager import (
     configured_template_zip,
     default_organisation_dstart,
     download_remote_artifact,
+    download_remote_file,
     remote_json,
 )
 
 
-APP_VERSION = "0.3.14"
+APP_VERSION = "0.3.15"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -559,7 +560,17 @@ def run_job(job_id: str) -> None:
         }
         update_progress(job_id, "download_artifacts", "success")
         if product_variant == "nho":
-            for step_id in ("sql_assets", "data_sync_assets", "account_sql", "help_sql"):
+            check_cancelled(job_id)
+            update_progress(job_id, "sql_assets", "running")
+            append_log(job_id, "sql_svn_download")
+            database_assets_zip = download_remote_file(
+                REMOTE_BUILD_CONSOLE_URL,
+                f"/api/nho-material-database-assets?material_number={urllib.parse.quote(material_number)}",
+                work_dir / "nho_database_assets.zip",
+            )
+            partial_outputs["database_assets_zip"] = str(database_assets_zip)
+            update_progress(job_id, "sql_assets", "success")
+            for step_id in ("data_sync_assets", "account_sql", "help_sql"):
                 update_progress(job_id, step_id, "skipped")
             update_progress(job_id, "standalone_zip", "running")
             def nho_package_log(message: str) -> None:
@@ -570,6 +581,7 @@ def run_job(job_id: str) -> None:
                 build_id=job_id,
                 package_zip=package_zip,
                 web_zip=web_zip,
+                database_assets_zip=database_assets_zip,
                 version=BuildVersion(
                     build_id=job_id,
                     material_number=material_number,
@@ -1780,7 +1792,7 @@ function visibleProgressSteps(job) {
   const progress = job.progress || [];
   const variant = ((job.request && job.request.product_variant) || 'standard');
   if (variant !== 'nho') return progress;
-  const hidden = new Set(['sql_assets', 'data_sync_assets', 'account_sql', 'help_sql']);
+  const hidden = new Set(['data_sync_assets', 'account_sql', 'help_sql']);
   return progress.filter(step => !hidden.has(step.id));
 }
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import zipfile
 from pathlib import Path
 
 
@@ -454,6 +456,47 @@ def test_extract_nho_release_branches_from_rows():
 
     assert server.branch_from_release_section(rows, "Frontend") == "release_20260316"
     assert server.branch_from_release_section(rows, "Backend") == ""
+
+
+def test_nho_material_database_assets_are_exported_as_zip(monkeypatch):
+    server = load_server()
+    calls = []
+
+    def fake_run_svn_text(args, timeout=60):
+        calls.append(args)
+        target = Path(args[-1])
+        target.mkdir(parents=True, exist_ok=True)
+        if target.name == "データ連携":
+            (target / "ohr").mkdir()
+            (target / "ohr" / "upds_in_kihon_joho.sql").write_text("kihon", encoding="utf-8")
+            (target / "ohr" / "upds_in_organisation.sql").write_text("organisation", encoding="utf-8")
+            (target / "データ連携プロシージャ.xlsx").write_bytes(b"xlsx")
+        elif target.name == "製品":
+            (target / "ohr").mkdir()
+            (target / "tenant").mkdir()
+            (target / "ohr" / "ohr_menu_resource.sql").write_text("menu", encoding="utf-8")
+            (target / "tenant" / "i18n_web_message.sql").write_text("i18n", encoding="utf-8")
+            (target / "リリースチェックリスト.xlsx").write_bytes(b"xlsx")
+        return "exported"
+
+    monkeypatch.setattr(server, "run_svn_text", fake_run_svn_text)
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_URL", "http://example.test/svn/大連側/97.リリース作業")
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_USERNAME", "svn-user")
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_PASSWORD", "svn-pass")
+
+    data = server.export_nho_material_database_assets_zip("20260325")
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        members = set(z.namelist())
+
+    assert len(calls) == 2
+    assert "export" in calls[0]
+    assert "--force" in calls[0]
+    assert "データ連携/ohr/upds_in_kihon_joho.sql" in members
+    assert "データ連携/ohr/upds_in_organisation.sql" in members
+    assert "製品/ohr/ohr_menu_resource.sql" in members
+    assert "製品/tenant/i18n_web_message.sql" in members
+    assert "データ連携/データ連携プロシージャ.xlsx" not in members
+    assert "製品/リリースチェックリスト.xlsx" not in members
 
 
 def test_list_release_branches_for_url_parses_refs(monkeypatch):

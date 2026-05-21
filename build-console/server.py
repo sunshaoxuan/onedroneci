@@ -9,6 +9,7 @@ import re
 import signal
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -1791,6 +1792,34 @@ def get_nho_material_release_branches(material_number: str) -> dict[str, str]:
     return result
 
 
+def export_nho_material_database_assets_zip(material_number: str) -> bytes:
+    if not re.fullmatch(r"\d{8}", material_number or ""):
+        raise RuntimeError("invalid material_number")
+    svn_url = os.environ.get("NHO_MATERIAL_SVN_URL", NHO_MATERIAL_SVN_URL).rstrip("/")
+    svn_username = os.environ.get("NHO_MATERIAL_SVN_USERNAME", NHO_MATERIAL_SVN_USERNAME)
+    svn_password = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", NHO_MATERIAL_SVN_PASSWORD)
+    export_args = svn_auth_command(["export", "--force"], svn_username, svn_password)
+    material_url = f"{svn_url}/{material_number}リリース作業"
+    with tempfile.TemporaryDirectory(prefix=f"nho-material-{material_number}-") as tmp:
+        root = Path(tmp)
+        for dirname in ("データ連携", "製品"):
+            source_url = f"{material_url}/{dirname}"
+            target_dir = root / dirname
+            run_svn_text([*export_args, source_url, str(target_dir)], timeout=300)
+            if not target_dir.exists():
+                raise RuntimeError(f"NHO material folder was not exported: {dirname}")
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            for source_dir in (root / "データ連携", root / "製品"):
+                for path in sorted(source_dir.rglob("*")):
+                    arcname = path.relative_to(root).as_posix()
+                    if path.is_dir():
+                        zf.writestr(arcname.rstrip("/") + "/", b"")
+                    elif path.suffix.lower() == ".sql":
+                        zf.write(path, arcname)
+        return buffer.getvalue()
+
+
 def run_command(
     build_id: str,
     command: str,
@@ -1958,6 +1987,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(get_nho_material_release_branches(material_number))
             except Exception as exc:
                 return self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+        if path == "/api/nho-material-database-assets":
+            qs = urllib.parse.parse_qs(parsed.query)
+            material_number = str(qs.get("material_number", [""])[0] or "").strip()
+            try:
+                data = export_nho_material_database_assets_zip(material_number)
+            except Exception as exc:
+                return self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+            filename = f"nho-material-{material_number}-database-assets.zip"
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         m = re.fullmatch(r"/api/builds/([^/]+)", path)
         if m:
             return self.send_build(m.group(1))

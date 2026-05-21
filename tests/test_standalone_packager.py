@@ -84,6 +84,31 @@ def test_build_nho_common_package_backend_only_and_both(tmp_path):
     assert "共通/upgrade/実行環境資材/OneHrSuite/software/web.zip" in members
 
 
+def test_build_nho_common_package_includes_database_assets(tmp_path):
+    web_zip = tmp_path / "web.zip"
+    web_zip.write_bytes(b"web")
+    database_assets_zip = tmp_path / "database-assets.zip"
+    with zipfile.ZipFile(database_assets_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("データ連携/ohr/upds_in_kihon_joho.sql", "kihon")
+        z.writestr("データ連携/ohr/upds_in_organisation.sql", "organisation")
+        z.writestr("製品/ohr/ohr_menu_resource.sql", "menu")
+        z.writestr("製品/tenant/i18n_web_message.sql", "i18n")
+
+    result = build_nho_common_package(
+        output_root=tmp_path / "out",
+        build_id="nho-db",
+        web_zip=web_zip,
+        database_assets_zip=database_assets_zip,
+    )
+
+    members = zip_members(Path(result["common_zip"]))
+    assert "共通/upgrade/データベース資材/データ連携/ohr/upds_in_kihon_joho.sql" in members
+    assert "共通/upgrade/データベース資材/データ連携/ohr/upds_in_organisation.sql" in members
+    assert "共通/upgrade/データベース資材/製品/ohr/ohr_menu_resource.sql" in members
+    assert "共通/upgrade/データベース資材/製品/tenant/i18n_web_message.sql" in members
+    assert result["database_assets_zip"].endswith("database-assets.zip")
+
+
 def make_sql_templates(path: Path) -> None:
     (path / "1.tenant").mkdir(parents=True)
     (path / "2.ohr").mkdir(parents=True)

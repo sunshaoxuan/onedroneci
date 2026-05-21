@@ -492,12 +492,13 @@ def build_nho_common_package(
     build_id: str,
     package_zip: Path | None = None,
     web_zip: Path | None = None,
+    database_assets_zip: Path | None = None,
     version: BuildVersion | None = None,
     logger: Any | None = None,
 ) -> dict[str, Any]:
-    """Build the NHO code-only common package.
+    """Build the NHO common upgrade package.
 
-    NHO does not include customer environment config, SQL, help, or the standalone installer shell.
+    NHO does not include customer environment config, help, or the standalone installer shell.
     The output intentionally mirrors the historical upgrade package layout.
     """
     if package_zip is None and web_zip is None:
@@ -506,6 +507,8 @@ def build_nho_common_package(
         raise FileNotFoundError(f"missing package.zip: {package_zip}")
     if web_zip is not None and not web_zip.is_file():
         raise FileNotFoundError(f"missing web.zip: {web_zip}")
+    if database_assets_zip is not None and not database_assets_zip.is_file():
+        raise FileNotFoundError(f"missing NHO database assets zip: {database_assets_zip}")
 
     delivery_root = output_root / build_id
     if delivery_root.exists():
@@ -523,6 +526,8 @@ def build_nho_common_package(
         readme_lines.append("- upgrade/実行環境資材/OneHrSuite/software/package.zip")
     if web_zip is not None:
         readme_lines.append("- upgrade/実行環境資材/OneHrSuite/software/web.zip")
+    if database_assets_zip is not None:
+        readme_lines.append("- upgrade/データベース資材/")
     readme = "\n".join(readme_lines) + "\n"
     version_text = render_version_txt(version) if version else ""
     if version_text:
@@ -539,6 +544,17 @@ def build_nho_common_package(
             software_prefix,
         ]:
             zf.writestr(dirname, b"")
+        if database_assets_zip is not None:
+            zf.writestr("共通/upgrade/データベース資材/", b"")
+            with zipfile.ZipFile(database_assets_zip, "r") as assets:
+                for item in assets.infolist():
+                    if item.filename.startswith("/") or ".." in Path(item.filename).parts:
+                        raise ValueError(f"unsafe NHO database asset path: {item.filename}")
+                    target = "共通/upgrade/データベース資材/" + item.filename.replace("\\", "/").lstrip("/")
+                    if item.is_dir():
+                        zf.writestr(target.rstrip("/") + "/", b"")
+                    else:
+                        zf.writestr(target, assets.read(item))
         zf.writestr("共通/upgrade/readme.txt", readme.encode("utf-8"))
         if version_text:
             zf.writestr("共通/version.txt", version_text.encode("utf-8"))
@@ -551,6 +567,7 @@ def build_nho_common_package(
         "common_zip": str(common_zip),
         "package_zip": str(package_zip) if package_zip else "",
         "web_zip": str(web_zip) if web_zip else "",
+        "database_assets_zip": str(database_assets_zip) if database_assets_zip else "",
         "version_txt": str(version_txt) if version_text else "",
         "size": common_zip.stat().st_size,
     }
@@ -599,6 +616,18 @@ def download_remote_artifact(remote_base_url: str, build_id: str, name: str, des
     url = f"{remote_base_url.rstrip('/')}/api/builds/{build_id}/artifact/{name}"
     with urllib.request.urlopen(url, timeout=120) as response, destination.open("wb") as f:
         shutil.copyfileobj(response, f)
+    return destination
+
+
+def download_remote_file(remote_base_url: str, path: str, destination: Path, timeout: int = 300) -> Path:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    url = remote_base_url.rstrip("/") + path
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response, destination.open("wb") as f:
+            shutil.copyfileobj(response, f)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")
+        raise RuntimeError(f"remote request failed {exc.code}: {body}") from exc
     return destination
 
 

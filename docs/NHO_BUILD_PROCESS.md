@@ -2,7 +2,7 @@
 
 本文说明“庶务事务 NHO版”的完整 Direct 构造过程。NHO版与標準版属于同一产品的不同版本，但构造来源、页面字段、缓存、工作区和最终输出都严格隔离。
 
-NHO版当前目标是生成代码共通包 `共通.zip`，不生成完整安装环境包。
+NHO版当前目标是生成代码共通包 `共通.zip`，不生成完整安装环境包。`共通.zip` 同时包含前后端代码包和 NHO 资材 SVN 中的数据库资材。
 
 ## 1. 输入参数
 
@@ -35,7 +35,7 @@ NHO_MATERIAL_SVN_PASSWORD=<SVN密码>
 - PostgreSQL 配置
 - 应用服务主机名、OHR 服务端口
 - 客户机构名、机构开始日
-- SQL、数据连携、`conf_prod`、Help 相关参数
+- 標準版 SQL、数据连携、`conf_prod`、Help 相关参数
 
 后端和前端可以只选其一。只选后端时 `共通.zip` 只包含 `package.zip`；只选前端时只包含 `web.zip`；两者都选则同时包含两枚 zip。
 
@@ -48,15 +48,17 @@ NHO_MATERIAL_SVN_PASSWORD=<SVN密码>
 3. 向构建终端发送 `product_variant=nho`、前后端构建开关与分支。
 4. 轮询构建终端状态与日志。
 5. 下载构建终端产物。
-6. 跳过標準版专用 SQL、数据连携、Help、`conf_prod` 与完整安装包步骤。
-7. 调用 `build_nho_common_package` 合成 NHO `共通.zip`。
+6. 通过构建终端从 NHO 资材 SVN 的对应资材编号目录导出 `データ連携` 与 `製品` 文件夹。
+7. 跳过標準版专用数据连携、Help、`conf_prod` 与完整安装包步骤。
+8. 调用 `build_nho_common_package` 合成 NHO `共通.zip`。
 
-主控台仍展示统一十步进度，但 NHO版中以下步骤会被标记为 skipped：
+主控台仍展示统一十步进度，但 NHO版中只隐藏以下標準版专用步骤：
 
-- SQL 资材
 - 数据连携
 - `4.account.sql`
 - Help SQL
+
+`SQL 资材` 步骤在 NHO版中表示从 NHO 资材 SVN 获取数据库资材。
 
 最终 ZIP 步骤表示生成 `共通.zip`。
 
@@ -215,6 +217,21 @@ HOST_STANDALONE_DATA_DIR/<job_id>/
 
 主控台调用 `standalone_packager.py` 中的 `build_nho_common_package`。
 
+合包前，主控台会调用构建终端受控接口：
+
+```text
+GET /api/nho-material-database-assets?material_number=<资材编号>
+```
+
+构建终端使用 `NHO_MATERIAL_SVN_URL`、`NHO_MATERIAL_SVN_USERNAME`、`NHO_MATERIAL_SVN_PASSWORD` 从以下路径导出数据库资材：
+
+```text
+<NHO_MATERIAL_SVN_URL>/<资材编号>リリース作業/データ連携
+<NHO_MATERIAL_SVN_URL>/<资材编号>リリース作業/製品
+```
+
+导出的内容先以临时 zip 返回主控台，再由主控台写入最终 `共通.zip`。
+
 输出目录：
 
 ```text
@@ -230,6 +247,16 @@ STANDALONE_OUTPUT_DIR/<主控任务ID>/
   version.txt
   upgrade/
     readme.txt
+    データベース資材/
+      データ連携/
+        ohr/
+          upds_in_kihon_joho.sql
+          upds_in_organisation.sql
+      製品/
+        ohr/
+          ohr_menu_resource.sql
+        tenant/
+          i18n_web_message.sql
     実行環境資材/
       OneHrSuite/
         software/
@@ -261,9 +288,9 @@ NHO版明确不执行：
 - `conf_prod`
 - Help 构建
 - Help SQL 覆盖
-- SQL SVN `1.tenant` / `2.ohr`
+- 標準版 SQL SVN `1.tenant` / `2.ohr`
 - `4.account.sql` 客户机构名修改
-- 数据连携 Git 获取
+- 標準版数据连携 Git 获取
 - `OneHrStandalone.zip` 重建
 - PostgreSQL / OHR service `config.ini` 替换
 - 固定中间件包处理
@@ -281,8 +308,8 @@ NHO版明确不执行：
 | 页面字段 | 客户环境、DB、机构、Help 等完整字段 | 只保留资材编号、前后端分支 |
 | conf_prod | 从 `ohr-cicd` 生成 | 不生成 |
 | Help | `ohr-help-docs + SVN` 构建 | 不构建 |
-| SQL | 从 SVN 获取并改 `4.account.sql` | 不处理 |
-| 数据连携 | 获取并复制 | 不处理 |
+| SQL | 从標準版 SVN 获取 `1.tenant` / `2.ohr` 并改 `4.account.sql` | 从 NHO 资材 SVN 获取 `データ連携` / `製品` 下数据库资材，不改 SQL 内容 |
+| 数据连携 | 获取并复制到交付目录 | 仅作为数据库资材的一部分放入 `共通.zip` |
 | 输出 | `製品/` + `データ連携/` | `共通.zip` + `version.txt` |
 | 输出根 | 构建终端构建 ID | 主控任务 ID |
 | 固定中间件 | 保留在 `OneHrStandalone.zip` 模板中 | 不包含 |
@@ -294,4 +321,5 @@ NHO版明确不执行：
 - 如果后端出现 `TypeTag UNKNOWN` 之类 javac / Lombok 错误，确认 NHO 后端是否通过 `maven:3.9.6-eclipse-temurin-22` 执行 `collect-pkg.sh`，不要落回宿主机 JDK。
 - 如果后端产物缺失，检查 `collect-pkg.sh` 是否生成 `./package`。
 - 如果 `共通.zip` 只包含一个 zip，确认页面是否只选择了后端或前端之一。
-- 如果 NHO 构造中出现 `conf_prod`、Help、SQL 或数据连携日志，说明流程发生串线，应立即停止并检查 `product_variant`。
+- 如果 NHO 构造中出现 `conf_prod`、Help、`4.account.sql` 或標準版数据连携 Git 日志，说明流程发生串线，应立即停止并检查 `product_variant`。
+- 如果 `共通.zip` 中缺少 `共通/upgrade/データベース資材/`，检查构建终端是否能访问 NHO 资材 SVN，以及对应资材编号目录下是否存在 `データ連携` 和 `製品`。
