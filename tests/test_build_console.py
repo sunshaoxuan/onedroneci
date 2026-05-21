@@ -88,7 +88,26 @@ def test_build_console_supports_nho_variant_scripts_and_ui(monkeypatch):
     assert "NHO_PNPM_CACHE_DIR" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "NHO_YARN_CACHE_DIR" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "NHO_YARN_CACHE_DIR" in server.NHO_FRONTEND_BUILD_SCRIPT
-    assert "yarn setup" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "write_nho_npmrc ohr-lowcode-engine" in server.NHO_FRONTEND_RESTORE_SCRIPT
+    assert "write_nho_npmrc ohr-lowcode-engine" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "always-auth=true" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "//registry.smartcompany.cn/repository/npm-group/:_auth=$NPM_AUTH_B64" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "rewrite_nho_public_lock_urls ohr-lowcode-engine" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "apply_nho_low_memory_overrides" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "run_nho_setup_sequential" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "patch_nho_react_pdf_exports" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "removed react-pdf exports" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "dist/esm/Page css to legacy dist/Page path" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert 'replace("yarn build:parallel", "yarn build")' in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert 'replace(" --parallel", "")' in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "NODE_OPTIONS=--max_old_space_size=1536" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "NODE_OPTIONS=--max_old_space_size=2048" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "Path(\"ohr-nocode-engine/packages\").glob" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "--concurrency 1" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "NHO_NODE_OPTIONS" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "https://registry.npmmirror.com/" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert 'private_scopes = ("/@omf/", "/@one/", "/@ole/", "/@ohr/")' in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "yarn setup" not in server.NHO_FRONTEND_BUILD_SCRIPT
     assert "yarn build" in server.NHO_FRONTEND_BUILD_SCRIPT
     assert "yarn bundle" in server.NHO_FRONTEND_BUILD_SCRIPT
     assert "ohr-cicd" not in server.NHO_FRONTEND_BUILD_SCRIPT

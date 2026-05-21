@@ -146,16 +146,43 @@ NHO 前端使用独立 `nhophr/*` 仓库：
 1. 增量同步 `nhophr/ohr-workspace`。
 2. 增量同步五个 NHO 前端子仓。
 3. 设置 NHO 专用 pnpm store。
-4. 执行：
+4. 向 workspace 与五个 NHO 子仓写入本次构建用 npm 认证配置：
 
 ```text
-yarn setup
+//registry.smartcompany.cn/:_auth=<NPM_AUTH_B64>
+//registry.smartcompany.cn/repository/npm-group/:_auth=<NPM_AUTH_B64>
+//registry.smartcompany.cn/repository/npm-hosted/:_auth=<NPM_AUTH_B64>
+always-auth=true
+```
+
+这些配置只写入构建终端工作区，不提交 Git，用于 `ohr-cli` 在子仓执行 `yarn install` 时访问私有 npm registry。
+
+5. 构建前临时改写各子仓 `yarn.lock` 中公开 npm 包的 tarball URL：
+
+- `https://registry.smartcompany.cn/repository/npm-group/` -> `https://registry.npmmirror.com/`
+- 保留 `@omf`、`@one`、`@ole`、`@ohr` 私有 scope 继续使用私有 Nexus
+
+这是因为 Yarn v1 对 lockfile 中已经固定的完整 Nexus tarball URL 不会稳定附带 Basic auth；公开包改走镜像源，私有包仍通过 `.npmrc` 认证。该改写只发生在构建终端工作区，下次 Git reset 会恢复。
+
+6. 执行 NHO 低内存准备：
+
+- 依赖安装按 `feelin -> micro-frontends -> lowcode -> nocode -> nencho` 串行执行。
+- 构建前临时把 NHO 子仓 `package.json` 中的 `ohr-cli mono-build --parallel` 改为顺序 `ohr-cli mono-build`。
+- workspace 的 `build:ole` 临时从 `yarn build:parallel` 改为 `yarn build`。
+- 低代码工程内硬编码的 `NODE_OPTIONS=--max_old_space_size=8192` 临时收敛到 `1536MB`，并给 `lerna run` 追加 `--concurrency 1`。
+- 默认 `NODE_OPTIONS` 为 `--max-old-space-size=1536`，可通过 `NHO_NODE_OPTIONS` 覆盖。
+- 安装完成后临时移除 `ohr-micro-frontends/node_modules/react-pdf/package.json` 中的 `exports` 字段，并把 `dist/esm/Page/*.css` 复制到历史兼容路径 `dist/Page/`，兼容现有 `OhrPdfViewer` 对 `react-pdf` 内部路径的引用。
+- NHO `ohr-nocode-engine` 的 `build-scripts` 构建临时注入 `NODE_OPTIONS=--max_old_space_size=2048`，避免 `@one/engine build:prod` 默认 heap 不足。
+
+7. 执行：
+
+```text
 yarn build
 yarn bundle
 ```
 
-5. 从 workspace 生成的 `release_*.zip` 取得前端发布包。
-6. 将其保存为构建终端产物 `web.zip`。
+8. 从 workspace 生成的 `release_*.zip` 取得前端发布包。
+9. 将其保存为构建终端产物 `web.zip`。
 
 NHO 前端不会执行以下標準版动作：
 

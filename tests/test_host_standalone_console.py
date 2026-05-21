@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.11"
+    assert console.APP_VERSION == "0.3.13"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 

@@ -981,6 +981,10 @@ npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
 pnpm config set store-dir "$NHO_PNPM_CACHE_DIR" || true
 mkdir -p "$NHO_YARN_CACHE_DIR"
 yarn config set cache-folder "$NHO_YARN_CACHE_DIR" || true
+npm config set registry https://registry.smartcompany.cn/repository/npm-group/
+npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
+npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
+npm config set //registry.smartcompany.cn/repository/npm-hosted/:_auth "$NPM_AUTH_B64"
 npm uninstall -g ohr-cli || true
 npm install -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
 if [ -n "${FRONTEND_GIT_TOKEN:-}" ]; then
@@ -1008,28 +1012,192 @@ sync_nho_repo ohr-micro-frontends "$NHO_FRONTEND_MICRO_FRONTENDS_GIT_URL" "$FRON
 sync_nho_repo ohr-lowcode-engine "$NHO_FRONTEND_LOWCODE_ENGINE_GIT_URL" "$FRONTEND_LOWCODE_BRANCH"
 sync_nho_repo ohr-nocode-engine "$NHO_FRONTEND_NOCODE_ENGINE_GIT_URL" "$FRONTEND_NOCODE_BRANCH"
 sync_nho_repo ohr-web-nencho "$NHO_FRONTEND_NENCHO_GIT_URL" "$FRONTEND_NENCHO_BRANCH"
+write_nho_npmrc() {
+  target_dir="$1"
+  mkdir -p "$target_dir"
+  cat >> "$target_dir/.npmrc" <<EOF
+
+@omf:registry=https://registry.smartcompany.cn/repository/npm-group/
+@one:registry=https://registry.smartcompany.cn/repository/npm-group/
+@ole:registry=https://registry.smartcompany.cn/repository/npm-group/
+@ohr:registry=https://registry.smartcompany.cn/repository/npm-group/
+//registry.smartcompany.cn/:_auth=$NPM_AUTH_B64
+//registry.smartcompany.cn/repository/npm-group/:_auth=$NPM_AUTH_B64
+//registry.smartcompany.cn/repository/npm-hosted/:_auth=$NPM_AUTH_B64
+always-auth=true
+EOF
+}
+write_nho_npmrc .
+write_nho_npmrc ohr-feelin
+write_nho_npmrc ohr-micro-frontends
+write_nho_npmrc ohr-lowcode-engine
+write_nho_npmrc ohr-nocode-engine
+write_nho_npmrc ohr-web-nencho
 """
 
 
 NHO_FRONTEND_BUILD_SCRIPT = r"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export HOME="${HOME:-/root}"
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
+export NODE_OPTIONS="${NHO_NODE_OPTIONS:---max-old-space-size=1536}"
 cd "$OHR_FRONTEND_WORKDIR"
 npm i -g pnpm@9.4.0 --registry=https://registry.npmmirror.com/
 npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
 pnpm config set store-dir "$NHO_PNPM_CACHE_DIR" || true
 mkdir -p "$NHO_YARN_CACHE_DIR"
 yarn config set cache-folder "$NHO_YARN_CACHE_DIR" || true
+npm config set registry https://registry.smartcompany.cn/repository/npm-group/
+npm config set //registry.smartcompany.cn/:_auth "$NPM_AUTH_B64"
+npm config set //registry.smartcompany.cn/repository/npm-group/:_auth "$NPM_AUTH_B64"
+npm config set //registry.smartcompany.cn/repository/npm-hosted/:_auth "$NPM_AUTH_B64"
 npm uninstall -g ohr-cli || true
 npm install -g ohr-cli --registry=https://registry.smartcompany.cn/repository/npm-group/
 yarn config set registry https://registry.npmjs.org
 yarn config set cache-folder "$NHO_YARN_CACHE_DIR" || true
 yarn config set enableMirror false || true
 yarn config set checksumBehavior ignore || true
+write_nho_npmrc() {
+  target_dir="$1"
+  mkdir -p "$target_dir"
+  cat >> "$target_dir/.npmrc" <<EOF
+
+@omf:registry=https://registry.smartcompany.cn/repository/npm-group/
+@one:registry=https://registry.smartcompany.cn/repository/npm-group/
+@ole:registry=https://registry.smartcompany.cn/repository/npm-group/
+@ohr:registry=https://registry.smartcompany.cn/repository/npm-group/
+//registry.smartcompany.cn/:_auth=$NPM_AUTH_B64
+//registry.smartcompany.cn/repository/npm-group/:_auth=$NPM_AUTH_B64
+//registry.smartcompany.cn/repository/npm-hosted/:_auth=$NPM_AUTH_B64
+always-auth=true
+EOF
+}
+rewrite_nho_public_lock_urls() {
+  target_dir="$1"
+  [ -f "$target_dir/yarn.lock" ] || return 0
+  python3 - "$target_dir/yarn.lock" <<'PY'
+import sys
+from pathlib import Path
+
+lock_path = Path(sys.argv[1])
+private_scopes = ("/@omf/", "/@one/", "/@ole/", "/@ohr/")
+old = "https://registry.smartcompany.cn/repository/npm-group/"
+new = "https://registry.npmmirror.com/"
+lines = []
+changed = 0
+for line in lock_path.read_text(encoding="utf-8").splitlines(True):
+    if old in line and not any(scope in line for scope in private_scopes):
+        line = line.replace(old, new)
+        changed += 1
+    lines.append(line)
+if changed:
+    lock_path.write_text("".join(lines), encoding="utf-8")
+    print(f"[nho yarn] rewrote {changed} public resolved urls in {lock_path}")
+PY
+}
+apply_nho_low_memory_overrides() {
+  python3 - <<'PY'
+import json
+from pathlib import Path
+
+script_files = [
+    "package.json",
+    "ohr-micro-frontends/package.json",
+    "ohr-lowcode-engine/package.json",
+    "ohr-nocode-engine/package.json",
+]
+for package_json in Path("ohr-lowcode-engine/packages").glob("*/package.json"):
+    script_files.append(str(package_json))
+for package_json in Path("ohr-nocode-engine/packages").glob("*/package.json"):
+    script_files.append(str(package_json))
+
+for name in script_files:
+    path = Path(name)
+    if not path.exists():
+        continue
+    data = json.loads(path.read_text(encoding="utf-8"))
+    changed = []
+    for key, value in list(data.get("scripts", {}).items()):
+        new_value = value
+        new_value = new_value.replace("yarn build:parallel", "yarn build")
+        new_value = new_value.replace("ohr-cli mono-build --parallel", "ohr-cli mono-build")
+        new_value = new_value.replace(" --parallel", "")
+        new_value = new_value.replace("NODE_OPTIONS=--max_old_space_size=8192", "NODE_OPTIONS=--max_old_space_size=1536")
+        new_value = new_value.replace("NODE_OPTIONS=--max-old-space-size=8192", "NODE_OPTIONS=--max-old-space-size=1536")
+        if name.startswith("ohr-nocode-engine/packages/"):
+            new_value = new_value.replace("yarn set-env-prod build-scripts build", "yarn set-env-prod NODE_OPTIONS=--max_old_space_size=2048 build-scripts build")
+            new_value = new_value.replace("yarn set-env-dev build-scripts build", "yarn set-env-dev NODE_OPTIONS=--max_old_space_size=2048 build-scripts build")
+        if new_value != value:
+            data["scripts"][key] = new_value
+            changed.append(key)
+    if changed:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"[nho low-memory] {name}: {', '.join(changed)}")
+
+for script_name in ("ohr-lowcode-engine/scripts/build.sh", "ohr-lowcode-engine/scripts/build-parallel.sh"):
+    path = Path(script_name)
+    if not path.exists():
+        continue
+    text = path.read_text(encoding="utf-8")
+    new_text = text.replace("--stream\n", "--stream \\\n  --concurrency 1\n")
+    if new_text != text:
+        path.write_text(new_text, encoding="utf-8")
+        print(f"[nho low-memory] {script_name}: lerna concurrency=1")
+PY
+}
+run_nho_setup_sequential() {
+  echo "Running NHO dependency setup sequentially to avoid OOM"
+  (cd ohr-web-nencho && pnpm run yalc:remove || true)
+  (cd ohr-lowcode-engine && yarn yalc:remove || true)
+  (cd ohr-micro-frontends && yarn yalc:remove || true)
+  (cd ohr-nocode-engine && yarn yalc:remove || true)
+  (cd ohr-feelin && yarn install --ignore-scripts)
+  (cd ohr-micro-frontends && yarn install --ignore-scripts)
+  (cd ohr-lowcode-engine && yarn install --ignore-scripts)
+  (cd ohr-nocode-engine && yarn install --ignore-scripts)
+  (cd ohr-web-nencho && pnpm install)
+}
+patch_nho_react_pdf_exports() {
+  node <<'NODE'
+const fs = require('fs');
+const packagePath = 'ohr-micro-frontends/node_modules/react-pdf/package.json';
+if (fs.existsSync(packagePath)) {
+  const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  if (pkg.exports) {
+    delete pkg.exports;
+    fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+    console.log('[nho compat] removed react-pdf exports for legacy internal imports');
+  }
+  const compatDir = 'ohr-micro-frontends/node_modules/react-pdf/dist/Page';
+  const sourceDir = 'ohr-micro-frontends/node_modules/react-pdf/dist/esm/Page';
+  if (!fs.existsSync(compatDir) && fs.existsSync(sourceDir)) {
+    fs.mkdirSync(compatDir, {recursive: true});
+    for (const name of fs.readdirSync(sourceDir)) {
+      if (name.endsWith('.css')) {
+        fs.copyFileSync(`${sourceDir}/${name}`, `${compatDir}/${name}`);
+      }
+    }
+    console.log('[nho compat] copied react-pdf dist/esm/Page css to legacy dist/Page path');
+  }
+}
+NODE
+}
+write_nho_npmrc .
+write_nho_npmrc ohr-feelin
+write_nho_npmrc ohr-micro-frontends
+write_nho_npmrc ohr-lowcode-engine
+write_nho_npmrc ohr-nocode-engine
+write_nho_npmrc ohr-web-nencho
+rewrite_nho_public_lock_urls .
+rewrite_nho_public_lock_urls ohr-feelin
+rewrite_nho_public_lock_urls ohr-micro-frontends
+rewrite_nho_public_lock_urls ohr-lowcode-engine
+rewrite_nho_public_lock_urls ohr-nocode-engine
+rewrite_nho_public_lock_urls ohr-web-nencho
+apply_nho_low_memory_overrides
 find . -maxdepth 1 -type f -name 'release_*.zip' -delete
 find . -maxdepth 1 -type d -name 'release_*' -exec rm -rf {} +
-yarn setup
+run_nho_setup_sequential
+patch_nho_react_pdf_exports
 yarn build
 yarn bundle
 bundle_zip="$(find . -maxdepth 1 -type f -name 'release_*.zip' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"

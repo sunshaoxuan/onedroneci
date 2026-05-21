@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.13 - 2026-05-21
+
+### Fixed
+
+- NHO版前端在 workspace 与五个子仓写入统一 npm 认证配置，包含 `npm-group` / `npm-hosted` 与 `always-auth`，修复 `ohr-cli install-modules` 中 Yarn 下载私有 registry tarball 时的 401。
+- NHO版前端构建前临时改写 `yarn.lock` 中公开 npm 包的 Nexus tarball URL 到 `npmmirror`，保留 `@omf/@one/@ole/@ohr` 私有 scope 走 Nexus，避免 Yarn v1 对无认证完整 tarball URL 不带 Basic auth。
+- `always-auth` 只通过临时 `.npmrc` 写入，避免新 npm 版本拒绝 `npm config set always-auth` 时在日志中混入误导性错误。
+- NHO版前端增加低内存 Direct 模式：依赖安装改为串行执行，构建前临时关闭 NHO 子仓 `ohr-cli mono-build --parallel` / `build:parallel`，低代码工程追加 `lerna --concurrency 1` 并收敛硬编码 Node heap，避免 2GB 级构建终端被 OOM killer 杀掉。
+- NHO版前端安装后临时移除工作区内 `react-pdf` 的 `exports` 字段，并补齐 `dist/Page/*.css` 兼容目录，适配现有 `OhrPdfViewer` 对 `react-pdf` 历史内部路径的引用。
+- NHO版 `ohr-nocode-engine` 构建脚本临时为 `build-scripts` 注入 `NODE_OPTIONS=--max_old_space_size=2048`，避免 `@one/engine build:prod` 默认 heap 不足。
+
 ## 0.3.11 - 2026-05-20
 
 ### Fixed
