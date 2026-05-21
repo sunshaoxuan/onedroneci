@@ -135,6 +135,85 @@ def render_version_txt(version: BuildVersion) -> str:
     )
 
 
+def _safe_zip_member_name(name: str) -> str:
+    normalized = name.replace("\\", "/").lstrip("/")
+    if not normalized or normalized.startswith("/") or ".." in Path(normalized).parts:
+        raise ValueError(f"unsafe zip path: {name}")
+    return normalized
+
+
+def _display_db_name(name: str) -> str:
+    mapping = {"ohr": "Ohr", "tenant": "Tenant"}
+    return mapping.get(name.lower(), name)
+
+
+def _tree_from_paths(paths: list[str]) -> dict[str, Any]:
+    root: dict[str, Any] = {}
+    for path in sorted(paths):
+        current = root
+        for part in path.strip("/").split("/"):
+            current = current.setdefault(part, {})
+    return root
+
+
+def _render_tree_lines(tree: dict[str, Any], prefix: str = "") -> list[str]:
+    lines: list[str] = []
+    items = sorted(tree.items(), key=lambda item: (bool(item[1]), item[0].lower()))
+    for index, (name, children) in enumerate(items):
+        is_last = index == len(items) - 1
+        branch = "└─" if is_last else "├─"
+        if children:
+            lines.append(f"{prefix}{branch}{name}")
+            extension = "    " if is_last else "│  "
+            lines.extend(_render_tree_lines(children, prefix + extension))
+        else:
+            lines.append(f"{prefix}{branch}{name}")
+    return lines
+
+
+def _render_nho_readme(database_asset_paths: list[str], include_package: bool, include_web: bool) -> str:
+    lines = ["■■■■■■■■■■■■■■■実行手順■■■■■■■■■■■■■■■"]
+    sql_paths = sorted(path for path in database_asset_paths if path.lower().endswith(".sql"))
+    if sql_paths:
+        lines.extend(["■　【データベース資材】フォルダのSQLスクリプトを実行する", ""])
+        groups: dict[str, dict[str, list[str]]] = {}
+        for path in sql_paths:
+            parts = path.split("/")
+            if len(parts) < 3:
+                continue
+            group, db_name, filename = parts[0], parts[1], parts[-1]
+            groups.setdefault(group, {}).setdefault(db_name, []).append(filename)
+        for group in sorted(groups):
+            lines.append(f"□　【{group}】")
+            for db_name in sorted(groups[group]):
+                lines.append(f"　　□　【{_display_db_name(db_name)}】データベース")
+                for filename in sorted(groups[group][db_name]):
+                    lines.append(f"             -{filename}")
+                lines.append("")
+    if include_package or include_web:
+        lines.extend(
+            [
+                "■　【実行環境資材¥OneHrSuite】フォルダを実行環境（例：C:\\OneHrSuite）に上書きする",
+                "　　注意：同名フォルダの上書きです",
+                "",
+                "■　実行環境の【OneHrSuite\\bin\\cluster\\package.upgrade.ps1】を実行する",
+                "　　注意：実行環境のスクリプトであること",
+                "　　　　　管理者として実行すること",
+                "",
+            ]
+        )
+    asset_paths = ["upgrade/readme.txt"]
+    asset_paths.extend(f"upgrade/データベース資材/{path}" for path in sql_paths)
+    if include_package:
+        asset_paths.append("upgrade/実行環境資材/OneHrSuite/software/package.zip")
+    if include_web:
+        asset_paths.append("upgrade/実行環境資材/OneHrSuite/software/web.zip")
+    lines.extend(["■■■■■■■■■■■■■■■資材一覧■■■■■■■■■■■■■■■", "", "upgrade"])
+    tree = _tree_from_paths([path.removeprefix("upgrade/") for path in asset_paths if path != "upgrade"])
+    lines.extend(_render_tree_lines(tree))
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def update_config_ini(text: str, config: StandaloneConfig) -> str:
     values = {
         "POSTGRESQL_HOST": config.postgresql_host,
@@ -517,18 +596,17 @@ def build_nho_common_package(
     common_zip = delivery_root / "共通.zip"
     version_txt = delivery_root / "version.txt"
     software_prefix = "共通/upgrade/実行環境資材/OneHrSuite/software/"
-    readme_lines = [
-        "NHO庶務事務 共通アップグレード資材",
-        "",
-        "配置ファイル:",
-    ]
-    if package_zip is not None:
-        readme_lines.append("- upgrade/実行環境資材/OneHrSuite/software/package.zip")
-    if web_zip is not None:
-        readme_lines.append("- upgrade/実行環境資材/OneHrSuite/software/web.zip")
+    database_asset_items: list[tuple[zipfile.ZipInfo, str]] = []
+    database_asset_paths: list[str] = []
     if database_assets_zip is not None:
-        readme_lines.append("- upgrade/データベース資材/")
-    readme = "\n".join(readme_lines) + "\n"
+        with zipfile.ZipFile(database_assets_zip, "r") as assets:
+            for item in assets.infolist():
+                source = _safe_zip_member_name(item.filename)
+                target = "共通/upgrade/データベース資材/" + source
+                database_asset_items.append((item, target))
+                if not item.is_dir():
+                    database_asset_paths.append(source)
+    readme = _render_nho_readme(database_asset_paths, package_zip is not None, web_zip is not None)
     version_text = render_version_txt(version) if version else ""
     if version_text:
         version_txt.write_text(version_text, encoding="utf-8")
@@ -547,10 +625,7 @@ def build_nho_common_package(
         if database_assets_zip is not None:
             zf.writestr("共通/upgrade/データベース資材/", b"")
             with zipfile.ZipFile(database_assets_zip, "r") as assets:
-                for item in assets.infolist():
-                    if item.filename.startswith("/") or ".." in Path(item.filename).parts:
-                        raise ValueError(f"unsafe NHO database asset path: {item.filename}")
-                    target = "共通/upgrade/データベース資材/" + item.filename.replace("\\", "/").lstrip("/")
+                for item, target in database_asset_items:
                     if item.is_dir():
                         zf.writestr(target.rstrip("/") + "/", b"")
                     else:

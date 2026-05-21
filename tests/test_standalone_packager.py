@@ -46,6 +46,11 @@ def zip_members(path: Path) -> set[str]:
         return set(z.namelist())
 
 
+def zip_text(path: Path, name: str) -> str:
+    with zipfile.ZipFile(path) as z:
+        return z.read(name).decode("utf-8")
+
+
 def test_build_nho_common_package_frontend_only(tmp_path):
     web_zip = tmp_path / "web.zip"
     web_zip.write_bytes(b"web")
@@ -67,6 +72,10 @@ def test_build_nho_common_package_frontend_only(tmp_path):
     assert "共通/version.txt" in members
     assert "共通/upgrade/実行環境資材/OneHrSuite/software/web.zip" in members
     assert "共通/upgrade/実行環境資材/OneHrSuite/software/package.zip" not in members
+    readme = zip_text(common_zip, "共通/upgrade/readme.txt")
+    assert "実行環境資材¥OneHrSuite" in readme
+    assert "web.zip" in readme
+    assert "package.zip" not in readme
 
 
 def test_build_nho_common_package_backend_only_and_both(tmp_path):
@@ -107,6 +116,22 @@ def test_build_nho_common_package_includes_database_assets(tmp_path):
     assert "共通/upgrade/データベース資材/製品/ohr/ohr_menu_resource.sql" in members
     assert "共通/upgrade/データベース資材/製品/tenant/i18n_web_message.sql" in members
     assert result["database_assets_zip"].endswith("database-assets.zip")
+    readme = zip_text(Path(result["common_zip"]), "共通/upgrade/readme.txt")
+    assert "■■■■■■■■■■■■■■■実行手順■■■■■■■■■■■■■■■" in readme
+    assert "■　【データベース資材】フォルダのSQLスクリプトを実行する" in readme
+    assert "□　【データ連携】" in readme
+    assert "　　□　【Ohr】データベース" in readme
+    assert "-upds_in_kihon_joho.sql" in readme
+    assert "-upds_in_organisation.sql" in readme
+    assert "□　【製品】" in readme
+    assert "　　□　【Tenant】データベース" in readme
+    assert "-i18n_web_message.sql" in readme
+    assert "実行環境資材¥OneHrSuite" in readme
+    assert "■■■■■■■■■■■■■■■資材一覧■■■■■■■■■■■■■■■" in readme
+    assert "├─データベース資材" in readme
+    assert "upds_in_kihon_joho.sql" in readme
+    assert "└─実行環境資材" in readme
+    assert "web.zip" in readme
 
 
 def make_sql_templates(path: Path) -> None:

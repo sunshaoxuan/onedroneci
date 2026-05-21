@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.15`
+当前版本：`0.3.16`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -54,6 +54,7 @@
   - `共通/upgrade/データベース資材/製品/...`
   - `共通/upgrade/実行環境資材/OneHrSuite/software/package.zip`
   - `共通/upgrade/実行環境資材/OneHrSuite/software/web.zip`
+- `共通/upgrade/readme.txt` 会根据本次实际打入的 SQL、`package.zip`、`web.zip` 自动生成执行手顺和資材一覧，不写死固定样例。
 
 ## 主控台能力
 

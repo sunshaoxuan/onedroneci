@@ -264,7 +264,11 @@ STANDALONE_OUTPUT_DIR/<主控任务ID>/
           web.zip      # 选择前端时存在
 ```
 
-`readme.txt` 会列出本次包含的文件。
+`readme.txt` 会按本次实际包结构自动生成：
+
+- 存在数据库 SQL 时，生成 `データベース資材` 的执行手顺，并按 `データ連携` / `製品`、数据库名、SQL 文件名分组列出。
+- 存在 `package.zip` 或 `web.zip` 时，生成 `実行環境資材¥OneHrSuite` 覆盖说明和 `package.upgrade.ps1` 执行说明。
+- `資材一覧` 从最终 `共通.zip` 的路径树生成，不写死固定样例。
 
 ## 9. version.txt
 
