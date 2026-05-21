@@ -37,7 +37,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.13"
+APP_VERSION = "0.3.14"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1776,8 +1776,16 @@ function progressLabel(id) {
   return (labels && labels[id]) || id;
 }
 
-function renderProgress(job) {
+function visibleProgressSteps(job) {
   const progress = job.progress || [];
+  const variant = ((job.request && job.request.product_variant) || 'standard');
+  if (variant !== 'nho') return progress;
+  const hidden = new Set(['sql_assets', 'data_sync_assets', 'account_sql', 'help_sql']);
+  return progress.filter(step => !hidden.has(step.id));
+}
+
+function renderProgress(job) {
+  const progress = visibleProgressSteps(job);
   if (!progress.length) return '';
   const items = progress.map((step, index) => {
     const status = step.status || 'pending';

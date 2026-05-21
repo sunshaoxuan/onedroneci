@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.13"
+    assert console.APP_VERSION == "0.3.14"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -448,6 +448,11 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "statusLabel" in console.APP_JS
     assert "lastRenderedResultSignature" in console.APP_JS
     assert "overall-progress" in console.APP_JS
+    assert "function visibleProgressSteps(job)" in console.APP_JS
+    assert "product_variant) || 'standard'" in console.APP_JS
+    assert "['sql_assets', 'data_sync_assets', 'account_sql', 'help_sql']" in console.APP_JS
+    assert "return progress.filter(step => !hidden.has(step.id))" in console.APP_JS
+    assert "const progress = visibleProgressSteps(job)" in console.APP_JS
     assert "progressSteps" in console.APP_JS
     assert "progress-icon" in console.APP_JS
     assert "repeat(10, minmax(0, 1fr))" in console.STYLE_CSS
