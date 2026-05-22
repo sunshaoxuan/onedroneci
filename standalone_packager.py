@@ -594,7 +594,6 @@ def build_nho_common_package(
         shutil.rmtree(delivery_root)
     delivery_root.mkdir(parents=True, exist_ok=True)
     common_zip = delivery_root / "共通.zip"
-    version_txt = delivery_root / "version.txt"
     software_prefix = "共通/upgrade/実行環境資材/OneHrSuite/software/"
     database_asset_items: list[tuple[zipfile.ZipInfo, str]] = []
     database_asset_paths: list[str] = []
@@ -608,8 +607,6 @@ def build_nho_common_package(
                     database_asset_paths.append(source)
     readme = _render_nho_readme(database_asset_paths, package_zip is not None, web_zip is not None)
     version_text = render_version_txt(version) if version else ""
-    if version_text:
-        version_txt.write_text(version_text, encoding="utf-8")
 
     if logger:
         logger("nho_common_zip_rebuild")
@@ -643,7 +640,6 @@ def build_nho_common_package(
         "package_zip": str(package_zip) if package_zip else "",
         "web_zip": str(web_zip) if web_zip else "",
         "database_assets_zip": str(database_assets_zip) if database_assets_zip else "",
-        "version_txt": str(version_txt) if version_text else "",
         "size": common_zip.stat().st_size,
     }
 

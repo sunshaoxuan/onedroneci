@@ -64,12 +64,14 @@ def test_build_nho_common_package_frontend_only(tmp_path):
 
     common_zip = Path(result["common_zip"])
     assert common_zip == tmp_path / "out" / "job1" / "共通.zip"
-    assert Path(result["version_txt"]).read_text(encoding="utf-8") == (
-        "資材:NHO-M-001\n前台分支：release_front\n后台分支：-\n"
-    )
+    assert "version_txt" not in result
+    assert not (tmp_path / "out" / "job1" / "version.txt").exists()
     members = zip_members(common_zip)
     assert "共通/upgrade/readme.txt" in members
     assert "共通/version.txt" in members
+    assert zip_text(common_zip, "共通/version.txt") == (
+        "資材:NHO-M-001\n前台分支：release_front\n后台分支：-\n"
+    )
     assert "共通/upgrade/実行環境資材/OneHrSuite/software/web.zip" in members
     assert "共通/upgrade/実行環境資材/OneHrSuite/software/package.zip" not in members
     readme = zip_text(common_zip, "共通/upgrade/readme.txt")

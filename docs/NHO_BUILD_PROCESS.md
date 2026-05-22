@@ -9,7 +9,7 @@ NHO版当前目标是生成代码共通包 `共通.zip`，不生成完整安装�
 主控台页面在选择 `NHO版` 后只保留实际使用字段：
 
 - 产品版本：`NHO版`
-- 资材编号：写入 NHO 输出目录的 `version.txt`，并写入 `共通.zip` 内的 `共通/version.txt`
+- 资材编号：写入 `共通.zip` 内的 `共通/version.txt`
 - 后端分支：不为空时构建 `package.zip`
 - 前端分支：不为空时构建 `web.zip`
 
@@ -237,7 +237,6 @@ GET /api/nho-material-database-assets?material_number=<资材编号>
 ```text
 STANDALONE_OUTPUT_DIR/<主控任务ID>/
   共通.zip
-  version.txt
 ```
 
 `共通.zip` 内固定结构：
@@ -272,7 +271,7 @@ STANDALONE_OUTPUT_DIR/<主控任务ID>/
 
 ## 9. version.txt
 
-NHO版输出目录和 `共通.zip` 内都会生成 `version.txt`。
+NHO版只在 `共通.zip` 内生成 `共通/version.txt`，输出目录同级不再额外生成 `version.txt`。
 
 内容格式：
 
