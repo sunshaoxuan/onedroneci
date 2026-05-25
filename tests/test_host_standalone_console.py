@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.25"
+    assert console.APP_VERSION == "0.3.26"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -628,6 +628,7 @@ def test_standard_console_has_preparation_and_import_plan_tabs():
     assert "function switchStandardTab(tabName)" in console.APP_JS
     assert "document.querySelectorAll('.standard-tab')" in console.APP_JS
     assert ".standard-tab-panel" in console.STYLE_CSS
+    assert '.standard-tab-panel[data-standard-tab-panel="import"]' in console.STYLE_CSS
     assert ".tag-tree" in console.STYLE_CSS
 
 
