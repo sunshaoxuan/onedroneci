@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.28"
+APP_VERSION = "0.3.29"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -822,6 +822,7 @@ INDEX_HTML = """<!doctype html>
           </fieldset>
           <fieldset class="form-section">
             <legend data-i18n="mailServiceInfo">メールサービス情報</legend>
+            <label class="standard-only"><span data-i18n="mailUsage">メール利用</span><select name="mail_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
             <label class="standard-only"><span data-i18n="mailHostIp">メール主機 IP</span><input name="mail_host_ip"></label>
             <label class="standard-only"><span data-i18n="mailPort">メールポート</span><input name="mail_port" type="number" min="1" max="65535"></label>
             <label class="standard-only"><span data-i18n="mailEncryption">暗号化方式</span><select name="mail_encryption"><option value=""></option><option>none</option><option>SSL</option><option>TLS</option><option>STARTTLS</option></select></label>
@@ -832,6 +833,7 @@ INDEX_HTML = """<!doctype html>
           </fieldset>
           <fieldset class="form-section">
             <legend data-i18n="updsServiceInfo">UPDS サービス情報</legend>
+            <label class="standard-only"><span data-i18n="workflowUpds">ワークフロー申請 UPDSへ連携</span><select name="workflow_upds_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
             <label class="standard-only"><span data-i18n="updsHostName">UPDS 主機名</span><input name="upds_host_name"></label>
             <label class="standard-only"><span data-i18n="updsUser">UPDS ユーザー</span><input name="upds_user"></label>
             <label class="standard-only"><span data-i18n="updsPassword">UPDS パスワード</span><input name="upds_password"></label>
@@ -840,6 +842,7 @@ INDEX_HTML = """<!doctype html>
           </fieldset>
           <fieldset class="form-section">
             <legend data-i18n="ekispertInfo">駅すぱあと情報</legend>
+            <label class="standard-only"><span data-i18n="ekispertServer">駅すぱあとサーバ</span><select name="ekispert_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
             <label class="standard-only section-wide"><span data-i18n="ekispertUrl">駅すぱあと URL</span><input name="ekispert_url" placeholder="https://"></label>
           </fieldset>
         </section>
@@ -848,10 +851,7 @@ INDEX_HTML = """<!doctype html>
             <legend data-i18n="customerSituation">お客様の実績状況収集</legend>
             <div class="option-matrix">
               <label><span data-i18n="facilitySituation">施設状況</span><select name="facility_situation"><option value="single" data-i18n="singleFacility">単施設（一つ給与計算センター）</option><option value="multiple" data-i18n="multipleFacilities">複数施設（複数給与計算センター）</option></select></label>
-              <label><span data-i18n="mailUsage">メール利用</span><select name="mail_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
-              <label><span data-i18n="ekispertServer">駅すぱあとサーバ</span><select name="ekispert_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
               <label><span data-i18n="courseLecture">係・講座</span><select name="course_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
-              <label><span data-i18n="workflowUpds">ワークフロー申請 UPDSへ連携</span><select name="workflow_upds_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
               <label><span data-i18n="personalNumber">個人識別番号</span><select name="personal_number_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
             </div>
           </fieldset>

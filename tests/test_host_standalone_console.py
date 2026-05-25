@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.28"
+    assert console.APP_VERSION == "0.3.29"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -630,6 +630,21 @@ def test_standard_console_has_preparation_and_import_plan_tabs():
     assert ".standard-tab-panel" in console.STYLE_CSS
     assert '.standard-tab-panel[data-standard-tab-panel="import"]' in console.STYLE_CSS
     assert ".tag-tree" in console.STYLE_CSS
+
+
+def test_usage_options_are_in_preparation_service_sections():
+    html = console.INDEX_HTML
+    mail_section = html.split('data-i18n="mailServiceInfo"', 1)[1].split("</fieldset>", 1)[0]
+    upds_section = html.split('data-i18n="updsServiceInfo"', 1)[1].split("</fieldset>", 1)[0]
+    ekispert_section = html.split('data-i18n="ekispertInfo"', 1)[1].split("</fieldset>", 1)[0]
+    import_option_matrix = html.split('<div class="option-matrix">', 1)[1].split("</div>", 1)[0]
+
+    assert 'name="mail_usage"' in mail_section
+    assert 'name="workflow_upds_usage"' in upds_section
+    assert 'name="ekispert_usage"' in ekispert_section
+    assert 'name="mail_usage"' not in import_option_matrix
+    assert 'name="workflow_upds_usage"' not in import_option_matrix
+    assert 'name="ekispert_usage"' not in import_option_matrix
 
 
 def test_standard_publish_plan_required_items_are_locked_and_submitted():
