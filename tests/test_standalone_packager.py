@@ -8,6 +8,9 @@ from standalone_packager import (
     PACKAGE_IN_STANDALONE_ZIP,
     WEB_IN_STANDALONE_ZIP,
     BuildVersion,
+    OhrImportConfig,
+    OhrMenuDisable,
+    OhrScheduledTaskDisable,
     ProductSqlConfig,
     StandaloneConfig,
     TenantImportConfig,
@@ -15,6 +18,7 @@ from standalone_packager import (
     build_product_package,
     default_organisation_dstart,
     patch_account_sql,
+    render_ohr_import_sql,
     render_tenant_import_sql,
     render_version_txt,
     update_config_ini,
@@ -173,6 +177,32 @@ def test_render_tenant_import_sql_records_import_plan():
     assert "{enableLecture}', 'true'" in sql
 
 
+def test_render_ohr_import_sql_records_menu_and_task_updates():
+    sql = render_ohr_import_sql(
+        OhrImportConfig(
+            disabled_menus=(
+                OhrMenuDisable("個人ポータル / プロフィール", "personal-portal", "EM_PR_MBR"),
+            ),
+            disabled_scheduled_tasks=(
+                OhrScheduledTaskDisable(
+                    "庶務事務 / 公開通知：発令情報",
+                    "a690a435-5055-4c7f-80c8-5ea3d717d0cd",
+                    "send-de-mail-batch",
+                    "stm.em-send-de-mail-batch.label",
+                    "em",
+                ),
+            ),
+        )
+    )
+
+    assert "update ohr_menu set enable = false" in sql
+    assert "application_name = 'personal-portal' and menu_code = 'EM_PR_MBR'" in sql
+    assert "\"ohr_scheduled_task\" set paused = true" in sql
+    assert "'a690a435-5055-4c7f-80c8-5ea3d717d0cd'" in sql
+    assert "display_flag = false" in sql
+    assert "code = 'send-de-mail-batch'" in sql
+
+
 def test_update_config_ini_replaces_database_and_ohr_values():
     text = update_config_ini(
         CONFIG,
@@ -233,6 +263,9 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
             enable_transport_setting=False,
             enable_lecture=True,
         ),
+        ohr_import_config=OhrImportConfig(
+            disabled_menus=(OhrMenuDisable("個人ポータル / 源泉徴収票", "personal-portal", "EM_PR_TXW"),),
+        ),
         data_sync_git_url=str(data_sync_repo),
         data_sync_dir=data_sync_work,
     )
@@ -251,6 +284,8 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert "{enableEmail}', 'true'" in import_plan_sql
     assert "{enableTransportSetting}', 'false'" in import_plan_sql
     assert "{enableLecture}', 'true'" in import_plan_sql
+    ohr_import_plan_sql = (product_dir / "2.ohr" / "99.import_plan.sql").read_text(encoding="utf-8")
+    assert "application_name = 'personal-portal' and menu_code = 'EM_PR_TXW'" in ohr_import_plan_sql
     account_sql = (product_dir / "2.ohr" / "4.account.sql").read_text(encoding="utf-8")
     assert "'2026-05-01'" in account_sql
     assert '{"ja-JP": "テスト大学"}' in account_sql

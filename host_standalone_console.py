@@ -19,6 +19,9 @@ from hv_vm_tools import hyperv_host
 from hv_vm_tools.config import Settings
 from standalone_packager import (
     BuildVersion,
+    OhrImportConfig,
+    OhrMenuDisable,
+    OhrScheduledTaskDisable,
     ProductSqlConfig,
     StandaloneConfig,
     TenantImportConfig,
@@ -39,7 +42,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.35"
+APP_VERSION = "0.3.36"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -74,6 +77,83 @@ PACKAGING_STEP_MAP = {
     "help_sql_replace": "help_sql",
     "standalone_zip_rebuild": "standalone_zip",
 }
+
+PUBLISH_MENU_MAPPINGS = [
+    ("publish_shomu_profile", True, "個人ポータル / プロフィール", "personal-portal", "EM_PR_MBR", "publish_group_shomuSystem"),
+    ("publish_shomu_source_tax", False, "個人ポータル / 源泉徴収票", "personal-portal", "EM_PR_TXW", "publish_group_shomuSystem"),
+    ("publish_shomu_issue_info", False, "個人ポータル / 発令情報", "personal-portal", "EM_PR_HRJ", "publish_group_shomuSystem"),
+    ("publish_nencho_tax", False, "個人ポータル / 税法扶養申請", "personal-portal", "PP_PR_MTA", "publish_group_yearEndAdjustment"),
+    ("publish_apps_status", True, "個人ポータル / 申請・承認状況", "personal-portal", "BP_PR_ASS", "publish_group_applications"),
+    ("publish_apps_agent", False, "個人ポータル / 代理状況", "personal-portal", "BP_AG_FSS", "publish_group_applications"),
+    ("publish_allowance_current", False, "個人ポータル / 現状確認", "personal-portal", "BP_PR_CSC", "publish_group_allowances"),
+    ("publish_shomu_source_tax_admin", False, "庶務事務 / 源泉徴収票管理", "em", "EM_HR_TXW", "publish_group_shomuSystem"),
+    ("publish_shomu_issue_admin", False, "庶務事務 / 発令情報管理", "em", "EM_HR_HRJ", "publish_group_shomuSystem"),
+    ("publish_nencho_tax", False, "年末調整 / 税法扶養申請", "taxadjustment", "EMA_PR_PRT", "publish_group_yearEndAdjustment"),
+    ("publish_nencho_tax_admin", False, "年末調整 / 税法扶養申請管理", "taxadjustment", "EMA_HR_PRT", "publish_group_yearEndAdjustment"),
+]
+
+PUBLISH_SCHEDULED_TASK_MAPPINGS = [
+    (
+        "publish_shomu_issue_info",
+        False,
+        "庶務事務 / データ連携：Public人事給与→発令情報",
+        "604b907c-f82d-4737-9b6f-fefc65c08dc7",
+        "mdm-data-synchronization-decree-data",
+        "stm.mdm-data-synchronization-decree-data.label",
+        "em",
+        "publish_group_shomuSystem",
+    ),
+    (
+        "publish_shomu_source_tax",
+        False,
+        "庶務事務 / データ連携：Public人事給与→源泉徴収票",
+        "38fb8efd-8a77-418d-b61b-237e0c15b352",
+        "mdm-data-synchronization-tax-data",
+        "stm.mdm-data-synchronization-tax-data.label",
+        "em",
+        "publish_group_shomuSystem",
+    ),
+    (
+        "publish_shomu_issue_info",
+        False,
+        "庶務事務 / 公開通知：発令情報",
+        "a690a435-5055-4c7f-80c8-5ea3d717d0cd",
+        "send-de-mail-batch",
+        "stm.em-send-de-mail-batch.label",
+        "em",
+        "publish_group_shomuSystem",
+    ),
+    (
+        "publish_shomu_source_tax",
+        False,
+        "庶務事務 / 公開通知：源泉徴収票（電子交付未同意者）",
+        "b36fbb8e-a0b4-49ad-b03e-f587f41e022a",
+        "send-tax-mail-batch",
+        "stm.em-send-tax-mail-batch.label",
+        "em",
+        "publish_group_shomuSystem",
+    ),
+    (
+        "publish_shomu_source_tax",
+        False,
+        "庶務事務 / 公開通知：源泉徴収票（電子交付同意者）",
+        "69098673-57ff-4924-8232-46cf80371192",
+        "send-tax-not-agree-mail-batch",
+        "stm.em-send-tax-not-agree-mail-batch.label",
+        "em",
+        "publish_group_shomuSystem",
+    ),
+    (
+        "publish_nencho_tax",
+        False,
+        "年末調整 / データ連携：税法扶養申請→Public人事給与",
+        "10e99dbd-f2b4-44f3-9445-62debcee0710",
+        "hr-to-upds-getsukazoku",
+        "stm.hr-to-upds-getsukazoku.label",
+        "taxadjustment",
+        "publish_group_yearEndAdjustment",
+    ),
+]
 
 
 def make_progress() -> list[dict[str, Any]]:
@@ -312,6 +392,26 @@ def tenant_import_config_from_request(payload: dict[str, Any]) -> TenantImportCo
         enable_transport_setting=str(payload.get("ekispert_usage") or "none") == "use",
         enable_lecture=str(payload.get("course_usage") or "use") == "use",
     )
+
+
+def publish_enabled(payload: dict[str, Any], field: str, default: bool, group_field: str) -> bool:
+    if not request_bool(payload, group_field, True):
+        return False
+    return request_bool(payload, field, default)
+
+
+def ohr_import_config_from_request(payload: dict[str, Any]) -> OhrImportConfig:
+    disabled_menus = [
+        OhrMenuDisable(label, application_name, menu_code)
+        for field, default, label, application_name, menu_code, group_field in PUBLISH_MENU_MAPPINGS
+        if not publish_enabled(payload, field, default, group_field)
+    ]
+    disabled_scheduled_tasks = [
+        OhrScheduledTaskDisable(label, uuid, code, name_i18n_key, application_name)
+        for field, default, label, uuid, code, name_i18n_key, application_name, group_field in PUBLISH_SCHEDULED_TASK_MAPPINGS
+        if not publish_enabled(payload, field, default, group_field)
+    ]
+    return OhrImportConfig(tuple(disabled_menus), tuple(disabled_scheduled_tasks))
 
 
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -736,6 +836,7 @@ def run_job(job_id: str) -> None:
                 organisation_dstart=req.get("organisation_dstart") or default_organisation_dstart(),
             ),
             tenant_import_config=tenant_import_config_from_request(req),
+            ohr_import_config=ohr_import_config_from_request(req),
             sql_svn_url=configured_sql_svn_url(),
             data_sync_git_url=configured_data_sync_git_url(),
             data_sync_branch=configured_data_sync_branch(),

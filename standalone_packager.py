@@ -67,6 +67,28 @@ class TenantImportConfig:
     enable_lecture: bool = False
 
 
+@dataclass(frozen=True)
+class OhrMenuDisable:
+    label: str
+    application_name: str
+    menu_code: str
+
+
+@dataclass(frozen=True)
+class OhrScheduledTaskDisable:
+    label: str
+    uuid: str
+    code: str
+    name_i18n_key: str
+    application_name: str
+
+
+@dataclass(frozen=True)
+class OhrImportConfig:
+    disabled_menus: tuple[OhrMenuDisable, ...] = ()
+    disabled_scheduled_tasks: tuple[OhrScheduledTaskDisable, ...] = ()
+
+
 def configured_output_dir() -> Path:
     return Path(os.environ.get("STANDALONE_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR)))
 
@@ -168,6 +190,37 @@ def render_tenant_import_sql(config: TenantImportConfig) -> str:
             "",
         ]
     )
+
+
+def render_ohr_import_sql(config: OhrImportConfig) -> str:
+    lines = ["-- 導入計画", ""]
+    if not config.disabled_menus and not config.disabled_scheduled_tasks:
+        lines.extend(["-- 画面公開計画による非公開メニュー、停止タスクはありません。", ""])
+        return "\n".join(lines)
+
+    for item in config.disabled_menus:
+        lines.extend(
+            [
+                f"-- {item.label}",
+                "update ohr_menu set enable = false",
+                f"where application_name = {sql_quote(item.application_name)} and menu_code = {sql_quote(item.menu_code)};",
+                "",
+            ]
+        )
+    for item in config.disabled_scheduled_tasks:
+        lines.extend(
+            [
+                f"-- {item.label}",
+                f'update "ohr_scheduled_task" set paused = true where "uuid" = {sql_quote(item.uuid)};',
+                "",
+                "update ohr_scheduled_task_type set display_flag = false "
+                f"where code = {sql_quote(item.code)} "
+                f'and "name_i18n_key" = {sql_quote(item.name_i18n_key)} '
+                f"and application_name = {sql_quote(item.application_name)};",
+                "",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _safe_zip_member_name(name: str) -> str:
@@ -534,6 +587,7 @@ def build_product_package(
     config: StandaloneConfig,
     sql_config: ProductSqlConfig,
     tenant_import_config: TenantImportConfig | None = None,
+    ohr_import_config: OhrImportConfig | None = None,
     sql_svn_url: str | None = None,
     data_sync_git_url: str | None = None,
     data_sync_branch: str = DEFAULT_DATA_SYNC_BRANCH,
@@ -590,6 +644,11 @@ def build_product_package(
         if tenant_import_config:
             (product_dir / "1.tenant" / "99.import_plan.sql").write_text(
                 render_tenant_import_sql(tenant_import_config),
+                encoding="utf-8",
+            )
+        if ohr_import_config:
+            (product_dir / "2.ohr" / "99.import_plan.sql").write_text(
+                render_ohr_import_sql(ohr_import_config),
                 encoding="utf-8",
             )
         (product_dir / "version.txt").write_text(render_version_txt(version), encoding="utf-8")

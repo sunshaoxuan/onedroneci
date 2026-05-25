@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.35"
+    assert console.APP_VERSION == "0.3.36"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -570,6 +570,53 @@ def test_tenant_import_config_enables_business_process_and_service_flags():
     assert config.enable_email is True
     assert config.enable_transport_setting is True
     assert config.enable_lecture is False
+
+
+def test_ohr_import_config_is_derived_from_publish_plan():
+    config = console.ohr_import_config_from_request(
+        {
+            "publish_group_shomuSystem": "on",
+            "publish_group_yearEndAdjustment": "on",
+            "publish_group_applications": "on",
+            "publish_group_allowances": "on",
+            "publish_group_commonSettings": "on",
+            "publish_shomu_profile": "",
+            "publish_shomu_source_tax": "",
+            "publish_shomu_issue_info": "on",
+            "publish_nencho_tax": "",
+            "publish_nencho_tax_admin": "on",
+            "publish_apps_status": "on",
+            "publish_apps_agent": "",
+            "publish_allowance_current": "",
+        }
+    )
+
+    menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus}
+    task_codes = {item.code for item in config.disabled_scheduled_tasks}
+    assert ("personal-portal", "EM_PR_MBR") in menu_codes
+    assert ("personal-portal", "EM_PR_TXW") in menu_codes
+    assert ("taxadjustment", "EMA_PR_PRT") in menu_codes
+    assert ("taxadjustment", "EMA_HR_PRT") not in menu_codes
+    assert "mdm-data-synchronization-tax-data" in task_codes
+    assert "send-tax-mail-batch" in task_codes
+    assert "hr-to-upds-getsukazoku" in task_codes
+    assert "mdm-data-synchronization-decree-data" not in task_codes
+
+
+def test_ohr_import_config_disables_children_when_publish_group_is_off():
+    config = console.ohr_import_config_from_request(
+        {
+            "publish_group_shomuSystem": "",
+            "publish_group_yearEndAdjustment": "on",
+            "publish_group_applications": "on",
+            "publish_group_allowances": "on",
+            "publish_group_commonSettings": "on",
+        }
+    )
+
+    menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus}
+    assert ("personal-portal", "EM_PR_HRJ") in menu_codes
+    assert ("em", "EM_HR_HRJ") in menu_codes
 
 
 def test_running_status_uses_single_animated_heartbeat_not_log_spam():

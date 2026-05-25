@@ -201,7 +201,23 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 - `system_config.enableTransportSetting`
 - `system_config.enableLecture`
 
-## 13. 数据连携
+## 13. Ohr 导入设置 SQL
+
+主控台根据 `画面公開計画` 生成：
+
+```text
+製品/2.ohr/99.import_plan.sql
+```
+
+该脚本用于在普通 Ohr 数据库脚本执行后更新公开状态：
+
+- 勾选取消的画面会生成 `ohr_menu.enable = false`。
+- 关闭与源泉徴収票、発令情報、税法扶養申請相关的功能时，会生成对应 `ohr_scheduled_task.paused = true`。
+- 同时会将对应 `ohr_scheduled_task_type.display_flag` 设为 `false`。
+
+当前映射范围包括页面上已有的個人ポータル、庶務事務、年末調整中与样例对应的菜单与任务。
+
+## 14. 数据连携
 
 主控台从数据连携 Git 仓库获取最新资材：
 
@@ -215,7 +231,7 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 <交付根>/<remote_build_id>/データ連携/
 ```
 
-## 14. version.txt
+## 15. version.txt
 
 完整標準版交付包会写入：
 
@@ -233,7 +249,7 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 
 资材编号由页面输入，用于和前后端分支形成可人工核验的版本体系。
 
-## 15. OneHrStandalone.zip
+## 16. OneHrStandalone.zip
 
 二次打包器以宿主机固定模板 `OneHrStandalone.zip` 为基础重建 zip，只替换：
 
