@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.24"
+APP_VERSION = "0.3.25"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1431,6 +1431,30 @@ function switchStandardTab(tabName) {
     panel.hidden = panel.dataset.standardTabPanel !== tabName;
   });
 }
+function initializeFixedPublishItems() {
+  document.querySelectorAll('.tag-tree input[type="checkbox"][checked]').forEach(input => {
+    input.dataset.fixedRequired = 'true';
+    input.checked = true;
+    input.disabled = true;
+    input.setAttribute('aria-disabled', 'true');
+    const label = input.closest('label');
+    if (label) label.classList.add('fixed-required');
+    if (!input.parentElement.querySelector(`input[type="hidden"][data-fixed-mirror="true"][name="${input.name}"]`)) {
+      const mirror = document.createElement('input');
+      mirror.type = 'hidden';
+      mirror.name = input.name;
+      mirror.value = 'on';
+      mirror.dataset.fixedMirror = 'true';
+      input.after(mirror);
+    }
+  });
+}
+function enforceFixedPublishItems() {
+  document.querySelectorAll('.tag-tree input[type="checkbox"][data-fixed-required="true"]').forEach(input => {
+    input.checked = true;
+    input.disabled = true;
+  });
+}
 async function loadBranchLists() {
   const expectedVariant = getProductVariant();
   const requestSeq = ++branchListRequestSeq;
@@ -1631,6 +1655,11 @@ function setFormLocked(locked) {
       el.disabled = false;
       return;
     }
+    if (el.dataset.fixedRequired === 'true') {
+      el.checked = true;
+      el.disabled = true;
+      return;
+    }
     const standardHidden = isNho && el.closest('.standard-only');
     const nhoHidden = !isNho && el.closest('.nho-only');
     el.disabled = Boolean(standardHidden) || Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
@@ -1648,6 +1677,10 @@ function fillFormFromJob(job) {
   Array.from(form.elements).forEach(el => {
     if (!el.name || !(el.name in request)) return;
     if (el.type === 'checkbox') {
+      if (el.dataset.fixedRequired === 'true') {
+        el.checked = true;
+        return;
+      }
       el.checked = Boolean(request[el.name]);
       return;
     }
@@ -1658,6 +1691,7 @@ function fillFormFromJob(job) {
     el.value = request[el.name] == null ? '' : request[el.name];
   });
   applyVariantVisibility();
+  enforceFixedPublishItems();
 }
 
 function markSelectedJobRow(jobId) {
@@ -1808,6 +1842,7 @@ document.querySelectorAll('input[name="product_variant"]').forEach(el => {
 document.querySelectorAll('.standard-tab').forEach(button => {
   button.addEventListener('click', () => switchStandardTab(button.dataset.standardTab || 'prep'));
 });
+initializeFixedPublishItems();
 document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
   const frame = document.getElementById('terminalFrame');
   if (event.target.open && !frame.dataset.ready) {
@@ -2331,6 +2366,20 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   font-size: 13px;
 }
 .tag-tree input { width: auto; min-height: auto; }
+.tag-tree label.fixed-required { color: #111; cursor: not-allowed; }
+.tag-tree label.fixed-required input { opacity: 1; accent-color: #111; }
+.tag-tree label.fixed-required span::after {
+  content: "必須";
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 760;
+  vertical-align: 1px;
+}
 .variant-field {
   grid-column: 1 / -1;
   display: flex;

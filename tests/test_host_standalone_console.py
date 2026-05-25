@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.24"
+    assert console.APP_VERSION == "0.3.25"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -629,6 +629,15 @@ def test_standard_console_has_preparation_and_import_plan_tabs():
     assert "document.querySelectorAll('.standard-tab')" in console.APP_JS
     assert ".standard-tab-panel" in console.STYLE_CSS
     assert ".tag-tree" in console.STYLE_CSS
+
+
+def test_standard_publish_plan_required_items_are_locked_and_submitted():
+    assert "function initializeFixedPublishItems()" in console.APP_JS
+    assert "input.dataset.fixedRequired = 'true'" in console.APP_JS
+    assert 'input[type="hidden"][data-fixed-mirror="true"]' in console.APP_JS
+    assert "function enforceFixedPublishItems()" in console.APP_JS
+    assert "el.dataset.fixedRequired === 'true'" in console.APP_JS
+    assert ".tag-tree label.fixed-required" in console.STYLE_CSS
 
 
 def test_build_terminal_proxy_rewrites_absolute_assets():
