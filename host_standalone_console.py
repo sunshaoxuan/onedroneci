@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.33"
+APP_VERSION = "0.3.34"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -260,6 +260,12 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     required = ["conf_server_host"] if product_variant == "standard" and build_frontend else []
     if product_variant == "standard" and build_backend and build_frontend:
         required.extend(["postgresql_host", "organisation_name"])
+    if product_variant == "standard" and str(payload.get("mail_usage") or "none") == "use":
+        required.extend(["mail_host_ip", "mail_port", "mail_user", "mail_password"])
+    if product_variant == "standard" and str(payload.get("workflow_upds_usage") or "none") == "use":
+        required.extend(["upds_host_name", "upds_user", "upds_password", "upds_port", "upds_db_name"])
+    if product_variant == "standard" and str(payload.get("ekispert_usage") or "none") == "use":
+        required.append("ekispert_url")
     for key in required:
         if not str(payload.get(key) or "").strip():
             return payload, f"missing {key}"
@@ -822,7 +828,7 @@ INDEX_HTML = """<!doctype html>
           </fieldset>
           <fieldset class="form-section">
             <legend data-i18n="mailServiceInfo">メールサービス情報</legend>
-            <label class="standard-only"><span data-i18n="mailUsage">メール利用</span><select name="mail_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
+            <label class="standard-only"><span data-i18n="mailUsage">メール利用</span><select name="mail_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only"><span data-i18n="mailHostIp">メール主機 IP</span><input name="mail_host_ip"></label>
             <label class="standard-only"><span data-i18n="mailPort">メールポート</span><input name="mail_port" type="number" min="1" max="65535"></label>
             <label class="standard-only"><span data-i18n="mailEncryption">暗号化方式</span><select name="mail_encryption"><option value=""></option><option>none</option><option>SSL</option><option>TLS</option><option>STARTTLS</option></select></label>
@@ -833,7 +839,7 @@ INDEX_HTML = """<!doctype html>
           </fieldset>
           <fieldset class="form-section">
             <legend data-i18n="updsServiceInfo">UPDS サービス情報</legend>
-            <label class="standard-only"><span data-i18n="workflowUpds">ワークフロー申請 UPDSへ連携</span><select name="workflow_upds_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
+            <label class="standard-only"><span data-i18n="workflowUpds">ワークフロー申請 UPDSへ連携</span><select name="workflow_upds_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only"><span data-i18n="updsHostName">UPDS 主機名</span><input name="upds_host_name"></label>
             <label class="standard-only"><span data-i18n="updsUser">UPDS ユーザー</span><input name="upds_user"></label>
             <label class="standard-only"><span data-i18n="updsPassword">UPDS パスワード</span><input name="upds_password"></label>
@@ -842,7 +848,7 @@ INDEX_HTML = """<!doctype html>
           </fieldset>
           <fieldset class="form-section">
             <legend data-i18n="ekispertInfo">駅すぱあと情報</legend>
-            <label class="standard-only"><span data-i18n="ekispertServer">駅すぱあとサーバ</span><select name="ekispert_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
+            <label class="standard-only"><span data-i18n="ekispertServer">駅すぱあとサーバ</span><select name="ekispert_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only section-wide"><span data-i18n="ekispertUrl">駅すぱあと URL</span><input name="ekispert_url" placeholder="https://"></label>
           </fieldset>
         </section>
@@ -1024,6 +1030,7 @@ const I18N = {
     configHistoryLoad: '読み込み',
     configHistoryDelete: '削除',
     noConfigHistory: '保存された設定履歴はありません。',
+    requiredWhenUsed: '利用する場合は入力してください。',
     historyKicker: '履歴',
     historyTitle: '構造履歴',
     resultKicker: '結果',
@@ -1165,6 +1172,7 @@ const I18N = {
     configHistoryLoad: '加载',
     configHistoryDelete: '删除',
     noConfigHistory: '还没有保存的配置历史。',
+    requiredWhenUsed: '选择利用时必须输入。',
     historyKicker: '历史',
     historyTitle: '构造历史',
     resultKicker: '结果',
@@ -1306,6 +1314,7 @@ const I18N = {
     configHistoryLoad: 'Load',
     configHistoryDelete: 'Delete',
     noConfigHistory: 'No saved configuration history.',
+    requiredWhenUsed: 'Required when use is selected.',
     historyKicker: 'History',
     historyTitle: 'Build history',
     resultKicker: 'Result',
@@ -1574,6 +1583,34 @@ function initializePublishMenuGroups() {
 }
 function enforcePublishMenuGroups() {
   document.querySelectorAll('.tag-tree > details').forEach(applyPublishMenuGroupState);
+}
+const CONDITIONAL_REQUIRED_GROUPS = [
+  {toggle: 'mail_usage', fields: ['mail_host_ip', 'mail_port', 'mail_user', 'mail_password']},
+  {toggle: 'workflow_upds_usage', fields: ['upds_host_name', 'upds_user', 'upds_password', 'upds_port', 'upds_db_name']},
+  {toggle: 'ekispert_usage', fields: ['ekispert_url']}
+];
+function markConditionalRequiredFields() {
+  CONDITIONAL_REQUIRED_GROUPS.forEach(group => {
+    group.fields.forEach(name => {
+      const field = document.querySelector(`[name="${name}"]`);
+      const label = field && field.closest('label');
+      if (label) label.classList.add('conditional-required');
+    });
+  });
+}
+function validateConditionalRequiredFields(form) {
+  for (const group of CONDITIONAL_REQUIRED_GROUPS) {
+    if (!form.elements[group.toggle] || form.elements[group.toggle].value !== 'use') continue;
+    for (const name of group.fields) {
+      const field = form.elements[name];
+      if (field && !String(field.value || '').trim()) {
+        field.focus();
+        alert(t('requiredWhenUsed'));
+        return false;
+      }
+    }
+  }
+  return true;
 }
 async function loadBranchLists() {
   const expectedVariant = getProductVariant();
@@ -2007,6 +2044,7 @@ document.querySelectorAll('.standard-tab').forEach(button => {
 });
 initializeFixedPublishItems();
 initializePublishMenuGroups();
+markConditionalRequiredFields();
 document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
   const frame = document.getElementById('terminalFrame');
   if (event.target.open && !frame.dataset.ready) {
@@ -2096,6 +2134,7 @@ async function deleteConfigHistory(configId) {
 
 document.getElementById('form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (!validateConditionalRequiredFields(event.target)) return;
   const terminal = await refreshTerminal();
   if (terminal.status !== 'running') {
     alert(t('terminalFirst'));
@@ -2722,6 +2761,11 @@ label { display: grid; gap: 7px; font-weight: 760; font-size: 13px; color: #2626
   content: " *";
   color: var(--danger);
   font-weight: 900;
+}
+.conditional-required > span::after {
+  content: " *";
+  color: var(--muted);
+  font-weight: 760;
 }
 .material-combo {
   position: relative;

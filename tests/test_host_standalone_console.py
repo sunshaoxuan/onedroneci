@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.33"
+    assert console.APP_VERSION == "0.3.34"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -647,6 +647,48 @@ def test_usage_options_are_in_preparation_service_sections():
     assert 'name="ekispert_usage"' not in import_option_matrix
     assert ".option-matrix" in console.STYLE_CSS
     assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in console.STYLE_CSS
+    assert 'name="mail_usage"><option value="none"' in console.INDEX_HTML
+    assert 'name="workflow_upds_usage"><option value="none"' in console.INDEX_HTML
+    assert 'name="ekispert_usage"><option value="none"' in console.INDEX_HTML
+
+
+def test_service_usage_requires_related_fields_when_enabled():
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260525",
+            "backend_branch": "release_20260525",
+            "mail_usage": "use",
+        }
+    )
+    assert error == "missing mail_host_ip"
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260525",
+            "backend_branch": "release_20260525",
+            "workflow_upds_usage": "use",
+            "upds_host_name": "upds",
+            "upds_user": "user",
+            "upds_password": "secret",
+            "upds_port": "5432",
+        }
+    )
+    assert error == "missing upds_db_name"
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260525",
+            "backend_branch": "release_20260525",
+            "ekispert_usage": "use",
+        }
+    )
+    assert error == "missing ekispert_url"
+    assert "function validateConditionalRequiredFields(form)" in console.APP_JS
+    assert "markConditionalRequiredFields();" in console.APP_JS
+    assert ".conditional-required > span::after" in console.STYLE_CSS
 
 
 def test_standard_publish_plan_required_items_are_locked_and_submitted():
