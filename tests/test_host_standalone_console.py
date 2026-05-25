@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.29"
+    assert console.APP_VERSION == "0.3.30"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -645,6 +645,8 @@ def test_usage_options_are_in_preparation_service_sections():
     assert 'name="mail_usage"' not in import_option_matrix
     assert 'name="workflow_upds_usage"' not in import_option_matrix
     assert 'name="ekispert_usage"' not in import_option_matrix
+    assert ".option-matrix" in console.STYLE_CSS
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in console.STYLE_CSS
 
 
 def test_standard_publish_plan_required_items_are_locked_and_submitted():
