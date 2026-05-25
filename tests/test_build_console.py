@@ -458,6 +458,36 @@ def test_extract_nho_release_branches_from_rows():
     assert server.branch_from_release_section(rows, "Backend") == ""
 
 
+def test_nho_release_checklist_is_found_recursively_from_material_root(monkeypatch):
+    server = load_server()
+    text_calls = []
+    binary_calls = []
+
+    def fake_run_svn_text(args, timeout=60):
+        text_calls.append(args)
+        return "memo/\n別紙/リリースチェックリスト_old.xlsx\n深い/階層/リリースチェックリスト.xlsx\n製品/リリースチェックリスト.xlsx\n"
+
+    def fake_run_svn_binary(args, timeout=120):
+        binary_calls.append(args)
+        return b"xlsx"
+
+    monkeypatch.setattr(server, "run_svn_text", fake_run_svn_text)
+    monkeypatch.setattr(server, "run_svn_binary", fake_run_svn_binary)
+    monkeypatch.setattr(server, "extract_nho_release_branches_from_xlsx", lambda data: {"frontend_branch": "release_fe", "backend_branch": "release_be"})
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_URL", "http://example.test/svn/97.リリース作業")
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_USERNAME", "svn-user")
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_PASSWORD", "svn-pass")
+
+    result = server.get_nho_material_release_branches("20260325")
+
+    assert result["frontend_branch"] == "release_fe"
+    assert result["backend_branch"] == "release_be"
+    assert result["source"] == "http://example.test/svn/97.リリース作業/20260325リリース作業/製品/リリースチェックリスト.xlsx"
+    assert text_calls[0][-1] == "http://example.test/svn/97.リリース作業/20260325リリース作業"
+    assert "-R" in text_calls[0]
+    assert binary_calls[0][-1] == result["source"]
+
+
 def test_nho_material_database_assets_are_exported_as_zip(monkeypatch):
     server = load_server()
     calls = []

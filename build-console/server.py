@@ -1772,20 +1772,36 @@ def extract_nho_release_branches_from_xlsx(xlsx_bytes: bytes) -> dict[str, str]:
     }
 
 
+def find_nho_release_checklist_path(material_url: str, svn_username: str, svn_password: str) -> str:
+    ls_args = svn_auth_command(["ls", "-R"], svn_username, svn_password)
+    files = run_svn_text([*ls_args, material_url], timeout=120).splitlines()
+    candidates = [
+        name.strip().rstrip("/")
+        for name in files
+        if "リリースチェックリスト" in name and name.lower().endswith((".xlsx", ".xlsm"))
+    ]
+    if not candidates:
+        raise RuntimeError("リリースチェックリスト Excel が見つかりません")
+    return sorted(
+        candidates,
+        key=lambda name: (
+            Path(name).name not in {"リリースチェックリスト.xlsx", "リリースチェックリスト.xlsm"},
+            name.count("/"),
+            name.lower(),
+        ),
+    )[0]
+
+
 def get_nho_material_release_branches(material_number: str) -> dict[str, str]:
     if not re.fullmatch(r"\d{8}", material_number or ""):
         raise RuntimeError("invalid material_number")
     svn_url = os.environ.get("NHO_MATERIAL_SVN_URL", NHO_MATERIAL_SVN_URL).rstrip("/")
     svn_username = os.environ.get("NHO_MATERIAL_SVN_USERNAME", NHO_MATERIAL_SVN_USERNAME)
     svn_password = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", NHO_MATERIAL_SVN_PASSWORD)
-    product_url = f"{svn_url}/{material_number}リリース作業/製品"
-    ls_args = svn_auth_command(["ls"], svn_username, svn_password)
-    files = run_svn_text([*ls_args, product_url]).splitlines()
-    checklist = next((name.strip().rstrip("/") for name in files if "リリースチェックリスト" in name and name.lower().endswith((".xlsx", ".xlsm"))), "")
-    if not checklist:
-        raise RuntimeError("リリースチェックリスト Excel が見つかりません")
+    material_url = f"{svn_url}/{material_number}リリース作業"
+    checklist = find_nho_release_checklist_path(material_url, svn_username, svn_password)
     cat_args = svn_auth_command(["cat"], svn_username, svn_password)
-    source_url = f"{product_url}/{checklist}"
+    source_url = f"{material_url}/{checklist}"
     result = extract_nho_release_branches_from_xlsx(run_svn_binary([*cat_args, source_url]))
     result["material_number"] = material_number
     result["source"] = source_url
