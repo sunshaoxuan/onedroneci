@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.27"
+APP_VERSION = "0.3.28"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1531,6 +1531,49 @@ function enforceFixedPublishItems() {
     input.disabled = true;
   });
 }
+function publishMenuGroupName(details) {
+  const summary = details.querySelector('summary');
+  return `publish_group_${(summary && summary.dataset.i18n) || 'menu'}`;
+}
+function applyPublishMenuGroupState(details) {
+  const toggle = details.querySelector('.publish-menu-toggle');
+  const enabled = !toggle || toggle.checked;
+  details.classList.toggle('publish-menu-disabled', !enabled);
+  details.dataset.menuDisabled = enabled ? 'false' : 'true';
+  details.querySelectorAll('input').forEach(input => {
+    if (input === toggle) return;
+    if (input.dataset.fixedMirror === 'true') {
+      input.disabled = !enabled;
+      return;
+    }
+    if (!enabled) {
+      input.disabled = true;
+      return;
+    }
+    if (input.dataset.fixedRequired === 'true') {
+      input.checked = true;
+      input.disabled = true;
+    }
+  });
+}
+function initializePublishMenuGroups() {
+  document.querySelectorAll('.tag-tree details').forEach(details => {
+    const summary = details.querySelector('summary');
+    if (!summary || summary.querySelector('.publish-menu-toggle')) return;
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox';
+    toggle.name = publishMenuGroupName(details);
+    toggle.checked = true;
+    toggle.className = 'publish-menu-toggle';
+    toggle.addEventListener('click', event => event.stopPropagation());
+    toggle.addEventListener('change', () => applyPublishMenuGroupState(details));
+    summary.prepend(toggle);
+    applyPublishMenuGroupState(details);
+  });
+}
+function enforcePublishMenuGroups() {
+  document.querySelectorAll('.tag-tree details').forEach(applyPublishMenuGroupState);
+}
 async function loadBranchLists() {
   const expectedVariant = getProductVariant();
   const requestSeq = ++branchListRequestSeq;
@@ -1732,6 +1775,22 @@ function setFormLocked(locked) {
       el.disabled = false;
       return;
     }
+    if (el.classList && el.classList.contains('publish-menu-toggle')) {
+      const standardHidden = isNho && el.closest('.standard-only');
+      el.disabled = Boolean(standardHidden) || locked || modeLocked || terminalLocked;
+      applyPublishMenuGroupState(el.closest('details'));
+      return;
+    }
+    if (el.dataset.fixedMirror === 'true') {
+      const disabledByMenu = el.closest('details') && el.closest('details').dataset.menuDisabled === 'true';
+      el.disabled = Boolean(disabledByMenu);
+      return;
+    }
+    const disabledByMenu = el.closest('details') && el.closest('details').dataset.menuDisabled === 'true';
+    if (disabledByMenu) {
+      el.disabled = true;
+      return;
+    }
     if (el.dataset.fixedRequired === 'true') {
       el.checked = true;
       el.disabled = true;
@@ -1746,6 +1805,7 @@ function setFormLocked(locked) {
     el.disabled = Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
   });
   document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
+  enforcePublishMenuGroups();
 }
 
 function fillFormFromRequest(request) {
@@ -1769,6 +1829,7 @@ function fillFormFromRequest(request) {
   });
   applyVariantVisibility();
   enforceFixedPublishItems();
+  enforcePublishMenuGroups();
 }
 
 function fillFormFromJob(job) {
@@ -1925,6 +1986,7 @@ document.querySelectorAll('.standard-tab').forEach(button => {
   button.addEventListener('click', () => switchStandardTab(button.dataset.standardTab || 'prep'));
 });
 initializeFixedPublishItems();
+initializePublishMenuGroups();
 document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
   const frame = document.getElementById('terminalFrame');
   if (event.target.open && !frame.dataset.ready) {
@@ -2496,6 +2558,13 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   cursor: pointer;
   font-weight: 760;
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.tag-tree summary input {
+  width: auto;
+  min-height: auto;
 }
 .tag-tree label {
   display: flex;
@@ -2519,6 +2588,17 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   font-size: 10px;
   font-weight: 760;
   vertical-align: 1px;
+}
+.tag-tree details.publish-menu-disabled {
+  background: #f5f5f5;
+  color: var(--muted);
+}
+.tag-tree details.publish-menu-disabled label {
+  color: var(--muted);
+}
+.tag-tree details.publish-menu-disabled label.fixed-required span::after {
+  background: #fff;
+  color: #8a8a8a;
 }
 .variant-field {
   grid-column: 1 / -1;
