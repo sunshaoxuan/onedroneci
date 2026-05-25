@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.22"
+APP_VERSION = "0.3.23"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -2274,12 +2274,15 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  align-items: start;
 }
 .form-section {
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  align-content: start;
+  align-items: start;
   margin: 0;
   padding: 14px;
   border: 1px solid var(--line);
@@ -2298,7 +2301,10 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  align-items: start;
 }
+.option-matrix label { min-height: 0; }
+.option-matrix select { min-height: 38px; padding: 8px 10px; }
 .tag-tree {
   grid-column: 1 / -1;
   display: grid;
