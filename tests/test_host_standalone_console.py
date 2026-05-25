@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.21"
+    assert console.APP_VERSION == "0.3.22"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -605,6 +605,30 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "enterCreateMode();" in console.APP_JS
     assert "document.querySelectorAll('.standard-only')" in console.APP_JS
     assert "[hidden], .standard-only[hidden] { display: none !important; }" in console.STYLE_CSS
+
+
+def test_standard_console_has_preparation_and_import_plan_tabs():
+    assert 'data-standard-tab="prep"' in console.INDEX_HTML
+    assert 'data-standard-tab="import"' in console.INDEX_HTML
+    assert 'data-standard-tab-panel="prep"' in console.INDEX_HTML
+    assert 'data-standard-tab-panel="import"' in console.INDEX_HTML
+    for name in [
+        "employee_number_digits",
+        "ap_cpu_count",
+        "ap_memory_gb",
+        "web_cert_name",
+        "web_key_name",
+        "mail_host_ip",
+        "upds_db_name",
+        "ekispert_url",
+        "facility_situation",
+        "publish_common_log",
+    ]:
+        assert f'name="{name}"' in console.INDEX_HTML
+    assert "function switchStandardTab(tabName)" in console.APP_JS
+    assert "document.querySelectorAll('.standard-tab')" in console.APP_JS
+    assert ".standard-tab-panel" in console.STYLE_CSS
+    assert ".tag-tree" in console.STYLE_CSS
 
 
 def test_build_terminal_proxy_rewrites_absolute_assets():

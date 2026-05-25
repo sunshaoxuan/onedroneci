@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.21"
+APP_VERSION = "0.3.22"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -733,21 +733,89 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="product_variant" type="radio" value="standard" checked><span data-i18n="variantStandard">標準版</span></label>
           <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
         </fieldset>
+        <div class="standard-only standard-tabs" role="tablist" aria-label="standard settings tabs">
+          <button class="standard-tab active" type="button" data-standard-tab="prep" data-i18n="tabPreparation">事前準備</button>
+          <button class="standard-tab" type="button" data-standard-tab="import" data-i18n="tabImportPlan">導入計画</button>
+        </div>
         <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle nho-only" type="button" aria-label="NHO material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
-        <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
-        <label class="standard-only required-field"><span data-i18n="customerHost">顧客アクセスアドレス</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
-        <label class="standard-only"><span data-i18n="webPort">Web ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
-        <label class="check-row standard-only"><input name="conf_enable_https" type="checkbox"><span data-i18n="enableHttps">HTTPS / 443 設定を生成</span></label>
-        <label class="standard-only required-field"><span data-i18n="postgresHost">PostgreSQL Host</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
-        <label class="standard-only"><span data-i18n="postgresPort">PostgreSQL Port</span><input name="postgresql_port" type="number" value="5432"></label>
-        <label class="standard-only"><span data-i18n="postgresUser">PostgreSQL User</span><input name="postgresql_user" value="postgres"></label>
-        <label class="standard-only"><span data-i18n="postgresPassword">PostgreSQL Password</span><input name="postgresql_password" value="password"></label>
-        <label class="standard-only"><span data-i18n="appHostName">アプリケーションサービスホスト名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
-        <label class="standard-only"><span data-i18n="ohrServicePort">OHR Service Port</span><input name="ohr_service_port" type="number" value="3198"></label>
-        <label class="standard-only"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
-        <label class="standard-only"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
+        <section class="standard-only standard-tab-panel" data-standard-tab-panel="prep">
+          <fieldset class="form-section">
+            <legend data-i18n="basicBuildInfo">構築パラメータ</legend>
+            <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
+            <label class="standard-only"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
+            <label class="standard-only"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
+            <label class="standard-only"><span data-i18n="employeeNumberDigits">職員番号桁数</span><input name="employee_number_digits" type="number" min="1" max="20" placeholder="8"></label>
+          </fieldset>
+          <fieldset class="form-section">
+            <legend data-i18n="apHostInfo">AP 主機情報</legend>
+            <label class="standard-only"><span data-i18n="appHostName">AP 主機名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
+            <label class="standard-only required-field"><span data-i18n="apHostIp">AP 主機 IP</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
+            <label class="standard-only"><span data-i18n="apCpuCount">AP CPU 数</span><input name="ap_cpu_count" type="number" min="1" placeholder="8"></label>
+            <label class="standard-only"><span data-i18n="apMemoryGb">AP メモリ GB</span><input name="ap_memory_gb" type="number" min="1" placeholder="32"></label>
+          </fieldset>
+          <fieldset class="form-section">
+            <legend data-i18n="dbHostInfo">DB 主機情報</legend>
+            <label class="standard-only required-field"><span data-i18n="postgresHost">DB 主機名</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
+            <label class="standard-only"><span data-i18n="postgresUser">DB ユーザー</span><input name="postgresql_user" value="postgres"></label>
+            <label class="standard-only"><span data-i18n="postgresPassword">DB パスワード</span><input name="postgresql_password" value="password"></label>
+            <label class="standard-only"><span data-i18n="postgresPort">DB ポート</span><input name="postgresql_port" type="number" value="5432"></label>
+          </fieldset>
+          <fieldset class="form-section">
+            <legend data-i18n="webHostInfo">WEB 主機情報</legend>
+            <label class="standard-only"><span data-i18n="webHostName">WEB 主機名</span><input name="web_host_name" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
+            <label class="standard-only"><span data-i18n="webPort">WEB ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
+            <label class="standard-only"><span data-i18n="webCertName">WEB 証明書名</span><input name="web_cert_name" value="Server.pem"></label>
+            <label class="standard-only"><span data-i18n="webKeyName">WEB Key 名</span><input name="web_key_name" value="Server.key"></label>
+            <label class="check-row standard-only"><input name="conf_enable_https" type="checkbox"><span data-i18n="enableHttps">HTTPS / 443 設定を生成</span></label>
+          </fieldset>
+          <fieldset class="form-section">
+            <legend data-i18n="mailServiceInfo">メールサービス情報</legend>
+            <label class="standard-only"><span data-i18n="mailHostIp">メール主機 IP</span><input name="mail_host_ip"></label>
+            <label class="standard-only"><span data-i18n="mailPort">メールポート</span><input name="mail_port" type="number" min="1" max="65535"></label>
+            <label class="standard-only"><span data-i18n="mailEncryption">暗号化方式</span><select name="mail_encryption"><option value=""></option><option>none</option><option>SSL</option><option>TLS</option><option>STARTTLS</option></select></label>
+            <label class="standard-only"><span data-i18n="mailAuthMethod">認証方式</span><select name="mail_auth_method"><option value=""></option><option>none</option><option>plain</option><option>login</option></select></label>
+            <label class="standard-only"><span data-i18n="mailUser">メールユーザー</span><input name="mail_user"></label>
+            <label class="standard-only"><span data-i18n="mailPassword">メールパスワード</span><input name="mail_password"></label>
+            <label class="standard-only section-wide"><span data-i18n="mailNote">メール備考</span><input name="mail_note"></label>
+          </fieldset>
+          <fieldset class="form-section">
+            <legend data-i18n="updsServiceInfo">UPDS サービス情報</legend>
+            <label class="standard-only"><span data-i18n="updsHostName">UPDS 主機名</span><input name="upds_host_name"></label>
+            <label class="standard-only"><span data-i18n="updsUser">UPDS ユーザー</span><input name="upds_user"></label>
+            <label class="standard-only"><span data-i18n="updsPassword">UPDS パスワード</span><input name="upds_password"></label>
+            <label class="standard-only"><span data-i18n="updsPort">UPDS ポート</span><input name="upds_port" type="number" min="1" max="65535"></label>
+            <label class="standard-only"><span data-i18n="updsDbName">UPDS DB 名</span><input name="upds_db_name"></label>
+          </fieldset>
+          <fieldset class="form-section">
+            <legend data-i18n="ekispertInfo">駅すぱあと情報</legend>
+            <label class="standard-only section-wide"><span data-i18n="ekispertUrl">駅すぱあと URL</span><input name="ekispert_url" placeholder="https://"></label>
+          </fieldset>
+        </section>
+        <section class="standard-only standard-tab-panel" data-standard-tab-panel="import" hidden>
+          <fieldset class="form-section">
+            <legend data-i18n="customerSituation">お客様の実績状況収集</legend>
+            <div class="option-matrix">
+              <label><span data-i18n="facilitySituation">施設状況</span><select name="facility_situation"><option value="single" data-i18n="singleFacility">単施設（一つ給与計算センター）</option><option value="multiple" data-i18n="multipleFacilities">複数施設（複数給与計算センター）</option></select></label>
+              <label><span data-i18n="mailUsage">メール利用</span><select name="mail_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
+              <label><span data-i18n="ekispertServer">駅すぱあとサーバ</span><select name="ekispert_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
+              <label><span data-i18n="courseLecture">係・講座</span><select name="course_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
+              <label><span data-i18n="workflowUpds">ワークフロー申請 UPDSへ連携</span><select name="workflow_upds_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
+              <label><span data-i18n="personalNumber">個人識別番号</span><select name="personal_number_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
+            </div>
+          </fieldset>
+          <fieldset class="form-section">
+            <legend data-i18n="screenPublishPlan">画面公開計画</legend>
+            <div class="tag-tree">
+              <details open><summary data-i18n="shomuSystem">庶務事務</summary><label><input type="checkbox" name="publish_shomu_portal" checked><span>トップページ</span></label><label><input type="checkbox" name="publish_shomu_profile"><span>プロフィール</span></label><label><input type="checkbox" name="publish_shomu_payroll"><span>給与明細</span></label><label><input type="checkbox" name="publish_shomu_source_tax"><span>源泉徴収票</span></label><label><input type="checkbox" name="publish_shomu_issue_info"><span>発令情報</span></label><label><input type="checkbox" name="publish_shomu_staff_admin" checked><span>職員管理</span></label><label><input type="checkbox" name="publish_shomu_salary_reservation"><span>電子交付承諾状況</span></label><label><input type="checkbox" name="publish_shomu_payroll_admin"><span>給与明細管理</span></label><label><input type="checkbox" name="publish_shomu_source_tax_admin"><span>源泉徴収票管理</span></label><label><input type="checkbox" name="publish_shomu_issue_admin"><span>発令情報管理</span></label><label><input type="checkbox" name="publish_shomu_initial_login"><span>初期ログイン設定</span></label><label><input type="checkbox" name="publish_shomu_notification" checked><span>通知設定</span></label><label><input type="checkbox" name="publish_shomu_group" checked><span>グループ設定</span></label><label><input type="checkbox" name="publish_shomu_role" checked><span>ロール管理</span></label><label><input type="checkbox" name="publish_shomu_generic_master" checked><span>汎用マスタ</span></label></details>
+              <details open><summary data-i18n="yearEndAdjustment">年末調整</summary><label><input type="checkbox" name="publish_nencho_portal" checked><span>トップページ</span></label><label><input type="checkbox" name="publish_nencho_tax"><span>税法扶養申請</span></label><label><input type="checkbox" name="publish_nencho_home"><span>住宅利用申請</span></label><label><input type="checkbox" name="publish_nencho_admin"><span>年末調整管理</span></label><label><input type="checkbox" name="publish_nencho_tax_admin"><span>税法扶養申請管理</span></label><label><input type="checkbox" name="publish_nencho_home_admin"><span>住宅利用申請管理</span></label><label><input type="checkbox" name="publish_nencho_mail_template" checked><span>メールテンプレート設定</span></label><label><input type="checkbox" name="publish_nencho_notification" checked><span>通知設定</span></label><label><input type="checkbox" name="publish_nencho_group" checked><span>グループ設定</span></label><label><input type="checkbox" name="publish_nencho_role" checked><span>ロール管理</span></label><label><input type="checkbox" name="publish_nencho_generic_master" checked><span>汎用マスタ</span></label></details>
+              <details open><summary data-i18n="applications">各種申請</summary><label><input type="checkbox" name="publish_apps_portal" checked><span>トップページ</span></label><label><input type="checkbox" name="publish_apps_status" checked><span>申請状況</span></label><label><input type="checkbox" name="publish_apps_agent"><span>代理申請</span></label><label><input type="checkbox" name="publish_apps_license"><span>免許取得届</span></label><label><input type="checkbox" name="publish_apps_address"><span>住所届</span></label><label><input type="checkbox" name="publish_apps_account"><span>給与口座届</span></label><label><input type="checkbox" name="publish_apps_old_name"><span>旧姓使用</span></label><label><input type="checkbox" name="publish_apps_name_change"><span>氏名変更届</span></label><label><input type="checkbox" name="publish_apps_mail_template" checked><span>メールテンプレート設定</span></label><label><input type="checkbox" name="publish_apps_workflow" checked><span>ワークフロー設定</span></label><label><input type="checkbox" name="publish_apps_comment_limit" checked><span>コメント文字列の上限設定</span></label><label><input type="checkbox" name="publish_apps_notification" checked><span>通知設定</span></label><label><input type="checkbox" name="publish_apps_group" checked><span>グループ設定</span></label><label><input type="checkbox" name="publish_apps_role" checked><span>ロール管理</span></label><label><input type="checkbox" name="publish_apps_generic_master" checked><span>汎用マスタ</span></label></details>
+              <details open><summary data-i18n="allowances">諸手当</summary><label><input type="checkbox" name="publish_allowance_portal" checked><span>トップページ</span></label><label><input type="checkbox" name="publish_allowance_status" checked><span>申請状況</span></label><label><input type="checkbox" name="publish_allowance_agent"><span>代理状況</span></label><label><input type="checkbox" name="publish_allowance_current"><span>現状確認</span></label><label><input type="checkbox" name="publish_allowance_family"><span>扶養手当</span></label><label><input type="checkbox" name="publish_allowance_commute"><span>通勤手当</span></label><label><input type="checkbox" name="publish_allowance_single"><span>単身赴任手当</span></label><label><input type="checkbox" name="publish_allowance_housing"><span>住居手当申請</span></label></details>
+              <details open><summary data-i18n="commonSettings">共通設定</summary><label><input type="checkbox" name="publish_common_portal" checked><span>トップページ</span></label><label><input type="checkbox" name="publish_common_account" checked><span>アカウント管理</span></label><label><input type="checkbox" name="publish_common_staff"><span>職員管理</span></label><label><input type="checkbox" name="publish_common_customer"><span>顧客管理</span></label><label><input type="checkbox" name="publish_common_notice" checked><span>お知らせ管理</span></label><label><input type="checkbox" name="publish_common_salary_owner" checked><span>給与支払者情報管理</span></label><label><input type="checkbox" name="publish_common_mail_send"><span>メール送信管理</span></label><label><input type="checkbox" name="publish_common_history" checked><span>利用履歴参照</span></label><label><input type="checkbox" name="publish_common_notification" checked><span>通知設定</span></label><label><input type="checkbox" name="publish_common_data_sheet"><span>データシート設定</span></label><label><input type="checkbox" name="publish_common_group" checked><span>グループ設定</span></label><label><input type="checkbox" name="publish_common_role" checked><span>ロール管理</span></label><label><input type="checkbox" name="publish_common_retiree"><span>退職者参照設定</span></label><label><input type="checkbox" name="publish_common_belong_master" checked><span>所属マスタ</span></label><label><input type="checkbox" name="publish_common_job_master" checked><span>職種マスタ</span></label><label><input type="checkbox" name="publish_common_generic_master" checked><span>汎用マスタ</span></label><label><input type="checkbox" name="publish_common_system" checked><span>共通システム設定</span></label><label><input type="checkbox" name="publish_common_mail_setting"><span>メール設定</span></label><label><input type="checkbox" name="publish_common_scheduler" checked><span>スケジュールタスク</span></label><label><input type="checkbox" name="publish_common_route_search"><span>交通経路検索設定</span></label><label><input type="checkbox" name="publish_common_dictionary" checked><span>データ辞書</span></label><label><input type="checkbox" name="publish_common_report_template" checked><span>帳票テンプレート管理</span></label><label><input type="checkbox" name="publish_common_log" checked><span>ログ管理</span></label></details>
+            </div>
+          </fieldset>
+        </section>
       </div>
     </form>
 
@@ -831,20 +899,66 @@ const I18N = {
     startJob: '構造を開始',
     backendBranch: 'バックエンドブランチ',
     frontendBranch: 'フロントエンドブランチ',
+    tabPreparation: '事前準備',
+    tabImportPlan: '導入計画',
+    basicBuildInfo: '構築パラメータ',
     helpBranch: 'ヘルプブランチ',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
     enableHttps: 'HTTPS / 443 設定を生成',
+    apHostInfo: 'AP 主機情報',
+    apHostIp: 'AP 主機 IP',
+    apCpuCount: 'AP CPU 数',
+    apMemoryGb: 'AP メモリ GB',
+    dbHostInfo: 'DB 主機情報',
     postgresHost: 'PostgreSQL ホスト',
     postgresPort: 'PostgreSQL ポート',
     postgresUser: 'PostgreSQL ユーザー',
     postgresPassword: 'PostgreSQL パスワード',
+    webHostInfo: 'WEB 主機情報',
+    webHostName: 'WEB 主機名',
+    webCertName: 'WEB 証明書名',
+    webKeyName: 'WEB Key 名',
+    mailServiceInfo: 'メールサービス情報',
+    mailHostIp: 'メール主機 IP',
+    mailPort: 'メールポート',
+    mailEncryption: '暗号化方式',
+    mailAuthMethod: '認証方式',
+    mailUser: 'メールユーザー',
+    mailPassword: 'メールパスワード',
+    mailNote: 'メール備考',
+    updsServiceInfo: 'UPDS サービス情報',
+    updsHostName: 'UPDS 主機名',
+    updsUser: 'UPDS ユーザー',
+    updsPassword: 'UPDS パスワード',
+    updsPort: 'UPDS ポート',
+    updsDbName: 'UPDS DB 名',
+    ekispertInfo: '駅すぱあと情報',
+    ekispertUrl: '駅すぱあと URL',
     appHostName: 'アプリケーションサービスホスト名',
     appHostPlaceholder: '顧客アクセスアドレスを使用',
     ohrServicePort: 'OHR サービスポート',
     organisationName: '顧客機関名',
     organisationNamePlaceholder: '例：学校法人サンプル',
     organisationDstart: '機関開始日',
+    employeeNumberDigits: '職員番号桁数',
+    customerSituation: 'お客様の実績状況収集',
+    facilitySituation: '施設状況',
+    singleFacility: '単施設（一つ給与計算センター）',
+    multipleFacilities: '複数施設（複数給与計算センター）',
+    mailUsage: 'メール利用',
+    ekispertServer: '駅すぱあとサーバ',
+    courseLecture: '係・講座',
+    workflowUpds: 'ワークフロー申請 UPDSへ連携',
+    personalNumber: '個人識別番号',
+    use: '利用',
+    notUse: '利用しない',
+    screenPublishPlan: '画面公開計画',
+    shomuSystem: '庶務事務',
+    yearEndAdjustment: '年末調整',
+    applications: '各種申請',
+    allowances: '諸手当',
+    commonSettings: '共通設定',
     historyKicker: '履歴',
     historyTitle: '構造履歴',
     resultKicker: '結果',
@@ -921,20 +1035,66 @@ const I18N = {
     startJob: '开始构造',
     backendBranch: '后端分支',
     frontendBranch: '前端分支',
+    tabPreparation: '事前准备',
+    tabImportPlan: '导入计划',
+    basicBuildInfo: '构建参数',
     helpBranch: 'Help 分支',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
     enableHttps: '生成 HTTPS / 443 配置',
+    apHostInfo: 'AP 主机信息',
+    apHostIp: 'AP 主机 IP',
+    apCpuCount: 'AP CPU 数',
+    apMemoryGb: 'AP 内存 GB',
+    dbHostInfo: 'DB 主机信息',
     postgresHost: 'PostgreSQL 主机',
     postgresPort: 'PostgreSQL 端口',
     postgresUser: 'PostgreSQL 用户',
     postgresPassword: 'PostgreSQL 密码',
+    webHostInfo: 'WEB 主机信息',
+    webHostName: 'WEB 主机名',
+    webCertName: 'WEB 证书名',
+    webKeyName: 'WEB Key 名',
+    mailServiceInfo: '邮件服务信息',
+    mailHostIp: '邮件主机 IP',
+    mailPort: '邮件端口',
+    mailEncryption: '加密方式',
+    mailAuthMethod: '认证方式',
+    mailUser: '邮件用户名',
+    mailPassword: '邮件密码',
+    mailNote: '邮件备注',
+    updsServiceInfo: 'UPDS 服务信息',
+    updsHostName: 'UPDS 主机名',
+    updsUser: 'UPDS 用户名',
+    updsPassword: 'UPDS 密码',
+    updsPort: 'UPDS 端口',
+    updsDbName: 'UPDS DB 名',
+    ekispertInfo: '駅すぱあと信息',
+    ekispertUrl: '駅すぱあと URL',
     appHostName: '应用服务主机名',
     appHostPlaceholder: '默认取客户访问地址',
     ohrServicePort: 'OHR 服务端口',
     organisationName: '客户机构名称',
     organisationNamePlaceholder: '例如：学校法人サンプル',
     organisationDstart: '机构开始日',
+    employeeNumberDigits: '职员番号位数',
+    customerSituation: '客户实际情况收集',
+    facilitySituation: '设施情况',
+    singleFacility: '单设施（一个工资计算中心）',
+    multipleFacilities: '多设施（多个工资计算中心）',
+    mailUsage: '邮件利用',
+    ekispertServer: '駅すぱあと服务器',
+    courseLecture: '系・讲座',
+    workflowUpds: '工作流申请向 UPDS 连携',
+    personalNumber: '个人识别番号',
+    use: '利用',
+    notUse: '不利用',
+    screenPublishPlan: '画面公开计划',
+    shomuSystem: '庶务事务',
+    yearEndAdjustment: '年末调整',
+    applications: '各类申请',
+    allowances: '诸手当',
+    commonSettings: '共通设定',
     historyKicker: '历史',
     historyTitle: '构造历史',
     resultKicker: '结果',
@@ -1011,20 +1171,66 @@ const I18N = {
     startJob: 'Start build',
     backendBranch: 'Backend branch',
     frontendBranch: 'Frontend branch',
+    tabPreparation: 'Preparation',
+    tabImportPlan: 'Import plan',
+    basicBuildInfo: 'Build parameters',
     helpBranch: 'Help branch',
     customerHost: 'Customer access address',
     webPort: 'Web port',
     enableHttps: 'Generate HTTPS / 443 configuration',
+    apHostInfo: 'AP host information',
+    apHostIp: 'AP host IP',
+    apCpuCount: 'AP CPU count',
+    apMemoryGb: 'AP memory GB',
+    dbHostInfo: 'DB host information',
     postgresHost: 'PostgreSQL Host',
     postgresPort: 'PostgreSQL Port',
     postgresUser: 'PostgreSQL User',
     postgresPassword: 'PostgreSQL Password',
+    webHostInfo: 'WEB host information',
+    webHostName: 'WEB host name',
+    webCertName: 'WEB certificate name',
+    webKeyName: 'WEB key name',
+    mailServiceInfo: 'Mail service information',
+    mailHostIp: 'Mail host IP',
+    mailPort: 'Mail port',
+    mailEncryption: 'Encryption',
+    mailAuthMethod: 'Authentication',
+    mailUser: 'Mail user',
+    mailPassword: 'Mail password',
+    mailNote: 'Mail notes',
+    updsServiceInfo: 'UPDS service information',
+    updsHostName: 'UPDS host name',
+    updsUser: 'UPDS user',
+    updsPassword: 'UPDS password',
+    updsPort: 'UPDS port',
+    updsDbName: 'UPDS DB name',
+    ekispertInfo: 'Ekispert information',
+    ekispertUrl: 'Ekispert URL',
     appHostName: 'Application service host name',
     appHostPlaceholder: 'Use customer access address',
     ohrServicePort: 'OHR Service Port',
     organisationName: 'Customer organisation name',
     organisationNamePlaceholder: 'Example: Sample University',
     organisationDstart: 'Organisation start date',
+    employeeNumberDigits: 'Employee number digits',
+    customerSituation: 'Customer usage profile',
+    facilitySituation: 'Facility situation',
+    singleFacility: 'Single facility (one payroll center)',
+    multipleFacilities: 'Multiple facilities (multiple payroll centers)',
+    mailUsage: 'Mail usage',
+    ekispertServer: 'Ekispert server',
+    courseLecture: 'Section / lecture',
+    workflowUpds: 'Workflow application UPDS linkage',
+    personalNumber: 'Personal identification number',
+    use: 'Use',
+    notUse: 'Do not use',
+    screenPublishPlan: 'Screen publish plan',
+    shomuSystem: 'Shomu Jimu',
+    yearEndAdjustment: 'Year-end adjustment',
+    applications: 'Applications',
+    allowances: 'Allowances',
+    commonSettings: 'Common settings',
     historyKicker: 'History',
     historyTitle: 'Build history',
     resultKicker: 'Result',
@@ -1210,6 +1416,20 @@ function applyVariantVisibility() {
   const isNho = getProductVariant() === 'nho';
   document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho; });
   document.querySelectorAll('.nho-only').forEach(el => { el.hidden = !isNho; });
+  if (!isNho) {
+    const active = document.querySelector('.standard-tab.active');
+    switchStandardTab(active ? active.dataset.standardTab : 'prep');
+  }
+}
+function switchStandardTab(tabName) {
+  document.querySelectorAll('.standard-tab').forEach(button => {
+    const active = button.dataset.standardTab === tabName;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-standard-tab-panel]').forEach(panel => {
+    panel.hidden = panel.dataset.standardTabPanel !== tabName;
+  });
 }
 async function loadBranchLists() {
   const expectedVariant = getProductVariant();
@@ -1584,6 +1804,9 @@ document.querySelectorAll('input[name="product_variant"]').forEach(el => {
     setFormLocked(false);
     refresh();
   });
+});
+document.querySelectorAll('.standard-tab').forEach(button => {
+  button.addEventListener('click', () => switchStandardTab(button.dataset.standardTab || 'prep'));
 });
 document.getElementById('terminalConsoleDetails').addEventListener('toggle', event => {
   const frame = document.getElementById('terminalFrame');
@@ -2026,6 +2249,82 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
 .panel { padding: 18px; margin-bottom: 16px; }
 .panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }
 .form-panel .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.standard-tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-top: 2px;
+}
+.standard-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 2px 10px;
+  min-height: 34px;
+}
+.standard-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.standard-tab-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.form-section {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.form-section legend {
+  padding: 0 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 760;
+}
+.form-section .section-wide { grid-column: 1 / -1; }
+.option-matrix {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.tag-tree {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.tag-tree details {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fafafa;
+}
+.tag-tree summary {
+  cursor: pointer;
+  font-weight: 760;
+  margin-bottom: 8px;
+}
+.tag-tree label {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 13px;
+}
+.tag-tree input { width: auto; min-height: auto; }
 .variant-field {
   grid-column: 1 / -1;
   display: flex;
@@ -2393,7 +2692,7 @@ pre {
 @media (max-width: 980px) {
   .hero, .terminal-panel, .panel-heading { align-items: stretch; flex-direction: column; }
   h1 { font-size: 36px; }
-  .workbench, .form-panel .grid, .result-summary, .path-row { grid-template-columns: 1fr; }
+  .workbench, .form-panel .grid, .standard-tab-panel, .form-section, .option-matrix, .tag-tree, .result-summary, .path-row { grid-template-columns: 1fr; }
   .overall-progress ol { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .terminal-actions, .run-actions { justify-content: flex-start; }
 }
