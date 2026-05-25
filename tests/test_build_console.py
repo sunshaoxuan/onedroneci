@@ -87,6 +87,9 @@ def test_build_console_supports_nho_variant_scripts_and_ui(monkeypatch):
     assert "[hidden], .standard-only[hidden] { display: none !important; }" in server.STYLE_CSS
     assert "zip -r package.zip ./package" in server.nho_build_command()
     assert "ohr-web-nencho" in server.NHO_FRONTEND_RESTORE_SCRIPT
+    assert "+refs/heads/$FRONTEND_WS_BRANCH:refs/remotes/origin/$FRONTEND_WS_BRANCH" in server.NHO_FRONTEND_RESTORE_SCRIPT
+    assert "+refs/heads/$repo_branch:refs/remotes/origin/$repo_branch" in server.NHO_FRONTEND_RESTORE_SCRIPT
+    assert "+refs/heads/$repo_branch:refs/remotes/origin/$repo_branch" in server.DIRECT_FRONTEND_RESTORE_SCRIPT
     assert "NHO_PNPM_CACHE_DIR" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "NHO_YARN_CACHE_DIR" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "NHO_YARN_CACHE_DIR" in server.NHO_FRONTEND_BUILD_SCRIPT

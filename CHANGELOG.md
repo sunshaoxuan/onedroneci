@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.19 - 2026-05-25
+
+### Fixed
+
+- 修复前端子仓已存在缓存目录时，`git fetch origin <branch>` 只更新 `FETCH_HEAD`、未更新 `origin/<branch>`，导致 NHO 前端恢复阶段报 `origin/release_* is not a commit` 的问题。
+- 標準版与 NHO版前端子仓同步均改为显式 fetch 到 `refs/remotes/origin/<branch>`，继续保留增量缓存，不回退到全量 clone。
+
 ## 0.3.18 - 2026-05-25
 
 ### Changed
