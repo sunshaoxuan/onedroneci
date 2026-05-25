@@ -944,6 +944,7 @@ sync_frontend_repo() {
     echo "[sync $repo_dir] fetch $repo_branch"
     git -C "$repo_dir" remote set-url origin "$repo_url"
     git -C "$repo_dir" fetch origin "+refs/heads/$repo_branch:refs/remotes/origin/$repo_branch" --prune
+    git -C "$repo_dir" reset --hard HEAD
     git -C "$repo_dir" checkout -B "$repo_branch" "origin/$repo_branch"
     git -C "$repo_dir" reset --hard "origin/$repo_branch"
     git -C "$repo_dir" clean -fd -e node_modules -e .ci-cache -e .cache -e .turbo -e .vite
@@ -974,6 +975,7 @@ fi
 cd "$BASE"
 git remote set-url origin "$GIT_SYNC_URL"
 git fetch origin "+refs/heads/$FRONTEND_WS_BRANCH:refs/remotes/origin/$FRONTEND_WS_BRANCH" --prune
+git reset --hard HEAD
 git checkout -B "$FRONTEND_WS_BRANCH" "origin/$FRONTEND_WS_BRANCH"
 git reset --hard "origin/$FRONTEND_WS_BRANCH"
 git clean -fd -e node_modules -e .ci-cache -e .cache -e .turbo -e .vite
@@ -999,6 +1001,7 @@ sync_nho_repo() {
     echo "[sync nho $repo_dir] fetch $repo_branch"
     git -C "$repo_dir" remote set-url origin "$repo_url"
     git -C "$repo_dir" fetch origin "+refs/heads/$repo_branch:refs/remotes/origin/$repo_branch" --prune
+    git -C "$repo_dir" reset --hard HEAD
     git -C "$repo_dir" checkout -B "$repo_branch" "origin/$repo_branch"
     git -C "$repo_dir" reset --hard "origin/$repo_branch"
     git -C "$repo_dir" clean -fd -e node_modules -e .ci-cache -e .cache -e .turbo -e .vite

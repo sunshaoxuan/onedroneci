@@ -90,6 +90,8 @@ def test_build_console_supports_nho_variant_scripts_and_ui(monkeypatch):
     assert "+refs/heads/$FRONTEND_WS_BRANCH:refs/remotes/origin/$FRONTEND_WS_BRANCH" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "+refs/heads/$repo_branch:refs/remotes/origin/$repo_branch" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "+refs/heads/$repo_branch:refs/remotes/origin/$repo_branch" in server.DIRECT_FRONTEND_RESTORE_SCRIPT
+    assert 'git reset --hard HEAD\ngit checkout -B "$FRONTEND_WS_BRANCH"' in server.NHO_FRONTEND_RESTORE_SCRIPT
+    assert 'git -C "$repo_dir" reset --hard HEAD\n    git -C "$repo_dir" checkout -B "$repo_branch"' in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "NHO_PNPM_CACHE_DIR" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "NHO_YARN_CACHE_DIR" in server.NHO_FRONTEND_RESTORE_SCRIPT
     assert "NHO_YARN_CACHE_DIR" in server.NHO_FRONTEND_BUILD_SCRIPT

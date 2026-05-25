@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.20 - 2026-05-25
+
+### Fixed
+
+- 修复 NHO 前端缓存仓库中残留上一轮临时修改的 `package.json` 时，切换 release 分支报 `local changes would be overwritten by checkout` 的问题。
+- 前端 workspace 与子仓在 checkout 目标分支前会先 `git reset --hard HEAD` 清理上轮构建留下的 tracked 临时改动，再切分支并 reset 到 `origin/<branch>`。
+
 ## 0.3.19 - 2026-05-25
 
 ### Fixed
