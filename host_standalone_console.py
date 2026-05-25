@@ -38,11 +38,12 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.26"
+APP_VERSION = "0.3.27"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
 DATA_DIR = Path(os.environ.get("HOST_STANDALONE_DATA_DIR", "dist/standalone-builds"))
+CONFIG_HISTORY_DIR = DATA_DIR / "config-history"
 TOKEN_FILE = Path(os.environ.get("HOST_STANDALONE_TOKEN_FILE", DATA_DIR / "management.token"))
 TERMINAL_LABELS = {
     "ja-JP": "ビルド端末",
@@ -126,6 +127,10 @@ def job_log_path(job_id: str) -> Path:
     return job_dir(job_id) / "job.log"
 
 
+def config_history_path(config_id: str) -> Path:
+    return CONFIG_HISTORY_DIR / f"{config_id}.json"
+
+
 def read_job(job_id: str) -> dict[str, Any]:
     with LOCK:
         if job_id in JOBS:
@@ -155,6 +160,50 @@ def write_job(job: dict[str, Any]) -> None:
         pass
     if last_error:
         raise last_error
+
+
+def config_history_label(request: dict[str, Any], job_id: str) -> str:
+    organisation = str(request.get("organisation_name") or request.get("material_number") or "未設定").strip() or "未設定"
+    return f"{organisation} / {job_id}"
+
+
+def save_config_history(job: dict[str, Any]) -> dict[str, Any]:
+    request = dict(job.get("request") or {})
+    config_id = str(job["id"])
+    item = {
+        "id": config_id,
+        "job_id": config_id,
+        "label": config_history_label(request, config_id),
+        "product_variant": str(request.get("product_variant") or "standard"),
+        "organisation_name": str(request.get("organisation_name") or ""),
+        "material_number": str(request.get("material_number") or ""),
+        "created_at": int(job.get("created_at") or now()),
+        "updated_at": now(),
+        "request": request,
+    }
+    CONFIG_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    config_history_path(config_id).write_text(json.dumps(item, ensure_ascii=False, indent=2), encoding="utf-8")
+    return item
+
+
+def list_config_histories() -> list[dict[str, Any]]:
+    CONFIG_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    items: list[dict[str, Any]] = []
+    for path in CONFIG_HISTORY_DIR.glob("*.json"):
+        try:
+            items.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            continue
+    items.sort(key=lambda item: (int(item.get("created_at") or 0), str(item.get("id") or "")), reverse=True)
+    return items
+
+
+def delete_config_history(config_id: str) -> dict[str, Any]:
+    path = config_history_path(config_id)
+    if not path.is_file():
+        return {"ok": False, "error": "not_found"}
+    path.unlink(missing_ok=True)
+    return {"ok": True, "id": config_id}
 
 
 def list_jobs() -> list[dict[str, Any]]:
@@ -242,6 +291,7 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
         job_log_path(job_id).write_text("", encoding="utf-8")
         JOBS[job_id] = job
         write_job(job)
+        save_config_history(job)
     thread = threading.Thread(target=run_job, args=(job_id,), daemon=True)
     thread.start()
     return public_job(job)
@@ -819,6 +869,16 @@ INDEX_HTML = """<!doctype html>
       </div>
     </form>
 
+    <section class="panel config-history-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="section-kicker" data-i18n="configHistoryKicker">設定履歴</p>
+          <h2 data-i18n="configHistoryTitle">構成設定履歴</h2>
+        </div>
+      </div>
+      <div id="configHistory" class="config-history-list"></div>
+    </section>
+
     <section class="workbench">
       <section class="panel history-panel">
         <div class="panel-heading">
@@ -959,6 +1019,11 @@ const I18N = {
     applications: '各種申請',
     allowances: '諸手当',
     commonSettings: '共通設定',
+    configHistoryKicker: '設定履歴',
+    configHistoryTitle: '構成設定履歴',
+    configHistoryLoad: '読み込み',
+    configHistoryDelete: '削除',
+    noConfigHistory: '保存された設定履歴はありません。',
     historyKicker: '履歴',
     historyTitle: '構造履歴',
     resultKicker: '結果',
@@ -1095,6 +1160,11 @@ const I18N = {
     applications: '各类申请',
     allowances: '诸手当',
     commonSettings: '共通设定',
+    configHistoryKicker: '配置历史',
+    configHistoryTitle: '构造配置历史',
+    configHistoryLoad: '加载',
+    configHistoryDelete: '删除',
+    noConfigHistory: '还没有保存的配置历史。',
     historyKicker: '历史',
     historyTitle: '构造历史',
     resultKicker: '结果',
@@ -1231,6 +1301,11 @@ const I18N = {
     applications: 'Applications',
     allowances: 'Allowances',
     commonSettings: 'Common settings',
+    configHistoryKicker: 'Configuration history',
+    configHistoryTitle: 'Build configuration history',
+    configHistoryLoad: 'Load',
+    configHistoryDelete: 'Delete',
+    noConfigHistory: 'No saved configuration history.',
     historyKicker: 'History',
     historyTitle: 'Build history',
     resultKicker: 'Result',
@@ -1290,6 +1365,7 @@ let lastTerminalStatus = 'unknown';
 let lastRenderedResultSignature = '';
 let lastFilledJobId = null;
 let branchListRequestSeq = 0;
+let configHistories = [];
 const MAX_LOG_LINES = 1600;
 
 function t(key) { return (I18N[lang] && I18N[lang][key]) || I18N['ja-JP'][key] || key; }
@@ -1644,6 +1720,7 @@ function applyI18n() {
     document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
   }
   renderTerminal(lastTerminalStatus);
+  renderConfigHistory();
 }
 
 function setFormLocked(locked) {
@@ -1671,8 +1748,8 @@ function setFormLocked(locked) {
   document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
 }
 
-function fillFormFromJob(job) {
-  const request = (job && job.request) || {};
+function fillFormFromRequest(request) {
+  request = request || {};
   const form = document.getElementById('form');
   Array.from(form.elements).forEach(el => {
     if (!el.name || !(el.name in request)) return;
@@ -1692,6 +1769,10 @@ function fillFormFromJob(job) {
   });
   applyVariantVisibility();
   enforceFixedPublishItems();
+}
+
+function fillFormFromJob(job) {
+  fillFormFromRequest((job && job.request) || {});
 }
 
 function markSelectedJobRow(jobId) {
@@ -1835,6 +1916,7 @@ document.querySelectorAll('input[name="product_variant"]').forEach(el => {
     applyVariantVisibility();
     loadBranchLists();
     loadMaterialNumbers();
+    renderConfigHistory();
     setFormLocked(false);
     refresh();
   });
@@ -1877,6 +1959,59 @@ async function deleteSelectedJob(jobId = selected) {
   await refresh();
 }
 
+function renderConfigHistory() {
+  const list = document.getElementById('configHistory');
+  if (!list) return;
+  const currentVariant = getProductVariant();
+  const items = configHistories.filter(item => (item.product_variant || 'standard') === currentVariant);
+  list.innerHTML = '';
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-state">${t('noConfigHistory')}</div>`;
+    return;
+  }
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'config-history-item';
+    row.innerHTML = `<div><strong>${escapeHtml(item.label || item.id)}</strong><span>${escapeHtml(item.material_number || '')}</span></div><div class="config-history-actions"><button type="button" class="secondary" data-action="load">${t('configHistoryLoad')}</button><button type="button" class="danger-lite" data-action="delete">${t('configHistoryDelete')}</button></div>`;
+    row.querySelector('[data-action="load"]').onclick = () => loadConfigHistory(item.id);
+    row.querySelector('[data-action="delete"]').onclick = () => deleteConfigHistory(item.id);
+    list.appendChild(row);
+  });
+}
+
+async function refreshConfigHistory() {
+  try {
+    const res = await fetch('/api/configs');
+    const data = await res.json();
+    configHistories = data.configs || [];
+    renderConfigHistory();
+  } catch (error) {
+    console.warn('failed to load config history', error);
+  }
+}
+
+function loadConfigHistory(configId) {
+  const item = configHistories.find(entry => entry.id === configId);
+  if (!item) return;
+  enterCreateMode();
+  fillFormFromRequest(item.request || {});
+  clearBranchInputs();
+  loadBranchLists().then(() => {
+    fillFormFromRequest(item.request || {});
+  });
+  loadMaterialNumbers();
+}
+
+async function deleteConfigHistory(configId) {
+  const res = await fetch(`/api/configs/${encodeURIComponent(configId)}`, {method: 'DELETE', headers: authHeaders()});
+  const result = await res.json();
+  if (result.error) {
+    alert(result.error);
+    return;
+  }
+  await refreshConfigHistory();
+}
+
 document.getElementById('form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const terminal = await refreshTerminal();
@@ -1901,6 +2036,7 @@ document.getElementById('form').addEventListener('submit', async (event) => {
   logOffset = 0;
   logLines = [];
   setFormLocked(true);
+  refreshConfigHistory();
   refresh();
   if (!timer) timer = setInterval(refresh, 3000);
 });
@@ -2161,6 +2297,7 @@ applyVariantVisibility();
 refreshTerminal();
 loadBranchLists();
 loadMaterialNumbers();
+refreshConfigHistory();
 refresh();
 timer = setInterval(refresh, 5000);
 """
@@ -2583,6 +2720,26 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .danger-lite { background: #fff; color: var(--danger); border: 1px solid #f0b8b2; }
 .danger-lite:hover { background: #fff7f6; box-shadow: 0 0 0 3px rgba(180, 35, 24, .10); }
 .workbench { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
+.config-history-list {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+}
+.config-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.config-history-item strong { display: block; font-size: 13px; }
+.config-history-item span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.config-history-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.config-history-actions button { min-height: 32px; padding: 6px 10px; }
 .jobs { display: grid; gap: 8px; max-height: 360px; overflow: auto; }
 .job {
   display: flex;
@@ -2768,6 +2925,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_text(STYLE_CSS, "text/css; charset=utf-8")
         if parsed.path.startswith("/build-terminal"):
             return self.proxy_build_terminal("GET", parsed)
+        if parsed.path == "/api/configs":
+            return self.send_json({"configs": list_config_histories()})
         if parsed.path == "/api/jobs":
             return self.send_json({"jobs": [public_job(job) for job in list_jobs()]})
         if parsed.path == "/api/nho-material-release-branches":
@@ -2818,6 +2977,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith("/api/configs/"):
+            if not self.authorized():
+                return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
+            config_id = parsed.path.split("/")[3]
+            result = delete_config_history(config_id)
+            status = HTTPStatus.NOT_FOUND if result.get("error") == "not_found" else HTTPStatus.OK
+            return self.send_json(result, status)
         if parsed.path.startswith("/api/jobs/"):
             if not self.authorized():
                 return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)

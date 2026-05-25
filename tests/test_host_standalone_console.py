@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.26"
+    assert console.APP_VERSION == "0.3.27"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -639,6 +639,40 @@ def test_standard_publish_plan_required_items_are_locked_and_submitted():
     assert "function enforceFixedPublishItems()" in console.APP_JS
     assert "el.dataset.fixedRequired === 'true'" in console.APP_JS
     assert ".tag-tree label.fixed-required" in console.STYLE_CSS
+
+
+def test_config_history_is_saved_with_organisation_and_job_id(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "CONFIG_HISTORY_DIR", tmp_path / "config-history")
+    job = {
+        "id": "20260525010101",
+        "created_at": 100,
+        "request": {
+            "product_variant": "standard",
+            "organisation_name": "OneHR",
+            "material_number": "20260525",
+        },
+    }
+
+    item = console.save_config_history(job)
+    listed = console.list_config_histories()
+
+    assert item["label"] == "OneHR / 20260525010101"
+    assert listed[0]["request"]["organisation_name"] == "OneHR"
+    assert console.delete_config_history("20260525010101") == {"ok": True, "id": "20260525010101"}
+    assert console.list_config_histories() == []
+
+
+def test_host_console_has_loadable_config_history_ui_and_api():
+    assert 'id="configHistory"' in console.INDEX_HTML
+    assert "/api/configs" in console.APP_JS
+    assert "function renderConfigHistory()" in console.APP_JS
+    assert "function loadConfigHistory(configId)" in console.APP_JS
+    assert "function deleteConfigHistory(configId)" in console.APP_JS
+    assert "fillFormFromRequest(item.request || {})" in console.APP_JS
+    assert "refreshConfigHistory();" in console.APP_JS
+    assert "parsed.path == \"/api/configs\"" in Path("host_standalone_console.py").read_text(encoding="utf-8")
+    assert "delete_config_history(config_id)" in Path("host_standalone_console.py").read_text(encoding="utf-8")
+    assert ".config-history-item" in console.STYLE_CSS
 
 
 def test_build_terminal_proxy_rewrites_absolute_assets():
