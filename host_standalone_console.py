@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.30"
+APP_VERSION = "0.3.31"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1568,6 +1568,7 @@ function initializePublishMenuGroups() {
     toggle.addEventListener('click', event => event.stopPropagation());
     toggle.addEventListener('change', () => applyPublishMenuGroupState(details));
     summary.prepend(toggle);
+    updatePublishMenuSummaryText(summary);
     applyPublishMenuGroupState(details);
   });
 }
@@ -1754,9 +1755,28 @@ function appendLogText(text) {
   }
 }
 
+function updatePublishMenuSummaryText(summary) {
+  const toggle = summary.querySelector('.publish-menu-toggle');
+  let title = summary.querySelector('.publish-menu-title');
+  if (!title) {
+    title = document.createElement('span');
+    title.className = 'publish-menu-title';
+  }
+  title.textContent = t(summary.dataset.i18n);
+  summary.textContent = '';
+  if (toggle) summary.append(toggle);
+  summary.append(title);
+}
+
 function applyI18n() {
   document.documentElement.lang = lang;
-  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    if (el.matches('.tag-tree summary')) {
+      updatePublishMenuSummaryText(el);
+      return;
+    }
+    el.textContent = t(el.dataset.i18n);
+  });
   document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
   document.getElementById('language').value = lang;
   if (mode === 'create') {

@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.30"
+    assert console.APP_VERSION == "0.3.31"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -661,11 +661,14 @@ def test_standard_publish_plan_required_items_are_locked_and_submitted():
 def test_standard_publish_plan_main_menu_can_disable_children():
     assert "function initializePublishMenuGroups()" in console.APP_JS
     assert "function applyPublishMenuGroupState(details)" in console.APP_JS
+    assert "function updatePublishMenuSummaryText(summary)" in console.APP_JS
     assert "publish-menu-toggle" in console.APP_JS
+    assert "publish-menu-title" in console.APP_JS
     assert "publish_group_" in console.APP_JS
     assert "details.classList.toggle('publish-menu-disabled', !enabled)" in console.APP_JS
     assert "input.dataset.fixedMirror === 'true'" in console.APP_JS
     assert "enforcePublishMenuGroups();" in console.APP_JS
+    assert "if (el.matches('.tag-tree summary'))" in console.APP_JS
     assert ".tag-tree details.publish-menu-disabled" in console.STYLE_CSS
 
 
