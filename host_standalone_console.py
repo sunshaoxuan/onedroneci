@@ -42,7 +42,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.36"
+APP_VERSION = "0.3.37"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -79,17 +79,70 @@ PACKAGING_STEP_MAP = {
 }
 
 PUBLISH_MENU_MAPPINGS = [
-    ("publish_shomu_profile", True, "個人ポータル / プロフィール", "personal-portal", "EM_PR_MBR", "publish_group_shomuSystem"),
-    ("publish_shomu_source_tax", False, "個人ポータル / 源泉徴収票", "personal-portal", "EM_PR_TXW", "publish_group_shomuSystem"),
-    ("publish_shomu_issue_info", False, "個人ポータル / 発令情報", "personal-portal", "EM_PR_HRJ", "publish_group_shomuSystem"),
-    ("publish_nencho_tax", False, "個人ポータル / 税法扶養申請", "personal-portal", "PP_PR_MTA", "publish_group_yearEndAdjustment"),
-    ("publish_apps_status", True, "個人ポータル / 申請・承認状況", "personal-portal", "BP_PR_ASS", "publish_group_applications"),
-    ("publish_apps_agent", False, "個人ポータル / 代理状況", "personal-portal", "BP_AG_FSS", "publish_group_applications"),
-    ("publish_allowance_current", False, "個人ポータル / 現状確認", "personal-portal", "BP_PR_CSC", "publish_group_allowances"),
-    ("publish_shomu_source_tax_admin", False, "庶務事務 / 源泉徴収票管理", "em", "EM_HR_TXW", "publish_group_shomuSystem"),
-    ("publish_shomu_issue_admin", False, "庶務事務 / 発令情報管理", "em", "EM_HR_HRJ", "publish_group_shomuSystem"),
-    ("publish_nencho_tax", False, "年末調整 / 税法扶養申請", "taxadjustment", "EMA_PR_PRT", "publish_group_yearEndAdjustment"),
-    ("publish_nencho_tax_admin", False, "年末調整 / 税法扶養申請管理", "taxadjustment", "EMA_HR_PRT", "publish_group_yearEndAdjustment"),
+    {"controls": [("publish_shomu_profile", True, "publish_group_shomuSystem")], "label": "個人ポータル / プロフィール", "application_name": "personal-portal", "menu_code": "EM_PR_MBR"},
+    {"controls": [("publish_shomu_payroll", False, "publish_group_shomuSystem")], "label": "個人ポータル / 給与明細", "application_name": "personal-portal", "menu_code": "EM_PR_PYR"},
+    {"controls": [("publish_shomu_source_tax", False, "publish_group_shomuSystem")], "label": "個人ポータル / 源泉徴収票", "application_name": "personal-portal", "menu_code": "EM_PR_TXW"},
+    {"controls": [("publish_shomu_issue_info", False, "publish_group_shomuSystem")], "label": "個人ポータル / 発令情報", "application_name": "personal-portal", "menu_code": "EM_PR_HRJ"},
+    {"controls": [("publish_apps_status", True, "publish_group_applications"), ("publish_allowance_status", True, "publish_group_allowances")], "label": "個人ポータル / 申請・承認状況", "application_name": "personal-portal", "menu_code": "BP_PR_ASS"},
+    {"controls": [("publish_nencho_tax", False, "publish_group_yearEndAdjustment")], "label": "個人ポータル / 税法扶養申請", "application_name": "personal-portal", "menu_code": "PP_PR_MTA"},
+    {"controls": [("publish_allowance_current", False, "publish_group_allowances")], "label": "個人ポータル / 現況確認", "application_name": "personal-portal", "menu_code": "BP_PR_CSC"},
+    {"controls": [("publish_apps_agent", False, "publish_group_applications"), ("publish_allowance_agent", False, "publish_group_allowances")], "label": "個人ポータル / 代理状況", "application_name": "personal-portal", "menu_code": "BP_AG_FSS"},
+    {"controls": [("publish_nencho_portal", True, "publish_group_yearEndAdjustment")], "label": "個人ポータル / 年末調整", "application_name": "personal-portal", "menu_code": "PP_PR_PRT"},
+    {"controls": [("publish_shomu_staff_admin", True, "publish_group_shomuSystem")], "label": "庶務事務 / 職員管理", "application_name": "em", "menu_code": "EM_HR_MBR"},
+    {"controls": [("publish_shomu_salary_reservation", False, "publish_group_shomuSystem")], "label": "庶務事務 / 電子交付承諾状況", "application_name": "em", "menu_code": "EM_HR_WCS"},
+    {"controls": [("publish_shomu_payroll_admin", False, "publish_group_shomuSystem")], "label": "庶務事務 / 給与明細管理", "application_name": "em", "menu_code": "EM_HR_PYR"},
+    {"controls": [("publish_shomu_source_tax_admin", False, "publish_group_shomuSystem")], "label": "庶務事務 / 源泉徴収票管理", "application_name": "em", "menu_code": "EM_HR_TXW"},
+    {"controls": [("publish_shomu_issue_admin", False, "publish_group_shomuSystem")], "label": "庶務事務 / 発令情報管理", "application_name": "em", "menu_code": "EM_HR_HRJ"},
+    {"controls": [("publish_shomu_free_search", False, "publish_group_shomuSystem")], "label": "庶務事務 / 自由条件検索", "application_name": "em", "menu_code": "EM_HR_JJK"},
+    {"controls": [("publish_shomu_initial_login", True, "publish_group_shomuSystem")], "label": "庶務事務 / 初回ログイン設定", "application_name": "em", "menu_code": "EM_CM_SLG"},
+    {"controls": [("publish_shomu_salary_parameter", False, "publish_group_shomuSystem")], "label": "庶務事務 / 給与明細パターン設定", "application_name": "em", "menu_code": "EM_CM_PPM"},
+    {"controls": [("publish_shomu_notification", True, "publish_group_shomuSystem")], "label": "庶務事務 / 通知設定", "application_name": "em", "menu_code": "EM_CM_TST"},
+    {"controls": [("publish_shomu_group", True, "publish_group_shomuSystem")], "label": "庶務事務 / グループ設定", "application_name": "em", "menu_code": "EM_CM_GPS"},
+    {"controls": [("publish_shomu_role", True, "publish_group_shomuSystem")], "label": "庶務事務 / ロール管理", "application_name": "em", "menu_code": "EM_CM_RLM"},
+    {"controls": [("publish_shomu_generic_master", True, "publish_group_shomuSystem")], "label": "庶務事務 / 汎用マスタ", "application_name": "em", "menu_code": "EM_CM_HYM"},
+    {"controls": [("publish_nencho_portal", True, "publish_group_yearEndAdjustment")], "label": "年末調整 / 年末調整", "application_name": "taxadjustment", "menu_code": "TA_PR_PRT"},
+    {"controls": [("publish_nencho_tax", False, "publish_group_yearEndAdjustment")], "label": "年末調整 / 税法扶養申請", "application_name": "taxadjustment", "menu_code": "EMA_PR_PRT"},
+    {"controls": [("publish_nencho_admin", False, "publish_group_yearEndAdjustment")], "label": "年末調整 / 年末調整管理", "application_name": "taxadjustment", "menu_code": "TA_HR_PRT"},
+    {"controls": [("publish_nencho_tax_admin", False, "publish_group_yearEndAdjustment")], "label": "年末調整 / 税法扶養申請管理", "application_name": "taxadjustment", "menu_code": "EMA_HR_PRT"},
+    {"controls": [("publish_nencho_home_admin", False, "publish_group_yearEndAdjustment")], "label": "年末調整 / 住所の印字設定", "application_name": "taxadjustment", "menu_code": "TA_CM_RPS"},
+    {"controls": [("publish_nencho_mail_template", True, "publish_group_yearEndAdjustment")], "label": "年末調整 / メールテンプレート設定", "application_name": "taxadjustment", "menu_code": "TA_CM_MLT"},
+    {"controls": [("publish_nencho_notification", True, "publish_group_yearEndAdjustment")], "label": "年末調整 / 通知設定", "application_name": "taxadjustment", "menu_code": "TA_CM_TST"},
+    {"controls": [("publish_nencho_group", True, "publish_group_yearEndAdjustment")], "label": "年末調整 / グループ設定", "application_name": "taxadjustment", "menu_code": "TA_CM_GPS"},
+    {"controls": [("publish_nencho_role", True, "publish_group_yearEndAdjustment")], "label": "年末調整 / ロール管理", "application_name": "taxadjustment", "menu_code": "TA_CM_RLM"},
+    {"controls": [("publish_nencho_generic_master", True, "publish_group_yearEndAdjustment")], "label": "年末調整 / 汎用マスタ", "application_name": "taxadjustment", "menu_code": "TA_CM_HYM"},
+    {"controls": [("publish_apps_admin_status", True, "publish_group_applications"), ("publish_allowance_admin_status", True, "publish_group_allowances")], "label": "各種申請 / 申請状況", "application_name": "business-process", "menu_code": "BP_HR_FSS"},
+    {"controls": [("publish_apps_admin_agent", False, "publish_group_applications"), ("publish_allowance_admin_agent", False, "publish_group_allowances")], "label": "各種申請 / 代理申請", "application_name": "business-process", "menu_code": "BP_CM_DSS"},
+    {"controls": [("publish_allowance_current", False, "publish_group_allowances")], "label": "各種申請 / 現況確認管理", "application_name": "business-process", "menu_code": "BP_HR_CSC"},
+    {"controls": [("publish_apps_mail_template", True, "publish_group_applications"), ("publish_allowance_admin_mail_template", True, "publish_group_allowances")], "label": "各種申請 / メールテンプレート設定", "application_name": "business-process", "menu_code": "BP_CM_MLT"},
+    {"controls": [("publish_apps_workflow", True, "publish_group_applications"), ("publish_allowance_admin_workflow", False, "publish_group_allowances")], "label": "各種申請 / ワークフロー設定", "application_name": "business-process", "menu_code": "BP_CM_WFL"},
+    {"controls": [("publish_apps_category_limit", False, "publish_group_applications")], "label": "各種申請 / 申請区分設定", "application_name": "business-process", "menu_code": "BP_CM_ACS"},
+    {"controls": [("publish_apps_comment_limit", True, "publish_group_applications"), ("publish_allowance_admin_comment_limit", True, "publish_group_allowances")], "label": "各種申請 / コメント文字列の上限設定", "application_name": "business-process", "menu_code": "BP_CM_CUS"},
+    {"controls": [("publish_apps_notification", True, "publish_group_applications"), ("publish_allowance_admin_notification", True, "publish_group_allowances")], "label": "各種申請 / 通知設定", "application_name": "business-process", "menu_code": "BP_CM_TST"},
+    {"controls": [("publish_apps_group", True, "publish_group_applications"), ("publish_allowance_admin_group", True, "publish_group_allowances")], "label": "各種申請 / グループ設定", "application_name": "business-process", "menu_code": "BP_CM_GPS"},
+    {"controls": [("publish_apps_role", True, "publish_group_applications"), ("publish_allowance_admin_role", True, "publish_group_allowances")], "label": "各種申請 / ロール管理", "application_name": "business-process", "menu_code": "BP_CM_RLM"},
+    {"controls": [("publish_apps_generic_master", True, "publish_group_applications"), ("publish_allowance_admin_generic_master", True, "publish_group_allowances")], "label": "各種申請 / 汎用マスタ", "application_name": "business-process", "menu_code": "BP_CM_HYM"},
+    {"controls": [("publish_common_account", True, "publish_group_commonSettings")], "label": "共通設定 / アカウント管理", "application_name": "mdm", "menu_code": "SS_CM_ACC"},
+    {"controls": [("publish_common_staff", False, "publish_group_commonSettings")], "label": "共通設定 / 職員管理", "application_name": "mdm", "menu_code": "SS_CM_MBR"},
+    {"controls": [("publish_common_customer", False, "publish_group_commonSettings")], "label": "共通設定 / 顧客管理", "application_name": "mdm", "menu_code": "SS_CM_FPM"},
+    {"controls": [("publish_common_notice", True, "publish_group_commonSettings")], "label": "共通設定 / お知らせ設定", "application_name": "mdm", "menu_code": "SS_CM_NTS"},
+    {"controls": [("publish_common_salary_owner", True, "publish_group_commonSettings")], "label": "共通設定 / 給与支払者情報管理", "application_name": "mdm", "menu_code": "SS_CM_REI"},
+    {"controls": [("publish_common_mail_send", False, "publish_group_commonSettings")], "label": "共通設定 / メール送信管理", "application_name": "mdm", "menu_code": "SS_CM_MSM"},
+    {"controls": [("publish_common_history", True, "publish_group_commonSettings")], "label": "共通設定 / 利用履歴参照", "application_name": "mdm", "menu_code": "SS_CM_RUH"},
+    {"controls": [("publish_common_notification", True, "publish_group_commonSettings")], "label": "共通設定 / 通知設定", "application_name": "mdm", "menu_code": "SS_CM_TST"},
+    {"controls": [("publish_common_data_sheet", False, "publish_group_commonSettings")], "label": "共通設定 / データシート設定", "application_name": "mdm", "menu_code": "SS_CM_DSS"},
+    {"controls": [("publish_common_group", True, "publish_group_commonSettings")], "label": "共通設定 / グループ設定", "application_name": "mdm", "menu_code": "SS_CM_GPS"},
+    {"controls": [("publish_common_role", True, "publish_group_commonSettings")], "label": "共通設定 / ロール管理", "application_name": "mdm", "menu_code": "SS_CM_RLM"},
+    {"controls": [("publish_common_retiree", False, "publish_group_commonSettings")], "label": "共通設定 / 退職者参照設定", "application_name": "mdm", "menu_code": "SS_CM_RRS"},
+    {"controls": [("publish_common_belong_master", True, "publish_group_commonSettings")], "label": "共通設定 / 所属マスタ", "application_name": "mdm", "menu_code": "SS_CM_SZK"},
+    {"controls": [("publish_common_job_master", True, "publish_group_commonSettings")], "label": "共通設定 / 職種マスタ", "application_name": "mdm", "menu_code": "SS_CM_SKS"},
+    {"controls": [("publish_common_generic_master", True, "publish_group_commonSettings")], "label": "共通設定 / 汎用マスタ", "application_name": "mdm", "menu_code": "SS_CM_HYM"},
+    {"controls": [("publish_common_system", True, "publish_group_commonSettings")], "label": "共通設定 / 共通システム設定", "application_name": "mdm", "menu_code": "SS_CM_SYS_LGS"},
+    {"controls": [("publish_common_mail_setting", False, "publish_group_commonSettings")], "label": "共通設定 / メール設定", "application_name": "mdm", "menu_code": "SS_CM_MLS"},
+    {"controls": [("publish_common_scheduler", True, "publish_group_commonSettings")], "label": "共通設定 / スケジュールタスク", "application_name": "mdm", "menu_code": "SS_CM_STM"},
+    {"controls": [("publish_common_route_search", False, "publish_group_commonSettings")], "label": "共通設定 / 交通経路検索設定", "application_name": "mdm", "menu_code": "SS_CM_TRS"},
+    {"controls": [("publish_common_dictionary", True, "publish_group_commonSettings")], "label": "共通設定 / データ辞書", "application_name": "mdm", "menu_code": "SS_CM_DDT"},
+    {"controls": [("publish_common_report_template", True, "publish_group_commonSettings")], "label": "共通設定 / 帳票テンプレート管理", "application_name": "mdm", "menu_code": "SS_CM_OFC"},
+    {"controls": [("publish_common_log", True, "publish_group_commonSettings")], "label": "共通設定 / ログ管理", "application_name": "mdm", "menu_code": "SS_CM_ASL"},
 ]
 
 PUBLISH_SCHEDULED_TASK_MAPPINGS = [
@@ -400,12 +453,22 @@ def publish_enabled(payload: dict[str, Any], field: str, default: bool, group_fi
     return request_bool(payload, field, default)
 
 
+def publish_any_enabled(payload: dict[str, Any], controls: list[tuple[str, bool, str]]) -> bool:
+    return any(publish_enabled(payload, field, default, group_field) for field, default, group_field in controls)
+
+
 def ohr_import_config_from_request(payload: dict[str, Any]) -> OhrImportConfig:
-    disabled_menus = [
-        OhrMenuDisable(label, application_name, menu_code)
-        for field, default, label, application_name, menu_code, group_field in PUBLISH_MENU_MAPPINGS
-        if not publish_enabled(payload, field, default, group_field)
-    ]
+    disabled_menus: list[OhrMenuDisable] = []
+    seen_menus: set[tuple[str, str]] = set()
+    for mapping in PUBLISH_MENU_MAPPINGS:
+        application_name = str(mapping["application_name"])
+        menu_code = str(mapping["menu_code"])
+        if (application_name, menu_code) in seen_menus:
+            continue
+        if publish_any_enabled(payload, mapping["controls"]):
+            continue
+        disabled_menus.append(OhrMenuDisable(str(mapping["label"]), application_name, menu_code))
+        seen_menus.add((application_name, menu_code))
     disabled_scheduled_tasks = [
         OhrScheduledTaskDisable(label, uuid, code, name_i18n_key, application_name)
         for field, default, label, uuid, code, name_i18n_key, application_name, group_field in PUBLISH_SCHEDULED_TASK_MAPPINGS

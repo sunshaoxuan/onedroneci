@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.36"
+    assert console.APP_VERSION == "0.3.37"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -617,6 +617,20 @@ def test_ohr_import_config_disables_children_when_publish_group_is_off():
     menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus}
     assert ("personal-portal", "EM_PR_HRJ") in menu_codes
     assert ("em", "EM_HR_HRJ") in menu_codes
+
+
+def test_ohr_import_config_keeps_shared_menu_when_any_control_is_enabled():
+    config = console.ohr_import_config_from_request(
+        {
+            "publish_group_applications": "on",
+            "publish_group_allowances": "on",
+            "publish_apps_status": "",
+            "publish_allowance_status": "on",
+        }
+    )
+
+    menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus}
+    assert ("personal-portal", "BP_PR_ASS") not in menu_codes
 
 
 def test_running_status_uses_single_animated_heartbeat_not_log_spam():

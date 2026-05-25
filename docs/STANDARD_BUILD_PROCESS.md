@@ -215,7 +215,8 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 - 关闭与源泉徴収票、発令情報、税法扶養申請相关的功能时，会生成对应 `ohr_scheduled_task.paused = true`。
 - 同时会将对应 `ohr_scheduled_task_type.display_flag` 设为 `false`。
 
-当前映射范围包括页面上已有的個人ポータル、庶務事務、年末調整中与样例对应的菜单与任务。
+当前映射范围包括参考库 `ohr.ohr_menu` 中可与页面项对应的 `personal-portal`、`em`、`taxadjustment`、`business-process`、`mdm` 菜单。
+多个页面项共用同一个菜单码时，只有相关项全部关闭才生成关闭 SQL。
 
 ## 14. 数据连携
 
