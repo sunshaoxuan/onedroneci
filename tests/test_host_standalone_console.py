@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.32"
+    assert console.APP_VERSION == "0.3.33"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -681,6 +681,13 @@ def test_standard_publish_plan_has_three_level_tree():
     assert 'name="publish_shomu_free_search"' in console.INDEX_HTML
     assert 'name="publish_apps_category_limit"' in console.INDEX_HTML
     assert ".tag-tree details.publish-category" in console.STYLE_CSS
+
+
+def test_container_borders_have_stronger_visual_weight():
+    assert "--container-line: #b8b8b8;" in console.STYLE_CSS
+    assert "--container-line-strong: #8f8f8f;" in console.STYLE_CSS
+    assert "border: 1.5px solid var(--container-line);" in console.STYLE_CSS
+    assert "border-left: 1.5px solid var(--container-line-strong);" in console.STYLE_CSS
 
 
 def test_config_history_is_saved_with_organisation_and_job_id(tmp_path, monkeypatch):
