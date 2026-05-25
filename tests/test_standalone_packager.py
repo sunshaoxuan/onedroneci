@@ -279,12 +279,14 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
         "資材:M-001\n前台分支：release_front\n后台分支：release_back\n"
     )
     assert (product_dir / "1.tenant" / "ohr_help.sql").read_text(encoding="utf-8") == "new help sql"
-    import_plan_sql = (product_dir / "1.tenant" / "99.import_plan.sql").read_text(encoding="utf-8")
+    import_plan_sql = (delivery_root / "導入" / "tenant" / "import_plan.sql").read_text(encoding="utf-8")
     assert "support_applications = '{em,personal-portal}'" in import_plan_sql
     assert "{enableEmail}', 'true'" in import_plan_sql
     assert "{enableTransportSetting}', 'false'" in import_plan_sql
     assert "{enableLecture}', 'true'" in import_plan_sql
-    ohr_import_plan_sql = (product_dir / "2.ohr" / "99.import_plan.sql").read_text(encoding="utf-8")
+    assert not (product_dir / "1.tenant" / "99.import_plan.sql").exists()
+    assert not (product_dir / "2.ohr" / "99.import_plan.sql").exists()
+    ohr_import_plan_sql = (delivery_root / "導入" / "ohr" / "import_plan.sql").read_text(encoding="utf-8")
     assert "application_name = 'personal-portal' and menu_code = 'EM_PR_TXW'" in ohr_import_plan_sql
     account_sql = (product_dir / "2.ohr" / "4.account.sql").read_text(encoding="utf-8")
     assert "'2026-05-01'" in account_sql

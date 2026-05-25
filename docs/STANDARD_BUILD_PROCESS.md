@@ -186,7 +186,7 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 主控台根据 `導入計画` 与 `事前準備` 中的利用设定生成：
 
 ```text
-製品/1.tenant/99.import_plan.sql
+導入/tenant/import_plan.sql
 ```
 
 该脚本用于在普通数据库脚本执行后更新 tenant 级开关：
@@ -206,7 +206,7 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 主控台根据 `画面公開計画` 生成：
 
 ```text
-製品/2.ohr/99.import_plan.sql
+導入/ohr/import_plan.sql
 ```
 
 该脚本用于在普通 Ohr 数据库脚本执行后更新公开状态：

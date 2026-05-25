@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.37`
+当前版本：`0.3.38`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -26,7 +26,7 @@
 5. 主控台下载中间产物。
 6. 主控台从 SVN 取得最新 `1.tenant` / `2.ohr` SQL 资材。
 7. 主控台修改 `2.ohr/4.account.sql` 中的机构名称和开始日。
-8. 主控台根据 `導入計画` 和服务利用设定生成 `1.tenant/99.import_plan.sql` 与 `2.ohr/99.import_plan.sql`，用于数据库脚本执行后更新 tenant 导入设置、菜单公开状态和定时任务状态。
+8. 主控台根据 `導入計画` 和服务利用设定生成 `導入/tenant/import_plan.sql` 与 `導入/ohr/import_plan.sql`，用于数据库脚本执行后更新 tenant 导入设置、菜单公开状态和定时任务状态。
 9. 主控台从 `data-synchronization.git` 的 `updsv7phr/PHR` 复制 `データ連携`。
 10. 主控台把页面填写的资材编号与前后端分支写入 `version.txt`，重建 `OneHrStandalone.zip`。
 11. 最终输出到 `dist\standalone\<构建终端构建ID>\`：

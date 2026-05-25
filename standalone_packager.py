@@ -641,13 +641,18 @@ def build_product_package(
         if logger:
             logger("help_sql_replace")
         _replace_help_sql_if_present(web_zip, product_dir / "1.tenant" / "ohr_help.sql")
+        import_dir = delivery_root / "導入"
         if tenant_import_config:
-            (product_dir / "1.tenant" / "99.import_plan.sql").write_text(
+            tenant_import_dir = import_dir / "tenant"
+            tenant_import_dir.mkdir(parents=True, exist_ok=True)
+            (tenant_import_dir / "import_plan.sql").write_text(
                 render_tenant_import_sql(tenant_import_config),
                 encoding="utf-8",
             )
         if ohr_import_config:
-            (product_dir / "2.ohr" / "99.import_plan.sql").write_text(
+            ohr_import_dir = import_dir / "ohr"
+            ohr_import_dir.mkdir(parents=True, exist_ok=True)
+            (ohr_import_dir / "import_plan.sql").write_text(
                 render_ohr_import_sql(ohr_import_config),
                 encoding="utf-8",
             )
