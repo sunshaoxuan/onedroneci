@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.34"
+    assert console.APP_VERSION == "0.3.35"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -527,6 +527,49 @@ def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
     assert payloads[0]["build_backend"] is False
     assert payloads[0]["build_frontend"] is True
     assert payloads[0]["conf_enable_https"] is True
+
+
+def test_tenant_import_config_is_derived_from_standard_request():
+    config = console.tenant_import_config_from_request(
+        {
+            "publish_group_shomuSystem": "on",
+            "publish_group_yearEndAdjustment": "on",
+            "publish_group_applications": "",
+            "publish_group_allowances": "",
+            "publish_group_commonSettings": "on",
+            "publish_shomu_portal": "on",
+            "mail_usage": "none",
+            "ekispert_usage": "none",
+            "course_usage": "use",
+        }
+    )
+
+    assert config.support_applications == ("em", "mdm", "personal-portal", "taxadjustment")
+    assert config.enable_email is False
+    assert config.enable_transport_setting is False
+    assert config.enable_lecture is True
+
+
+def test_tenant_import_config_enables_business_process_and_service_flags():
+    config = console.tenant_import_config_from_request(
+        {
+            "publish_group_shomuSystem": "",
+            "publish_group_yearEndAdjustment": "",
+            "publish_group_applications": "on",
+            "publish_group_allowances": "on",
+            "publish_group_commonSettings": "",
+            "publish_apps_portal": "",
+            "publish_allowance_portal": "",
+            "mail_usage": "use",
+            "ekispert_usage": "use",
+            "course_usage": "none",
+        }
+    )
+
+    assert config.support_applications == ("business-process",)
+    assert config.enable_email is True
+    assert config.enable_transport_setting is True
+    assert config.enable_lecture is False
 
 
 def test_running_status_uses_single_animated_heartbeat_not_log_spam():

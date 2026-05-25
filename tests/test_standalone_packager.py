@@ -10,10 +10,12 @@ from standalone_packager import (
     BuildVersion,
     ProductSqlConfig,
     StandaloneConfig,
+    TenantImportConfig,
     build_nho_common_package,
     build_product_package,
     default_organisation_dstart,
     patch_account_sql,
+    render_tenant_import_sql,
     render_version_txt,
     update_config_ini,
 )
@@ -155,6 +157,22 @@ def test_render_version_txt_records_branches():
     )
 
 
+def test_render_tenant_import_sql_records_import_plan():
+    sql = render_tenant_import_sql(
+        TenantImportConfig(
+            support_applications=("em", "mdm", "personal-portal", "taxadjustment"),
+            enable_email=False,
+            enable_transport_setting=False,
+            enable_lecture=True,
+        )
+    )
+
+    assert "support_applications = '{em,mdm,personal-portal,taxadjustment}'" in sql
+    assert "{enableEmail}', 'false'" in sql
+    assert "{enableTransportSetting}', 'false'" in sql
+    assert "{enableLecture}', 'true'" in sql
+
+
 def test_update_config_ini_replaces_database_and_ohr_values():
     text = update_config_ini(
         CONFIG,
@@ -209,6 +227,12 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
         version=BuildVersion("build-1", "M-001", "release_back", "release_front"),
         config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
         sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
+        tenant_import_config=TenantImportConfig(
+            support_applications=("em", "personal-portal"),
+            enable_email=True,
+            enable_transport_setting=False,
+            enable_lecture=True,
+        ),
         data_sync_git_url=str(data_sync_repo),
         data_sync_dir=data_sync_work,
     )
@@ -222,6 +246,11 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
         "資材:M-001\n前台分支：release_front\n后台分支：release_back\n"
     )
     assert (product_dir / "1.tenant" / "ohr_help.sql").read_text(encoding="utf-8") == "new help sql"
+    import_plan_sql = (product_dir / "1.tenant" / "99.import_plan.sql").read_text(encoding="utf-8")
+    assert "support_applications = '{em,personal-portal}'" in import_plan_sql
+    assert "{enableEmail}', 'true'" in import_plan_sql
+    assert "{enableTransportSetting}', 'false'" in import_plan_sql
+    assert "{enableLecture}', 'true'" in import_plan_sql
     account_sql = (product_dir / "2.ohr" / "4.account.sql").read_text(encoding="utf-8")
     assert "'2026-05-01'" in account_sql
     assert '{"ja-JP": "テスト大学"}' in account_sql

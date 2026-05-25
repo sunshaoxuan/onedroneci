@@ -59,6 +59,14 @@ class ProductSqlConfig:
     organisation_dstart: str
 
 
+@dataclass(frozen=True)
+class TenantImportConfig:
+    support_applications: tuple[str, ...]
+    enable_email: bool = False
+    enable_transport_setting: bool = False
+    enable_lecture: bool = False
+
+
 def configured_output_dir() -> Path:
     return Path(os.environ.get("STANDALONE_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR)))
 
@@ -130,6 +138,33 @@ def render_version_txt(version: BuildVersion) -> str:
             f"資材:{version.material_number}",
             f"前台分支：{version.frontend_branch}",
             f"后台分支：{version.backend_branch}",
+            "",
+        ]
+    )
+
+
+def render_tenant_import_sql(config: TenantImportConfig) -> str:
+    applications = "{" + ",".join(config.support_applications) + "}"
+    email_value = "true" if config.enable_email else "false"
+    transport_value = "true" if config.enable_transport_setting else "false"
+    lecture_value = "true" if config.enable_lecture else "false"
+    return "\n".join(
+        [
+            "-- 導入計画",
+            f"UPDATE tenant SET support_applications = {sql_quote(applications)}",
+            "WHERE tenant_id='public';",
+            "",
+            f"-- メール={'利用' if config.enable_email else '利用しない'}",
+            f"UPDATE tenant SET system_config= jsonb_set(system_config ::jsonb, '{{enableEmail}}', {sql_quote(email_value)})",
+            "WHERE tenant_id='public';",
+            "",
+            f"-- 駅すぱあと={'利用' if config.enable_transport_setting else '利用しない'}",
+            f"UPDATE tenant SET system_config= jsonb_set(system_config ::jsonb, '{{enableTransportSetting}}', {sql_quote(transport_value)})",
+            "WHERE tenant_id='public';",
+            "",
+            f"-- 係・講座={'利用' if config.enable_lecture else '利用しない'}",
+            f"UPDATE tenant SET system_config= jsonb_set(system_config ::jsonb, '{{enableLecture}}', {sql_quote(lecture_value)})",
+            "WHERE tenant_id='public';",
             "",
         ]
     )
@@ -498,6 +533,7 @@ def build_product_package(
     version: BuildVersion,
     config: StandaloneConfig,
     sql_config: ProductSqlConfig,
+    tenant_import_config: TenantImportConfig | None = None,
     sql_svn_url: str | None = None,
     data_sync_git_url: str | None = None,
     data_sync_branch: str = DEFAULT_DATA_SYNC_BRANCH,
@@ -551,6 +587,11 @@ def build_product_package(
         if logger:
             logger("help_sql_replace")
         _replace_help_sql_if_present(web_zip, product_dir / "1.tenant" / "ohr_help.sql")
+        if tenant_import_config:
+            (product_dir / "1.tenant" / "99.import_plan.sql").write_text(
+                render_tenant_import_sql(tenant_import_config),
+                encoding="utf-8",
+            )
         (product_dir / "version.txt").write_text(render_version_txt(version), encoding="utf-8")
 
         final_zip = product_dir / "OneHrStandalone.zip"

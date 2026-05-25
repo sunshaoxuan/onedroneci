@@ -181,7 +181,27 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 
 这样 Help 菜单 SQL 与本次构建出的 Help 内容保持一致。
 
-## 12. 数据连携
+## 12. tenant 导入设置 SQL
+
+主控台根据 `導入計画` 与 `事前準備` 中的利用设定生成：
+
+```text
+製品/1.tenant/99.import_plan.sql
+```
+
+该脚本用于在普通数据库脚本执行后更新 tenant 级开关：
+
+- `support_applications`
+  - `em`：庶務事務管理
+  - `mdm`：共通設定管理
+  - `business-process`：各種申請管理与諸手当
+  - `personal-portal`：個人ポータル
+  - `taxadjustment`：年末調整
+- `system_config.enableEmail`
+- `system_config.enableTransportSetting`
+- `system_config.enableLecture`
+
+## 13. 数据连携
 
 主控台从数据连携 Git 仓库获取最新资材：
 
@@ -195,7 +215,7 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 <交付根>/<remote_build_id>/データ連携/
 ```
 
-## 13. version.txt
+## 14. version.txt
 
 完整標準版交付包会写入：
 
@@ -213,7 +233,7 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 
 资材编号由页面输入，用于和前后端分支形成可人工核验的版本体系。
 
-## 14. OneHrStandalone.zip
+## 15. OneHrStandalone.zip
 
 二次打包器以宿主机固定模板 `OneHrStandalone.zip` 为基础重建 zip，只替换：
 

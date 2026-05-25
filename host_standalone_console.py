@@ -21,6 +21,7 @@ from standalone_packager import (
     BuildVersion,
     ProductSqlConfig,
     StandaloneConfig,
+    TenantImportConfig,
     build_nho_common_package,
     build_product_package,
     configured_data_sync_branch,
@@ -38,7 +39,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.34"
+APP_VERSION = "0.3.35"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -270,6 +271,47 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
         if not str(payload.get(key) or "").strip():
             return payload, f"missing {key}"
     return payload, None
+
+
+def request_bool(payload: dict[str, Any], key: str, default: bool = False) -> bool:
+    value = payload.get(key)
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "on", "yes", "use"}
+
+
+def tenant_import_config_from_request(payload: dict[str, Any]) -> TenantImportConfig:
+    group_shomu = request_bool(payload, "publish_group_shomuSystem", True)
+    group_nencho = request_bool(payload, "publish_group_yearEndAdjustment", True)
+    group_apps = request_bool(payload, "publish_group_applications", True)
+    group_allowances = request_bool(payload, "publish_group_allowances", True)
+    group_common = request_bool(payload, "publish_group_commonSettings", True)
+
+    applications: list[str] = []
+    if group_shomu:
+        applications.append("em")
+    if group_common:
+        applications.append("mdm")
+    if group_apps or group_allowances:
+        applications.append("business-process")
+    if (
+        (group_shomu and request_bool(payload, "publish_shomu_portal", True))
+        or (group_nencho and request_bool(payload, "publish_nencho_portal", True))
+        or (group_apps and request_bool(payload, "publish_apps_portal", True))
+        or (group_allowances and request_bool(payload, "publish_allowance_portal", True))
+    ):
+        applications.append("personal-portal")
+    if group_nencho:
+        applications.append("taxadjustment")
+
+    return TenantImportConfig(
+        support_applications=tuple(applications),
+        enable_email=str(payload.get("mail_usage") or "none") == "use",
+        enable_transport_setting=str(payload.get("ekispert_usage") or "none") == "use",
+        enable_lecture=str(payload.get("course_usage") or "use") == "use",
+    )
 
 
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -693,6 +735,7 @@ def run_job(job_id: str) -> None:
                 organisation_name=req["organisation_name"],
                 organisation_dstart=req.get("organisation_dstart") or default_organisation_dstart(),
             ),
+            tenant_import_config=tenant_import_config_from_request(req),
             sql_svn_url=configured_sql_svn_url(),
             data_sync_git_url=configured_data_sync_git_url(),
             data_sync_branch=configured_data_sync_branch(),
