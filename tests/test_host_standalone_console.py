@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.31"
+    assert console.APP_VERSION == "0.3.32"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -668,8 +668,19 @@ def test_standard_publish_plan_main_menu_can_disable_children():
     assert "details.classList.toggle('publish-menu-disabled', !enabled)" in console.APP_JS
     assert "input.dataset.fixedMirror === 'true'" in console.APP_JS
     assert "enforcePublishMenuGroups();" in console.APP_JS
+    assert "document.querySelectorAll('.tag-tree > details')" in console.APP_JS
     assert "if (el.matches('.tag-tree summary'))" in console.APP_JS
     assert ".tag-tree details.publish-menu-disabled" in console.STYLE_CSS
+
+
+def test_standard_publish_plan_has_three_level_tree():
+    assert 'class="publish-category"' in console.INDEX_HTML
+    assert '<summary>個人ポータル</summary>' in console.INDEX_HTML
+    assert '<summary>身上申告</summary>' in console.INDEX_HTML
+    assert '<summary>共通設定</summary>' in console.INDEX_HTML
+    assert 'name="publish_shomu_free_search"' in console.INDEX_HTML
+    assert 'name="publish_apps_category_limit"' in console.INDEX_HTML
+    assert ".tag-tree details.publish-category" in console.STYLE_CSS
 
 
 def test_config_history_is_saved_with_organisation_and_job_id(tmp_path, monkeypatch):
