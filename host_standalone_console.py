@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.20"
+APP_VERSION = "0.3.21"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1407,6 +1407,10 @@ function setFormLocked(locked) {
   const modeLocked = mode !== 'create';
   const isNho = getProductVariant() === 'nho';
   document.querySelectorAll('#form input, #form select, #form button.material-toggle, #startJob').forEach(el => {
+    if (el.name === 'product_variant') {
+      el.disabled = false;
+      return;
+    }
     const standardHidden = isNho && el.closest('.standard-only');
     const nhoHidden = !isNho && el.closest('.nho-only');
     el.disabled = Boolean(standardHidden) || Boolean(nhoHidden) || locked || modeLocked || terminalLocked;

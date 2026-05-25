@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.20"
+    assert console.APP_VERSION == "0.3.21"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -566,6 +566,8 @@ def test_embedded_build_terminal_unlocks_only_after_remote_build_starts():
 def test_form_is_locked_unless_build_terminal_is_running():
     assert "const terminalLocked = lastTerminalStatus !== 'running'" in console.APP_JS
     assert "const modeLocked = mode !== 'create'" in console.APP_JS
+    assert "if (el.name === 'product_variant')" in console.APP_JS
+    assert "el.disabled = false;" in console.APP_JS
     assert "standardHidden" in console.APP_JS
     assert "nhoHidden" in console.APP_JS
     assert "el.disabled = Boolean(standardHidden) || Boolean(nhoHidden) || locked || modeLocked || terminalLocked" in console.APP_JS
