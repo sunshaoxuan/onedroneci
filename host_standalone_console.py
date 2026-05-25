@@ -38,7 +38,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.23"
+APP_VERSION = "0.3.24"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -2257,17 +2257,17 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   margin-top: 2px;
 }
 .standard-tab {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
   background: transparent;
   color: var(--muted);
-  padding: 8px 2px 10px;
+  padding: 8px 12px 10px;
   min-height: 34px;
 }
 .standard-tab.active {
-  color: var(--ink);
-  border-bottom-color: var(--ink);
+  color: #fff;
+  background: #111;
+  border-color: #111;
 }
 .standard-tab-panel {
   grid-column: 1 / -1;
