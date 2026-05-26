@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.39 - 2026-05-26
+
+### Changed
+
+- 標準版 `データ連携` 输出改为只复制 `ForeignTable`、`Function`、`Procedure`、`Sequence`、`Table`、`View` 六个目录，忽略其他根目录文件和文件夹。
+
 ## 0.3.38 - 2026-05-26
 
 ### Changed

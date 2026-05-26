@@ -29,6 +29,7 @@ DEFAULT_DATA_SYNC_BRANCH = "master"
 DEFAULT_DATA_SYNC_DIR = DEFAULT_TEMPLATE_ROOT / "data-synchronization"
 DEFAULT_DATA_SYNC_SUBDIR = "updsv7phr/PHR"
 DEFAULT_DATA_SYNC_GIT_TIMEOUT = int(os.environ.get("DATA_SYNC_GIT_TIMEOUT", "300"))
+DATA_SYNC_ALLOWED_DIRS = ("ForeignTable", "Function", "Procedure", "Sequence", "Table", "View")
 HELP_SQL_IN_WEB_ZIP = "ohr-cicd/web_prod/help/insert_ohr_help.sql"
 CONFIG_IN_STANDALONE_ZIP = "OneHrStandalone/bin/kernel/config.ini"
 PACKAGE_IN_STANDALONE_ZIP = "OneHrStandalone/software/package.zip"
@@ -573,7 +574,11 @@ def copy_data_sync_assets(
         shutil.rmtree(target_dir)
     if logger:
         logger("data_sync_copy")
-    shutil.copytree(source, target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for name in DATA_SYNC_ALLOWED_DIRS:
+        child = source / name
+        if child.is_dir():
+            shutil.copytree(child, target_dir / name)
 
 
 def build_product_package(

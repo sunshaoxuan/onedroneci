@@ -235,7 +235,13 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     make_template(template)
     make_sql_templates(sql_dir)
     (data_sync_repo / "updsv7phr" / "PHR").mkdir(parents=True)
-    (data_sync_repo / "updsv7phr" / "PHR" / "00_all_updsv7tophr.sql").write_text("data sync", encoding="utf-8")
+    (data_sync_repo / "updsv7phr" / "PHR" / "Table").mkdir()
+    (data_sync_repo / "updsv7phr" / "PHR" / "View").mkdir()
+    (data_sync_repo / "updsv7phr" / "PHR" / "Ignored").mkdir()
+    (data_sync_repo / "updsv7phr" / "PHR" / "Table" / "01_table.sql").write_text("table sync", encoding="utf-8")
+    (data_sync_repo / "updsv7phr" / "PHR" / "View" / "02_view.sql").write_text("view sync", encoding="utf-8")
+    (data_sync_repo / "updsv7phr" / "PHR" / "Ignored" / "99_ignore.sql").write_text("ignore", encoding="utf-8")
+    (data_sync_repo / "updsv7phr" / "PHR" / "00_all_updsv7tophr.sql").write_text("ignored root file", encoding="utf-8")
     import subprocess
 
     subprocess.run(["git", "init", "-b", "master"], cwd=data_sync_repo, check=True)
@@ -274,7 +280,10 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     product_dir = delivery_root / "製品"
     assert delivery_root == output / "build-1"
     assert product_dir.is_dir()
-    assert (delivery_root / "データ連携" / "00_all_updsv7tophr.sql").read_text(encoding="utf-8") == "data sync"
+    assert (delivery_root / "データ連携" / "Table" / "01_table.sql").read_text(encoding="utf-8") == "table sync"
+    assert (delivery_root / "データ連携" / "View" / "02_view.sql").read_text(encoding="utf-8") == "view sync"
+    assert not (delivery_root / "データ連携" / "Ignored").exists()
+    assert not (delivery_root / "データ連携" / "00_all_updsv7tophr.sql").exists()
     assert (product_dir / "version.txt").read_text(encoding="utf-8") == (
         "資材:M-001\n前台分支：release_front\n后台分支：release_back\n"
     )
@@ -424,7 +433,10 @@ def test_data_sync_uses_existing_cache_when_fetch_fails(monkeypatch, tmp_path):
     target = tmp_path / "target"
     cached = workdir / "updsv7phr" / "PHR"
     cached.mkdir(parents=True)
-    (cached / "00_all_updsv7tophr.sql").write_text("cached", encoding="utf-8")
+    (cached / "Function").mkdir()
+    (cached / "Function" / "01_function.sql").write_text("cached", encoding="utf-8")
+    (cached / "Ignored").mkdir()
+    (cached / "Ignored" / "99_ignore.sql").write_text("ignore", encoding="utf-8")
 
     def fail_sync(*args, **kwargs):
         raise subprocess.CalledProcessError(128, ["git", "fetch"], stderr="fatal: auth failed")
@@ -441,7 +453,8 @@ def test_data_sync_uses_existing_cache_when_fetch_fails(monkeypatch, tmp_path):
         logger=logs.append,
     )
 
-    assert (target / "00_all_updsv7tophr.sql").read_text(encoding="utf-8") == "cached"
+    assert (target / "Function" / "01_function.sql").read_text(encoding="utf-8") == "cached"
+    assert not (target / "Ignored").exists()
     assert "data_sync_cache_fallback" in logs
 
 
@@ -480,7 +493,8 @@ def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
     make_template(template)
     make_sql_templates(sql_dir)
     (data_sync_work / "updsv7phr" / "PHR").mkdir(parents=True)
-    (data_sync_work / "updsv7phr" / "PHR" / "00_all_updsv7tophr.sql").write_text("sync", encoding="utf-8")
+    (data_sync_work / "updsv7phr" / "PHR" / "Procedure").mkdir()
+    (data_sync_work / "updsv7phr" / "PHR" / "Procedure" / "01_procedure.sql").write_text("sync", encoding="utf-8")
     package_zip.write_bytes(b"new-package")
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr("ohr-cicd/web_prod/meta.json", "{}")

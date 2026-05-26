@@ -232,6 +232,17 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 <交付根>/<remote_build_id>/データ連携/
 ```
 
+复制时只保留以下根目录：
+
+- `ForeignTable`
+- `Function`
+- `Procedure`
+- `Sequence`
+- `Table`
+- `View`
+
+其他根目录文件和文件夹会被忽略。
+
 ## 15. version.txt
 
 完整標準版交付包会写入：
