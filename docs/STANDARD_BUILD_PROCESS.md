@@ -87,10 +87,12 @@
 2. 增量同步四个前端子仓。
 3. 使用 `/opt/pnpm-cache` 作为 pnpm store。
 4. 按 lock/package 指纹尽量跳过不必要的依赖安装。
-5. 执行 `npm run build`。
-6. 执行 `npm run bundle`。
-7. 只接受 workspace 生成的 `release_*.zip` 作为前端发布包来源。
-8. 禁止 fallback 打包整个源码 workspace。
+5. 默认设置 `STANDARD_NODE_OPTIONS=--max-old-space-size=1536`。
+6. 构建前临时把 `build:parallel`、`ohr-cli mono-build --parallel` 和部分 lerna 并发收敛为串行或低并发，适配低内存构建终端。
+7. 执行 `npm run build`。
+8. 执行 `npm run bundle`。
+9. 只接受 workspace 生成的 `release_*.zip` 作为前端发布包来源。
+10. 禁止 fallback 打包整个源码 workspace。
 
 ## 5. conf_prod 生成
 

@@ -1370,7 +1370,7 @@ ls -lh "$OUT_WEB_ZIP"
 DIRECT_FRONTEND_BUILD_SCRIPT = r"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export HOME="${HOME:-/root}"
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
+export NODE_OPTIONS="${STANDARD_NODE_OPTIONS:---max-old-space-size=1536}"
 cd "$OHR_FRONTEND_WORKDIR"
 npm i -g pnpm@10.22.0 --registry=https://registry.npmmirror.com/
 npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
@@ -1586,6 +1586,63 @@ else
   echo "Help 构建已跳过"
 fi
 cd "$OHR_FRONTEND_WORKDIR"
+apply_standard_low_memory_overrides() {
+  python3 - <<'PY'
+import json
+import re
+from pathlib import Path
+
+script_files = [
+    "package.json",
+    "ohr-micro-frontends/package.json",
+    "ohr-lowcode-engine/package.json",
+    "ohr-nocode-engine/package.json",
+]
+for package_json in Path("ohr-lowcode-engine/packages").glob("*/package.json"):
+    script_files.append(str(package_json))
+for package_json in Path("ohr-nocode-engine/packages").glob("*/package.json"):
+    script_files.append(str(package_json))
+
+for name in script_files:
+    path = Path(name)
+    if not path.exists():
+        continue
+    data = json.loads(path.read_text(encoding="utf-8"))
+    changed = []
+    for key, value in list(data.get("scripts", {}).items()):
+        new_value = value
+        new_value = new_value.replace("npm run build:parallel", "npm run build")
+        new_value = new_value.replace("yarn build:parallel", "yarn build")
+        new_value = new_value.replace("ohr-cli mono-build --parallel", "ohr-cli mono-build")
+        new_value = new_value.replace(" --parallel", "")
+        new_value = new_value.replace("NODE_OPTIONS=--max_old_space_size=8192", "NODE_OPTIONS=--max_old_space_size=1536")
+        new_value = new_value.replace("NODE_OPTIONS=--max-old-space-size=8192", "NODE_OPTIONS=--max-old-space-size=1536")
+        new_value = new_value.replace("NODE_OPTIONS=--max_old_space_size=4096", "NODE_OPTIONS=--max_old_space_size=1536")
+        new_value = new_value.replace("NODE_OPTIONS=--max-old-space-size=4096", "NODE_OPTIONS=--max-old-space-size=1536")
+        new_value = re.sub(r"(lerna run build --stream)(?!\s+--concurrency)", r"\1 --concurrency 1", new_value)
+        new_value = re.sub(r"(lerna run build --scope=@omf/subsys-\*)(?!\s+--concurrency)", r"\1 --concurrency 1", new_value)
+        if name.startswith("ohr-nocode-engine/packages/"):
+            new_value = new_value.replace("yarn set-env-prod build-scripts build", "yarn set-env-prod NODE_OPTIONS=--max_old_space_size=1536 build-scripts build")
+            new_value = new_value.replace("yarn set-env-dev build-scripts build", "yarn set-env-dev NODE_OPTIONS=--max_old_space_size=1536 build-scripts build")
+        if new_value != value:
+            data["scripts"][key] = new_value
+            changed.append(key)
+    if changed:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"[standard low-memory] {name}: {', '.join(changed)}")
+
+for script_name in ("ohr-lowcode-engine/scripts/build.sh", "ohr-lowcode-engine/scripts/build-parallel.sh"):
+    path = Path(script_name)
+    if not path.exists():
+        continue
+    text = path.read_text(encoding="utf-8")
+    new_text = text.replace("--stream\n", "--stream \\\n  --concurrency 1\n")
+    if new_text != text:
+        path.write_text(new_text, encoding="utf-8")
+        print(f"[standard low-memory] {script_name}: lerna concurrency=1")
+PY
+}
+apply_standard_low_memory_overrides
 find . -maxdepth 1 -type f -name 'release_*.zip' -delete
 find . -maxdepth 1 -type d -name 'release_*' -exec rm -rf {} +
 npm run build

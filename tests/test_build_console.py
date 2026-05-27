@@ -732,6 +732,12 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "git -C \"$CICD_DIR\" clean -fd -e node_modules" in script
     assert "-e .ci-cache" in script
     assert "[cache yarn] ohr-cicd unchanged; skip yarn install" in script
+    assert "STANDARD_NODE_OPTIONS" in script
+    assert "--max-old-space-size=1536" in script
+    assert "apply_standard_low_memory_overrides" in script
+    assert 'replace("npm run build:parallel", "npm run build")' in script
+    assert 'replace("ohr-cli mono-build --parallel", "ohr-cli mono-build")' in script
+    assert "--concurrency 1" in script
     assert "前端发布包生成失败" in script
     assert 'zip -r "$OUT_WEB_ZIP" .' not in script
     assert "node_modules/*" not in script
@@ -741,6 +747,13 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "[cache pnpm] $name unchanged; skip pnpm i" in restore_script
     assert "git clean -fd -e node_modules" in restore_script
     assert "-e .ci-cache" in restore_script
+
+
+def test_build_console_service_keeps_api_alive_on_child_oom():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "deploy" / "build-console" / "ohr-build-console.service").read_text(encoding="utf-8")
+
+    assert "OOMPolicy=continue" in service
 
 
 def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):

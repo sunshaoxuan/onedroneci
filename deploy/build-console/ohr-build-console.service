@@ -10,6 +10,7 @@ EnvironmentFile=/opt/ohr-build-console/build-console.env
 ExecStart=/usr/bin/python3 /opt/ohr-build-console/server.py
 Restart=always
 RestartSec=5
+OOMPolicy=continue
 
 [Install]
 WantedBy=multi-user.target

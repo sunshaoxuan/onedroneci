@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.48 - 2026-05-27
+
+### Changed
+
+- 標準版前端 Direct 构建增加低内存保护：默认 `STANDARD_NODE_OPTIONS=--max-old-space-size=1536`，构建前临时把 `build:parallel`、`ohr-cli mono-build --parallel` 和部分 lerna 并发收敛为串行或低并发，降低 2GB 级构建终端触发 OOM 的概率。
+- 构建终端 systemd 服务增加 `OOMPolicy=continue`。如果前端子进程被内核 OOM killer 杀掉，8090 服务保持可用并返回明确构建失败状态。
+
 ## 0.3.47 - 2026-05-27
 
 ### Added
