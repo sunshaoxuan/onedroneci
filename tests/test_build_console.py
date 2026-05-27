@@ -460,7 +460,7 @@ def test_cleanup_previous_build_outputs_keeps_cache_and_current_metadata(tmp_pat
     cache_dir = tmp_path / "pnpm-cache"
     cache_dir.mkdir()
 
-    server.cleanup_previous_build_outputs("standard", "new1")
+    released = server.cleanup_previous_build_outputs("standard", "new1")
 
     assert (old_build / "metadata.json").is_file()
     assert (old_build / "build.log").is_file()
@@ -469,6 +469,51 @@ def test_cleanup_previous_build_outputs_keeps_cache_and_current_metadata(tmp_pat
     assert not old_artifact.exists()
     assert (server.variant_artifact_root("standard") / "new1").is_dir()
     assert cache_dir.is_dir()
+    assert released == 9
+
+
+def test_cleanup_log_reports_disk_usage_and_waits(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path / "builds")
+    monkeypatch.setattr(server, "ARTIFACT_ROOT", tmp_path / "artifacts")
+    monkeypatch.setattr(server, "OHR_BACK_DIR", tmp_path / "back")
+    monkeypatch.setenv("OHR_BACK_GIT_TOKEN", "token")
+
+    sleeps = []
+    free_values = iter([1000, 2000])
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(server, "disk_free_bytes", lambda path: next(free_values))
+    monkeypatch.setattr(server, "cleanup_previous_build_outputs", lambda product_variant, build_id: 512)
+    monkeypatch.setattr(server, "run_command", lambda *args, **kwargs: 0)
+
+    build_id = "new2"
+    server.build_dir(build_id, "standard").mkdir(parents=True)
+    server.write_json(
+        server.metadata_path(build_id, "standard"),
+        {
+            "id": build_id,
+            "status": "queued",
+            "request": {
+                "product_variant": "standard",
+                "backend_branch": "",
+                "frontend_release_branch": "release_front",
+                "build_backend": False,
+                "build_frontend": False,
+            },
+            "steps": server.make_steps("direct"),
+            "artifacts": [],
+        },
+    )
+    server.log_path(build_id, "standard").write_text("", encoding="utf-8")
+
+    server.run_direct_build(build_id)
+
+    log = server.log_path(build_id, "standard").read_text(encoding="utf-8")
+    assert "清理前空余磁盘大小：1000 B" in log
+    assert "清理释放磁盘大小：512 B" in log
+    assert "清理后空余磁盘大小：1.95 KB" in log
+    assert "清理完成，等待 5 秒后继续构建。" in log
+    assert sleeps == [5]
 
 
 def test_delete_running_build_is_rejected(tmp_path, monkeypatch):

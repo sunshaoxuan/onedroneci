@@ -263,17 +263,20 @@ def shared_artifact_path(build_id: str, name: str, product_variant: str | None =
     return ARTIFACT_ROOT / build_id / name
 
 
-def cleanup_previous_build_outputs(product_variant: str, current_build_id: str) -> None:
+def cleanup_previous_build_outputs(product_variant: str, current_build_id: str) -> int:
     variant = normalise_product_variant(product_variant)
+    freed_bytes = 0
     artifact_root = variant_artifact_root(variant)
     if artifact_root.exists():
         for child in artifact_root.iterdir():
             if child.name != current_build_id:
+                freed_bytes += path_size_bytes(child)
                 if child.is_dir():
                     shutil.rmtree(child, ignore_errors=True)
                 else:
                     child.unlink(missing_ok=True)
     current_shared = artifact_root / current_build_id
+    freed_bytes += path_size_bytes(current_shared)
     shutil.rmtree(current_shared, ignore_errors=True)
     current_shared.mkdir(parents=True, exist_ok=True)
 
@@ -284,14 +287,53 @@ def cleanup_previous_build_outputs(product_variant: str, current_build_id: str) 
             if not build_root.is_dir() or build_root.name == current_build_id:
                 continue
             for name in ("package.zip", "web.zip"):
-                (build_root / name).unlink(missing_ok=True)
+                artifact = build_root / name
+                freed_bytes += path_size_bytes(artifact)
+                artifact.unlink(missing_ok=True)
 
     if ARTIFACT_ROOT.exists():
         for child in ARTIFACT_ROOT.iterdir():
             if child.name in PRODUCT_VARIANTS or child.name == current_build_id:
                 continue
             if child.is_dir():
+                freed_bytes += path_size_bytes(child)
                 shutil.rmtree(child, ignore_errors=True)
+    return freed_bytes
+
+
+def path_size_bytes(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for item in path.rglob("*"):
+        if item.is_file():
+            try:
+                total += item.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def disk_free_bytes(path: Path) -> int:
+    probe = path
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    return shutil.disk_usage(probe).free
+
+
+def format_bytes(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            if unit == "B":
+                return f"{int(value)} {unit}"
+            return f"{value:.2f} {unit}"
+        value /= 1024
 
 
 def build_id_exists(build_id: str) -> bool:
@@ -511,7 +553,14 @@ def run_direct_build(build_id: str) -> None:
             f"backend_branch={branch or '-'}, frontend_release_branch={request.get('frontend_release_branch') or '-'}",
         )
         append_log(build_id, "清理旧构建产物，保留源码工作区和依赖缓存。")
-        cleanup_previous_build_outputs(product_variant, build_id)
+        free_before = disk_free_bytes(ARTIFACT_ROOT)
+        append_log(build_id, f"清理前空余磁盘大小：{format_bytes(free_before)}")
+        released = cleanup_previous_build_outputs(product_variant, build_id)
+        free_after = disk_free_bytes(ARTIFACT_ROOT)
+        append_log(build_id, f"清理释放磁盘大小：{format_bytes(released)}")
+        append_log(build_id, f"清理后空余磁盘大小：{format_bytes(free_after)}")
+        append_log(build_id, "清理完成，等待 5 秒后继续构建。")
+        time.sleep(5)
 
         update_step(build_id, "validate", "running")
         back_dir = NHO_BACK_DIR if product_variant == "nho" else OHR_BACK_DIR
