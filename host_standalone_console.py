@@ -28,6 +28,7 @@ from standalone_packager import (
     build_nho_common_package,
     build_product_package,
     configured_data_sync_branch,
+    configured_data_sync_custom_subdir,
     configured_data_sync_dir,
     configured_data_sync_git_url,
     configured_data_sync_subdir,
@@ -39,10 +40,11 @@ from standalone_packager import (
     download_remote_artifact,
     download_remote_file,
     remote_json,
+    repo_subdir_from_input,
 )
 
 
-APP_VERSION = "0.3.39"
+APP_VERSION = "0.3.46"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -458,23 +460,50 @@ def publish_any_enabled(payload: dict[str, Any], controls: list[tuple[str, bool,
 
 
 def ohr_import_config_from_request(payload: dict[str, Any]) -> OhrImportConfig:
-    disabled_menus: list[OhrMenuDisable] = []
+    menu_updates: list[OhrMenuDisable] = []
     seen_menus: set[tuple[str, str]] = set()
     for mapping in PUBLISH_MENU_MAPPINGS:
         application_name = str(mapping["application_name"])
         menu_code = str(mapping["menu_code"])
         if (application_name, menu_code) in seen_menus:
             continue
-        if publish_any_enabled(payload, mapping["controls"]):
-            continue
-        disabled_menus.append(OhrMenuDisable(str(mapping["label"]), application_name, menu_code))
+        menu_updates.append(
+            OhrMenuDisable(
+                str(mapping["label"]),
+                application_name,
+                menu_code,
+                publish_any_enabled(payload, mapping["controls"]),
+            )
+        )
         seen_menus.add((application_name, menu_code))
-    disabled_scheduled_tasks = [
-        OhrScheduledTaskDisable(label, uuid, code, name_i18n_key, application_name)
+    scheduled_task_updates = [
+        OhrScheduledTaskDisable(label, uuid, code, name_i18n_key, application_name, publish_enabled(payload, field, default, group_field))
         for field, default, label, uuid, code, name_i18n_key, application_name, group_field in PUBLISH_SCHEDULED_TASK_MAPPINGS
-        if not publish_enabled(payload, field, default, group_field)
     ]
-    return OhrImportConfig(tuple(disabled_menus), tuple(disabled_scheduled_tasks))
+    return OhrImportConfig(tuple(menu_updates), tuple(scheduled_task_updates))
+
+
+def validate_data_sync_custom_source(value: str) -> dict[str, Any]:
+    raw = str(value or "").strip()
+    if not raw:
+        return {"ok": True, "path": ""}
+    data = remote_json(
+        REMOTE_BUILD_CONSOLE_URL,
+        f"/api/data-sync-custom-source/validate?value={urllib.parse.quote(raw, safe='')}",
+    )
+    if data.get("ok") and data.get("path"):
+        repo_subdir_from_input(str(data["path"]), repo_url=configured_data_sync_git_url(), branch=configured_data_sync_branch())
+    return data
+
+
+def validate_help_docs_svn_revision(value: str) -> dict[str, Any]:
+    raw = str(value or "").strip()
+    if not raw:
+        return {"ok": True, "revision": ""}
+    return remote_json(
+        REMOTE_BUILD_CONSOLE_URL,
+        f"/api/help-docs-svn-revision/validate?value={urllib.parse.quote(raw, safe='')}",
+    )
 
 
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -512,6 +541,14 @@ def public_job(job: dict[str, Any]) -> dict[str, Any]:
     result = dict(job)
     result["request"] = dict(job.get("request") or {})
     return result
+
+
+def truthy(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on", "use")
 
 
 def append_log(job_id: str, message: str) -> None:
@@ -779,9 +816,10 @@ def run_job(job_id: str) -> None:
                 "product_variant": product_variant,
                 "build_backend": build_backend,
                 "build_frontend": build_frontend,
+                "build_help": truthy(req.get("build_help"), True),
                 "backend_branch": req.get("backend_branch") or "",
                 "frontend_release_branch": req.get("frontend_release_branch") or "",
-                "help_docs_branch": req.get("help_docs_branch") or "release_ci",
+                "help_docs_svn_revision": req.get("help_docs_svn_revision") or "",
                 "conf_server_host": req.get("conf_server_host") or "",
                 "conf_web_port": int(req.get("conf_web_port") or 80),
                 "conf_enable_https": bool(req.get("conf_enable_https")),
@@ -905,10 +943,17 @@ def run_job(job_id: str) -> None:
             data_sync_branch=configured_data_sync_branch(),
             data_sync_dir=configured_data_sync_dir(),
             data_sync_subdir=configured_data_sync_subdir(),
+            data_sync_custom_subdir=req.get("data_sync_custom_subdir") or configured_data_sync_custom_subdir(),
+                include_help_sql=truthy(req.get("build_help"), True),
             logger=package_log,
         )
         outputs.update(partial_outputs)
-        for step_id in ("sql_assets", "data_sync_assets", "account_sql", "help_sql", "standalone_zip"):
+        if not truthy(req.get("build_help"), True):
+            update_progress(job_id, "help_sql", "skipped")
+        packaging_steps = ("sql_assets", "data_sync_assets", "account_sql", "standalone_zip")
+        if truthy(req.get("build_help"), True):
+            packaging_steps = ("sql_assets", "data_sync_assets", "account_sql", "help_sql", "standalone_zip")
+        for step_id in packaging_steps:
             current = next((step for step in (read_job(job_id).get("progress") or []) if step.get("id") == step_id), {})
             if current.get("status") in ("pending", "running"):
                 update_progress(job_id, step_id, "success")
@@ -1006,7 +1051,8 @@ INDEX_HTML = """<!doctype html>
         <section class="standard-only standard-tab-panel" data-standard-tab-panel="prep">
           <fieldset class="form-section">
             <legend data-i18n="basicBuildInfo">構築パラメータ</legend>
-            <label class="standard-only"><span data-i18n="helpBranch">ヘルプブランチ</span><input name="help_docs_branch" value="release_ci"></label>
+            <label class="standard-only"><span data-i18n="helpSvnRevision">Help SVN Revision</span><input name="help_docs_svn_revision" data-i18n-placeholder="helpSvnRevisionPlaceholder"></label>
+            <label class="check-row standard-only"><input name="build_help" type="checkbox" checked><span data-i18n="buildHelp">Help パッケージと関連資材を生成</span></label>
             <label class="standard-only"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
             <label class="standard-only"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
             <label class="standard-only"><span data-i18n="employeeNumberDigits">職員番号桁数</span><input name="employee_number_digits" type="number" min="1" max="20" placeholder="8"></label>
@@ -1052,6 +1098,7 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only"><span data-i18n="updsPassword">UPDS パスワード</span><input name="upds_password"></label>
             <label class="standard-only"><span data-i18n="updsPort">UPDS ポート</span><input name="upds_port" type="number" min="1" max="65535"></label>
             <label class="standard-only"><span data-i18n="updsDbName">UPDS DB 名</span><input name="upds_db_name"></label>
+            <label class="standard-only section-wide"><span data-i18n="dataSyncCustomSource">補充スクリプトコード源</span><input name="data_sync_custom_subdir" data-i18n-placeholder="dataSyncCustomSourcePlaceholder"></label>
           </fieldset>
           <fieldset class="form-section">
             <legend data-i18n="ekispertInfo">駅すぱあと情報</legend>
@@ -1176,6 +1223,10 @@ const I18N = {
     tabImportPlan: '導入計画',
     basicBuildInfo: '構築パラメータ',
     helpBranch: 'ヘルプブランチ',
+    helpSvnRevision: 'Help SVN Revision',
+    helpSvnRevisionPlaceholder: '空欄の場合は最新 revision',
+    helpSvnRevisionInvalid: '存在しない SVN revision です',
+    buildHelp: 'Help パッケージと関連資材を生成',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
     enableHttps: 'HTTPS / 443 設定を生成',
@@ -1206,6 +1257,9 @@ const I18N = {
     updsPassword: 'UPDS パスワード',
     updsPort: 'UPDS ポート',
     updsDbName: 'UPDS DB 名',
+    dataSyncCustomSource: '補充スクリプトコード源',
+    dataSyncCustomSourcePlaceholder: '完全な tree URL、または /-/tree/master/ の後ろの部分',
+    dataSyncCustomSourceInvalid: '存在しないパスです',
     ekispertInfo: '駅すぱあと情報',
     ekispertUrl: '駅すぱあと URL',
     appHostName: 'アプリケーションサービスホスト名',
@@ -1318,6 +1372,10 @@ const I18N = {
     tabImportPlan: '导入计划',
     basicBuildInfo: '构建参数',
     helpBranch: 'Help 分支',
+    helpSvnRevision: 'Help SVN Revision',
+    helpSvnRevisionPlaceholder: '不填则使用最新 revision',
+    helpSvnRevisionInvalid: '不存在的 SVN revision',
+    buildHelp: '生成 Help 包及相关资源',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
     enableHttps: '生成 HTTPS / 443 配置',
@@ -1348,6 +1406,9 @@ const I18N = {
     updsPassword: 'UPDS 密码',
     updsPort: 'UPDS 端口',
     updsDbName: 'UPDS DB 名',
+    dataSyncCustomSource: '补充脚本代码源',
+    dataSyncCustomSourcePlaceholder: '可粘贴完整 tree URL，也可只填 /-/tree/master/ 后面的部分',
+    dataSyncCustomSourceInvalid: '不存在的路径',
     ekispertInfo: '駅すぱあと信息',
     ekispertUrl: '駅すぱあと URL',
     appHostName: '应用服务主机名',
@@ -1460,6 +1521,10 @@ const I18N = {
     tabImportPlan: 'Import plan',
     basicBuildInfo: 'Build parameters',
     helpBranch: 'Help branch',
+    helpSvnRevision: 'Help SVN Revision',
+    helpSvnRevisionPlaceholder: 'Leave empty to use the latest revision',
+    helpSvnRevisionInvalid: 'SVN revision does not exist',
+    buildHelp: 'Build Help package and resources',
     customerHost: 'Customer access address',
     webPort: 'Web port',
     enableHttps: 'Generate HTTPS / 443 configuration',
@@ -1490,6 +1555,9 @@ const I18N = {
     updsPassword: 'UPDS password',
     updsPort: 'UPDS port',
     updsDbName: 'UPDS DB name',
+    dataSyncCustomSource: 'Additional script source',
+    dataSyncCustomSourcePlaceholder: 'Paste a full tree URL, or enter the part after /-/tree/master/',
+    dataSyncCustomSourceInvalid: 'Path does not exist',
     ekispertInfo: 'Ekispert information',
     ekispertUrl: 'Ekispert URL',
     appHostName: 'Application service host name',
@@ -1819,6 +1887,67 @@ function validateConditionalRequiredFields(form) {
   }
   return true;
 }
+function setDataSyncCustomSourceState(input, state, message = '') {
+  input.dataset.validationState = state;
+  input.classList.toggle('field-invalid', state === 'invalid');
+  let note = input.parentElement && input.parentElement.querySelector('.field-message');
+  if (state === 'valid' || !message) {
+    if (note) note.remove();
+    return;
+  }
+  if (!note) {
+    note = document.createElement('span');
+    note.className = 'field-message';
+    input.parentElement.appendChild(note);
+  }
+  note.textContent = message;
+}
+async function validateDataSyncCustomSource(input) {
+  const value = String(input.value || '').trim();
+  if (!value || getProductVariant() !== 'standard') {
+    setDataSyncCustomSourceState(input, 'valid');
+    return true;
+  }
+  setDataSyncCustomSourceState(input, 'checking');
+  try {
+    const res = await fetch(`/api/data-sync-custom-source/validate?value=${encodeURIComponent(value)}`);
+    const data = await res.json();
+    if (data.ok) {
+      if (data.path) input.value = data.path;
+      setDataSyncCustomSourceState(input, 'valid');
+      return true;
+    }
+  } catch (error) {
+    console.warn('failed to validate data sync custom source', error);
+  }
+  setDataSyncCustomSourceState(input, 'invalid', t('dataSyncCustomSourceInvalid'));
+  return false;
+}
+async function validateHelpSvnRevision(input) {
+  const value = String(input.value || '').trim();
+  if (!value || getProductVariant() !== 'standard') {
+    setDataSyncCustomSourceState(input, 'valid');
+    return true;
+  }
+  if (!/^\d+$/.test(value)) {
+    setDataSyncCustomSourceState(input, 'invalid', t('helpSvnRevisionInvalid'));
+    return false;
+  }
+  setDataSyncCustomSourceState(input, 'checking');
+  try {
+    const res = await fetch(`/api/help-docs-svn-revision/validate?value=${encodeURIComponent(value)}`);
+    const data = await res.json();
+    if (data.ok) {
+      if (data.revision) input.value = data.revision;
+      setDataSyncCustomSourceState(input, 'valid');
+      return true;
+    }
+  } catch (error) {
+    console.warn('failed to validate help svn revision', error);
+  }
+  setDataSyncCustomSourceState(input, 'invalid', t('helpSvnRevisionInvalid'));
+  return false;
+}
 async function loadBranchLists() {
   const expectedVariant = getProductVariant();
   const requestSeq = ++branchListRequestSeq;
@@ -1886,6 +2015,7 @@ function translateLogText(text) {
       'data_sync_git_sync': 'データ連携資材を取得しています',
       'data_sync_cache_fallback': 'データ連携資材の取得に失敗したため、ローカルキャッシュを使用します',
       'data_sync_copy': 'データ連携資材を配置しています',
+      'data_sync_custom_copy': '補充データ連携資材を配置しています',
       'account_sql_patch': '4.account.sql を反映しています',
       'help_sql_replace': 'Help SQL を反映しています',
       'standalone_zip_rebuild': 'OneHrStandalone.zip を生成しています',
@@ -1917,6 +2047,7 @@ function translateLogText(text) {
       'data_sync_git_sync': 'Fetching data synchronization assets',
       'data_sync_cache_fallback': 'Data synchronization fetch failed; using local cache',
       'data_sync_copy': 'Copying data synchronization assets',
+      'data_sync_custom_copy': 'Copying additional data synchronization assets',
       'account_sql_patch': 'Applying 4.account.sql changes',
       'help_sql_replace': 'Applying Help SQL',
       'standalone_zip_rebuild': 'Generating OneHrStandalone.zip',
@@ -1944,6 +2075,7 @@ function translateLogText(text) {
       'data_sync_git_sync': '正在获取数据连携资材',
       'data_sync_cache_fallback': '数据连携资材获取失败，使用本地缓存继续',
       'data_sync_copy': '正在配置数据连携资材',
+      'data_sync_custom_copy': '正在配置补充数据连携资材',
       'account_sql_patch': '正在修改 4.account.sql',
       'help_sql_replace': '正在反映 Help SQL',
       'standalone_zip_rebuild': '正在生成 OneHrStandalone.zip',
@@ -2068,6 +2200,11 @@ function setFormLocked(locked) {
     const nhoHidden = !isNho;
     el.disabled = Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
   });
+  const buildHelpInput = document.querySelector('input[name="build_help"]');
+  const helpRevisionInput = document.querySelector('input[name="help_docs_svn_revision"]');
+  if (helpRevisionInput && buildHelpInput) {
+    helpRevisionInput.disabled = helpRevisionInput.disabled || !buildHelpInput.checked;
+  }
   document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
   enforcePublishMenuGroups();
 }
@@ -2231,6 +2368,20 @@ document.querySelectorAll('.material-combo input').forEach(input => {
 document.querySelector('input[name="material_number"]').addEventListener('change', event => {
   loadNhoMaterialReleaseBranches(event.target.value);
 });
+const dataSyncCustomInput = document.querySelector('input[name="data_sync_custom_subdir"]');
+if (dataSyncCustomInput) {
+  dataSyncCustomInput.addEventListener('blur', () => validateDataSyncCustomSource(dataSyncCustomInput));
+  dataSyncCustomInput.addEventListener('input', () => setDataSyncCustomSourceState(dataSyncCustomInput, 'pending'));
+}
+const helpSvnRevisionInput = document.querySelector('input[name="help_docs_svn_revision"]');
+if (helpSvnRevisionInput) {
+  helpSvnRevisionInput.addEventListener('blur', () => validateHelpSvnRevision(helpSvnRevisionInput));
+  helpSvnRevisionInput.addEventListener('input', () => setDataSyncCustomSourceState(helpSvnRevisionInput, 'pending'));
+}
+const buildHelpInput = document.querySelector('input[name="build_help"]');
+if (buildHelpInput) {
+  buildHelpInput.addEventListener('change', () => setFormLocked(false));
+}
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.material-combo')) closeMaterialMenu();
 });
@@ -2342,6 +2493,18 @@ async function deleteConfigHistory(configId) {
 document.getElementById('form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!validateConditionalRequiredFields(event.target)) return;
+  const dataSyncCustomInput = event.target.elements.data_sync_custom_subdir;
+  if (dataSyncCustomInput && !(await validateDataSyncCustomSource(dataSyncCustomInput))) {
+    dataSyncCustomInput.focus();
+    return;
+  }
+  const helpSvnRevisionInput = event.target.elements.help_docs_svn_revision;
+  const buildHelpInput = event.target.elements.build_help;
+  const buildHelp = buildHelpInput ? buildHelpInput.checked : true;
+  if (buildHelp && helpSvnRevisionInput && !(await validateHelpSvnRevision(helpSvnRevisionInput))) {
+    helpSvnRevisionInput.focus();
+    return;
+  }
   const terminal = await refreshTerminal();
   if (terminal.status !== 'running') {
     alert(t('terminalFirst'));
@@ -2349,6 +2512,7 @@ document.getElementById('form').addEventListener('submit', async (event) => {
   }
   const payload = Object.fromEntries(new FormData(event.target).entries());
   payload.conf_enable_https = event.target.elements.conf_enable_https.checked;
+  payload.build_help = buildHelp;
   payload.ui_language = lang;
   const res = await fetch('/api/jobs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
   const job = await res.json();
@@ -2717,6 +2881,17 @@ input::placeholder {
   color: #aeb8c6;
   font-weight: 500;
   opacity: 1;
+}
+input.field-invalid {
+  border-color: var(--danger);
+  background: #fff7f6;
+}
+.field-message {
+  display: block;
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
 }
 input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
 .terminal-panel, .panel {
@@ -3295,6 +3470,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"configs": list_config_histories()})
         if parsed.path == "/api/jobs":
             return self.send_json({"jobs": [public_job(job) for job in list_jobs()]})
+        if parsed.path == "/api/data-sync-custom-source/validate":
+            query = urllib.parse.parse_qs(parsed.query)
+            value = str((query.get("value") or [""])[0]).strip()
+            try:
+                return self.send_json(validate_data_sync_custom_source(value))
+            except Exception as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        if parsed.path == "/api/help-docs-svn-revision/validate":
+            query = urllib.parse.parse_qs(parsed.query)
+            value = str((query.get("value") or [""])[0]).strip()
+            try:
+                return self.send_json(validate_help_docs_svn_revision(value))
+            except Exception as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/api/nho-material-release-branches":
             query = urllib.parse.parse_qs(parsed.query)
             material_number = str((query.get("material_number") or [""])[0]).strip()
@@ -3368,6 +3557,30 @@ class Handler(BaseHTTPRequestHandler):
         if validation_error:
             self.send_json({"error": validation_error}, HTTPStatus.BAD_REQUEST)
             return
+        if (
+            str(payload.get("product_variant") or "standard") == "standard"
+            and truthy(payload.get("build_help"), True)
+            and str(payload.get("help_docs_svn_revision") or "").strip()
+        ):
+            try:
+                revision_check = validate_help_docs_svn_revision(str(payload.get("help_docs_svn_revision") or ""))
+            except Exception as exc:
+                self.send_json({"error": f"invalid help_docs_svn_revision: {exc}"}, HTTPStatus.BAD_REQUEST)
+                return
+            if not revision_check.get("ok"):
+                self.send_json({"error": "invalid help_docs_svn_revision: not_found"}, HTTPStatus.BAD_REQUEST)
+                return
+            payload["help_docs_svn_revision"] = revision_check.get("revision") or ""
+        if str(payload.get("product_variant") or "standard") == "standard" and str(payload.get("data_sync_custom_subdir") or "").strip():
+            try:
+                custom_source = validate_data_sync_custom_source(str(payload.get("data_sync_custom_subdir") or ""))
+            except Exception as exc:
+                self.send_json({"error": f"invalid data_sync_custom_subdir: {exc}"}, HTTPStatus.BAD_REQUEST)
+                return
+            if not custom_source.get("ok"):
+                self.send_json({"error": "invalid data_sync_custom_subdir: not_found"}, HTTPStatus.BAD_REQUEST)
+                return
+            payload["data_sync_custom_subdir"] = custom_source.get("path") or ""
         try:
             terminal = build_terminal_status()
         except Exception as exc:

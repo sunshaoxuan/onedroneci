@@ -96,6 +96,7 @@ HELP_DOCS_SVN_URL = os.environ.get(
 HELP_DOCS_SVN_DIR = Path(os.environ.get("HELP_DOCS_SVN_DIR", "/opt/ohr-help-docs-svn"))
 HELP_DOCS_SVN_USERNAME = os.environ.get("HELP_DOCS_SVN_USERNAME", "")
 HELP_DOCS_SVN_PASSWORD = os.environ.get("HELP_DOCS_SVN_PASSWORD", "")
+HELP_DOCS_SVN_REVISION_RE = re.compile(r"^\d+$")
 CONF_PROD_TEMPLATE_DIR = Path(os.environ.get("CONF_PROD_TEMPLATE_DIR", "/opt/ohr-build-console/conf_prod_template"))
 OHR_CICD_GIT_URL = os.environ.get("OHR_CICD_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-cicd.git")
 OHR_CICD_BRANCH = os.environ.get("OHR_CICD_BRANCH", "master")
@@ -106,6 +107,9 @@ OHR_CICD_MINIO_SERVER = os.environ.get("OHR_CICD_MINIO_SERVER", "http://localhos
 OHR_CICD_MINIO_HOST = os.environ.get("OHR_CICD_MINIO_HOST", "localhost:19000")
 OHR_CICD_RUSTFS_SERVER = os.environ.get("OHR_CICD_RUSTFS_SERVER", "http://127.0.0.1:12345")
 OHR_CICD_RUSTFS_HOST = os.environ.get("OHR_CICD_RUSTFS_HOST", "127.0.0.1:12345")
+DATA_SYNC_GIT_URL = os.environ.get("DATA_SYNC_GIT_URL", "https://upds7.ujob100.com/ohr/data-synchronization.git")
+DATA_SYNC_BRANCH = os.environ.get("DATA_SYNC_BRANCH", "master")
+DATA_SYNC_DIR = Path(os.environ.get("DATA_SYNC_DIR", "/opt/ohr-build-console/data-synchronization"))
 HOST = os.environ.get("BUILD_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("BUILD_CONSOLE_PORT", "8090"))
 CONFIG_FILE = Path(os.environ.get("BUILD_CONSOLE_ENV", ROOT / "build-console.env"))
@@ -132,6 +136,7 @@ BUILD_THREADS: dict[str, threading.Thread] = {}
 BUILD_PROCS: dict[str, subprocess.Popen[str]] = {}
 CANCELLED_BUILDS: set[str] = set()
 NHO_MATERIAL_CACHE: dict[str, Any] = {"expires_at": 0.0, "numbers": []}
+DATA_SYNC_VALIDATE_LOCK = threading.Lock()
 
 
 class SvnIndexParser(HTMLParser):
@@ -335,7 +340,9 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         or payload.get("frontend_bootstrap_branch")
         or ""
     ).strip()
-    help_docs_branch = str(payload.get("help_docs_branch") or HELP_DOCS_BRANCH).strip()
+    help_docs_branch = HELP_DOCS_BRANCH.strip()
+    help_docs_svn_revision = str(payload.get("help_docs_svn_revision") or "").strip()
+    build_help = parse_bool_field(payload, "build_help", True)
     conf_server_host = str(payload.get("conf_server_host") or "").strip()
     conf_web_port = parse_int_field(payload, "conf_web_port", 80)
     conf_enable_https = parse_bool_field(payload, "conf_enable_https", False)
@@ -357,6 +364,12 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("请填写 Help 文档分支")
     if product_variant == "standard" and help_docs_branch and not BRANCH_RE.fullmatch(help_docs_branch):
         raise ValueError("Help 文档分支名仅允许字母、数字、._/-")
+    if product_variant == "standard" and help_docs_svn_revision and not HELP_DOCS_SVN_REVISION_RE.fullmatch(help_docs_svn_revision):
+        raise ValueError("Help SVN revision 仅允许数字")
+    if product_variant == "standard" and build_frontend and build_help and help_docs_svn_revision:
+        revision_check = validate_help_docs_svn_revision(help_docs_svn_revision)
+        if not revision_check.get("ok"):
+            raise ValueError("Help SVN revision 不存在")
     if product_variant == "standard" and build_frontend and not conf_server_host:
         raise ValueError("请填写客户访问地址")
     if conf_server_host and not CONF_HOST_RE.fullmatch(conf_server_host):
@@ -404,6 +417,8 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
             "frontend_nocode_engine_branch": frontend_nocode_engine_branch,
             "frontend_nencho_branch": frontend_nencho_branch,
             "help_docs_branch": help_docs_branch,
+            "help_docs_svn_revision": help_docs_svn_revision,
+            "build_help": build_help,
             "conf_server_host": conf_server_host,
             "conf_web_port": conf_web_port,
             "conf_enable_https": conf_enable_https,
@@ -866,6 +881,134 @@ def git_url_with_token(base: str) -> str:
     if u.port:
         netloc += f":{u.port}"
     return urllib.parse.urlunparse((u.scheme or "https", netloc, u.path, u.params, u.query, u.fragment))
+
+
+def data_sync_git_url_with_token() -> str:
+    token = os.environ.get("DATA_SYNC_GIT_TOKEN") or os.environ.get("FRONTEND_GIT_TOKEN") or os.environ.get("OHR_BACK_GIT_TOKEN", "")
+    if not token:
+        return DATA_SYNC_GIT_URL
+    u = urllib.parse.urlparse(DATA_SYNC_GIT_URL)
+    host = u.hostname or ""
+    netloc = f"oauth2:{urllib.parse.quote(token, safe='')}@{host}"
+    if u.port:
+        netloc += f":{u.port}"
+    return urllib.parse.urlunparse((u.scheme or "https", netloc, u.path, u.params, u.query, u.fragment))
+
+
+def safe_repo_subdir(value: str) -> str:
+    normalized = str(value or "").strip().replace("\\", "/").strip("/")
+    if not normalized:
+        return ""
+    parts = Path(normalized).parts
+    if normalized.startswith("/") or ":" in normalized or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError(f"unsafe repository subdir: {value}")
+    return normalized
+
+
+def data_sync_subdir_from_input(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = urllib.parse.urlparse(raw)
+    if not parsed.scheme:
+        return safe_repo_subdir(raw)
+    repo = urllib.parse.urlparse(DATA_SYNC_GIT_URL)
+    if (parsed.hostname or "").lower() != (repo.hostname or "").lower():
+        raise ValueError("URL host does not match data-synchronization repository")
+    repo_path = (repo.path or "").rstrip("/")
+    input_path = (parsed.path or "").rstrip("/")
+    if repo_path.endswith(".git"):
+        repo_path = repo_path[:-4]
+    marker = repo_path + "/-/tree/"
+    if not input_path.startswith(marker):
+        raise ValueError("URL must point to data-synchronization tree")
+    remainder = input_path[len(marker) :]
+    url_branch, _, subdir = remainder.partition("/")
+    if urllib.parse.unquote(url_branch) != DATA_SYNC_BRANCH or not subdir:
+        raise ValueError("URL must use configured branch and include a directory")
+    return safe_repo_subdir(urllib.parse.unquote(subdir))
+
+
+def validate_data_sync_custom_source(value: str) -> dict[str, Any]:
+    subdir = data_sync_subdir_from_input(value)
+    if not subdir:
+        return {"ok": True, "path": ""}
+    with DATA_SYNC_VALIDATE_LOCK:
+        sync_data_sync_validation_tree(subdir)
+        if not (DATA_SYNC_DIR / subdir).is_dir():
+            return {"ok": False, "path": subdir, "error": "not_found"}
+    return {"ok": True, "path": subdir}
+
+
+def svn_auth_args(username: str = HELP_DOCS_SVN_USERNAME, password: str = HELP_DOCS_SVN_PASSWORD) -> list[str]:
+    args: list[str] = []
+    if username:
+        args.extend(["--username", username])
+    if password:
+        args.extend(["--password", password])
+    return args
+
+
+def validate_help_docs_svn_revision(value: str) -> dict[str, Any]:
+    revision = str(value or "").strip()
+    if not revision:
+        return {"ok": True, "revision": ""}
+    if not HELP_DOCS_SVN_REVISION_RE.fullmatch(revision):
+        return {"ok": False, "revision": revision, "error": "invalid_revision"}
+    proc = subprocess.run(
+        [
+            "svn",
+            "info",
+            HELP_DOCS_SVN_URL,
+            "-r",
+            revision,
+            *svn_auth_args(),
+            "--non-interactive",
+            "--trust-server-cert",
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=45,
+    )
+    if proc.returncode != 0:
+        return {"ok": False, "revision": revision, "error": "not_found"}
+    return {"ok": True, "revision": revision}
+
+
+def sync_data_sync_validation_tree(subdir: str) -> None:
+    DATA_SYNC_DIR.parent.mkdir(parents=True, exist_ok=True)
+    url = data_sync_git_url_with_token()
+    if (DATA_SYNC_DIR / ".git").is_dir():
+        subprocess.run(["git", "-C", str(DATA_SYNC_DIR), "remote", "set-url", "origin", url], check=True, timeout=45)
+        subprocess.run(["git", "-C", str(DATA_SYNC_DIR), "fetch", "origin", DATA_SYNC_BRANCH, "--prune", "--depth", "1"], check=True, timeout=90)
+        subprocess.run(["git", "-C", str(DATA_SYNC_DIR), "sparse-checkout", "init", "--cone"], check=True, timeout=45)
+        subprocess.run(["git", "-C", str(DATA_SYNC_DIR), "sparse-checkout", "set", subdir], check=True, timeout=45)
+        subprocess.run(["git", "-C", str(DATA_SYNC_DIR), "checkout", "-B", DATA_SYNC_BRANCH, f"origin/{DATA_SYNC_BRANCH}"], check=True, timeout=90)
+        subprocess.run(["git", "-C", str(DATA_SYNC_DIR), "reset", "--hard", f"origin/{DATA_SYNC_BRANCH}"], check=True, timeout=90)
+        subprocess.run(["git", "-C", str(DATA_SYNC_DIR), "clean", "-fd"], check=True, timeout=45)
+        return
+    if DATA_SYNC_DIR.exists():
+        shutil.rmtree(DATA_SYNC_DIR)
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--single-branch",
+            "--filter=blob:none",
+            "--sparse",
+            "--branch",
+            DATA_SYNC_BRANCH,
+            url,
+            str(DATA_SYNC_DIR),
+        ],
+        check=True,
+        timeout=120,
+    )
+    subprocess.run(["git", "-C", str(DATA_SYNC_DIR), "sparse-checkout", "set", subdir], check=True, timeout=45)
 
 
 def npm_auth_b64_value() -> str:
@@ -1335,6 +1478,8 @@ settings = re.sub(r'set \$ohr_portal_origin "[^"]+";', f'set $ohr_portal_origin 
 settings_path.write_text(settings, encoding="utf-8")
 PY
 fi
+help_zip=""
+if [ "${BUILD_HELP:-true}" = "true" ]; then
 HELP_DIR="$HELP_DOCS_WORKDIR"
 mkdir -p "$(dirname "$HELP_DIR")"
 if [ -d "$HELP_DIR/.git" ]; then
@@ -1357,15 +1502,23 @@ fi
 if [ -n "${HELP_DOCS_SVN_PASSWORD:-}" ]; then
   SVN_AUTH_ARGS+=(--password "$HELP_DOCS_SVN_PASSWORD")
 fi
+SVN_REV_ARGS=()
+if [ -n "${HELP_DOCS_SVN_REVISION:-}" ]; then
+  if [[ ! "$HELP_DOCS_SVN_REVISION" =~ ^[0-9]+$ ]]; then
+    echo "Help SVN revision 仅允许数字：$HELP_DOCS_SVN_REVISION"
+    exit 4
+  fi
+  SVN_REV_ARGS=(-r "$HELP_DOCS_SVN_REVISION")
+fi
 mkdir -p "$(dirname "$HELP_DOCS_SVN_WORKDIR")"
 if [ -d "$HELP_DOCS_SVN_WORKDIR/.svn" ]; then
-  echo "[sync help svn] update $HELP_DOCS_SVN_WORKDIR"
+  echo "[sync help svn] update $HELP_DOCS_SVN_WORKDIR ${HELP_DOCS_SVN_REVISION:+revision $HELP_DOCS_SVN_REVISION}"
   svn cleanup "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert || true
-  svn update "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert
+  svn update "$HELP_DOCS_SVN_WORKDIR" "${SVN_REV_ARGS[@]}" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert
 else
   rm -rf "$HELP_DOCS_SVN_WORKDIR"
-  echo "[sync help svn] checkout $HELP_DOCS_SVN_URL"
-  svn checkout "$HELP_DOCS_SVN_URL" "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert
+  echo "[sync help svn] checkout $HELP_DOCS_SVN_URL ${HELP_DOCS_SVN_REVISION:+revision $HELP_DOCS_SVN_REVISION}"
+  svn checkout "$HELP_DOCS_SVN_URL" "$HELP_DOCS_SVN_WORKDIR" "${SVN_REV_ARGS[@]}" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert
 fi
 rm -rf markdowns
 mkdir -p markdowns
@@ -1405,6 +1558,7 @@ pnpm_install_cached() {
 }
 pnpm_install_cached
 echo "使用 SVN 文档源构建 Help：$HELP_DOCS_SVN_URL"
+echo "使用 Help SVN revision：$HELP_SVN_REV"
 find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -delete
 find . -maxdepth 1 -type d -name 'ohr_help_docs_release_*' -exec rm -rf {} +
 rm -rf build
@@ -1418,6 +1572,9 @@ if [ -z "$help_zip" ] || [ ! -f "$help_zip" ]; then
 fi
 help_zip="$(readlink -f "$help_zip")"
 cp "$help_zip" "$HELP_CACHED_ZIP"
+fi
+else
+  echo "Help 构建已跳过"
 fi
 cd "$OHR_FRONTEND_WORKDIR"
 find . -maxdepth 1 -type f -name 'release_*.zip' -delete
@@ -1438,8 +1595,10 @@ cleanup_publish_root() {
 trap cleanup_publish_root EXIT
 mkdir -p "$publish_root/ohr-cicd/web_prod" "$publish_root/ohr-cicd/conf_prod"
 unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
-mkdir -p "$publish_root/ohr-cicd/web_prod/help"
-unzip -q "$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
+if [ -n "$help_zip" ]; then
+  mkdir -p "$publish_root/ohr-cicd/web_prod/help"
+  unzip -q "$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
+fi
 conf_dir="$publish_root/ohr-cicd/conf_prod"
 rm -rf "$conf_dir"
 cp -a "$CICD_DIR/conf_$OHR_CICD_ENV" "$conf_dir"
@@ -1450,7 +1609,7 @@ rm -f "$conf_dir"/*.crt "$conf_dir"/*.key "$conf_dir"/TODO.md
 )
 bundle_dir="${bundle_zip%.zip}"
 rm -rf "$bundle_zip" "$bundle_dir"
-if [[ "$help_zip" == "$HELP_DIR"/ohr_help_docs_release_*.zip ]]; then
+if [ -n "$help_zip" ] && [[ "$help_zip" == "$HELP_DIR"/ohr_help_docs_release_*.zip ]]; then
   help_dir="${help_zip%.zip}"
   rm -rf "$help_zip" "$help_dir"
 fi
@@ -1475,12 +1634,14 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "FRONTEND_MF_BRANCH": req.get("frontend_micro_frontends_branch") or rel,
         "FRONTEND_NOCODE_BRANCH": req.get("frontend_nocode_engine_branch") or rel,
         "HELP_DOCS_GIT_URL": git_url_with_token(HELP_DOCS_GIT_URL),
-        "HELP_DOCS_BRANCH": req.get("help_docs_branch") or HELP_DOCS_BRANCH,
+        "HELP_DOCS_BRANCH": HELP_DOCS_BRANCH,
         "HELP_DOCS_WORKDIR": str(HELP_DOCS_DIR),
         "HELP_DOCS_SVN_URL": HELP_DOCS_SVN_URL,
         "HELP_DOCS_SVN_WORKDIR": str(HELP_DOCS_SVN_DIR),
         "HELP_DOCS_SVN_USERNAME": HELP_DOCS_SVN_USERNAME,
         "HELP_DOCS_SVN_PASSWORD": HELP_DOCS_SVN_PASSWORD,
+        "HELP_DOCS_SVN_REVISION": req.get("help_docs_svn_revision") or "",
+        "BUILD_HELP": "true" if req.get("build_help", True) else "false",
         "CONF_PROD_TEMPLATE_DIR": str(CONF_PROD_TEMPLATE_DIR),
         "OHR_CICD_GIT_URL": git_url_with_token(OHR_CICD_GIT_URL),
         "OHR_CICD_BRANCH": OHR_CICD_BRANCH,
@@ -1992,6 +2153,20 @@ class Handler(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             product_variant = str(qs.get("product_variant", ["standard"])[0] or "standard").lower()
             return self.send_json({"branches": list_frontend_workspace_branches(product_variant)})
+        if path == "/api/data-sync-custom-source/validate":
+            qs = urllib.parse.parse_qs(parsed.query)
+            value = str(qs.get("value", [""])[0] or "").strip()
+            try:
+                return self.send_json(validate_data_sync_custom_source(value))
+            except Exception as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        if path == "/api/help-docs-svn-revision/validate":
+            qs = urllib.parse.parse_qs(parsed.query)
+            value = str(qs.get("value", [""])[0] or "").strip()
+            try:
+                return self.send_json(validate_help_docs_svn_revision(value))
+            except Exception as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if path == "/api/nho-material-numbers":
             qs = urllib.parse.parse_qs(parsed.query)
             force = str(qs.get("refresh", [""])[0]).lower() in ("1", "true", "yes")
@@ -2201,9 +2376,10 @@ INDEX_HTML = """<!doctype html>
             <datalist id="frontend-branches"></datalist>
           </div>
           <div class="field-block standard-only">
-            <label for="input-help-docs-branch" data-i18n="helpBranch">Help 文書ブランチ</label>
-            <input id="input-help-docs-branch" name="help_docs_branch" value="release_ci" autocomplete="off">
+            <label for="input-help-docs-revision" data-i18n="helpSvnRevision">Help SVN Revision</label>
+            <input id="input-help-docs-revision" name="help_docs_svn_revision" data-i18n-placeholder="helpSvnRevisionPlaceholder" autocomplete="off">
           </div>
+          <label class="toggle-option standard-only"><input id="toggle-help" name="build_help" type="checkbox" checked> <span data-i18n="buildHelp">Help パッケージと関連資材を生成</span></label>
         </div>
         <details class="sync-hint standard-only">
           <summary data-i18n="frontendRuleTitle">フロントエンド分岐ルール</summary>
@@ -2289,9 +2465,12 @@ const I18N = {
     variantNho: 'NHO版',
     buildBackend: 'バックエンド package.zip を構築',
     buildFrontend: 'フロントエンド web.zip を構築',
+    buildHelp: 'Help パッケージと関連資材を生成',
     backendBranch: 'バックエンドブランチ',
     frontendBranch: 'フロントエンド版本分岐（四つの子プロジェクト共通）',
     helpBranch: 'Help 文書ブランチ',
+    helpSvnRevision: 'Help SVN Revision',
+    helpSvnRevisionPlaceholder: '空欄の場合は最新 revision',
     frontendRuleTitle: 'フロントエンド分岐ルール',
     frontendRuleDesc: 'ohr-workspace は release_* 分岐を使用せず、構築時は master 固定です。選択した版本分岐は ohr-feelin、ohr-lowcode-engine、ohr-nocode-engine、ohr-micro-frontends に使用します。',
     directSourceDesc: 'Direct 方式：conf_prod は ohr-cicd から生成し、help は ohr-help-docs + SVN から生成します。',
@@ -2316,7 +2495,7 @@ const I18N = {
     needTarget: '少なくとも一つの構築対象を選択してください',
     needBackend: 'バックエンドブランチを入力してください',
     needFrontend: 'フロントエンド版本分岐を入力してください',
-    needHelp: 'Help 文書ブランチを入力してください',
+    needHelp: 'Help SVN revision は数字で入力してください',
     needCustomer: '顧客アクセスアドレスを入力してください',
     badPort: 'Web ポートは 1-65535 の範囲で入力してください',
     badWorker: 'worker 設定は 1 以上の整数で入力してください',
@@ -2342,9 +2521,12 @@ const I18N = {
     variantNho: 'NHO版',
     buildBackend: '构建后端 package.zip',
     buildFrontend: '构建前端 web.zip',
+    buildHelp: '生成 Help 包及相关资源',
     backendBranch: '后端分支',
     frontendBranch: '前端版本分支（四个子项目共同存在）',
     helpBranch: 'Help 文档分支',
+    helpSvnRevision: 'Help SVN Revision',
+    helpSvnRevisionPlaceholder: '不填则使用最新 revision',
     frontendRuleTitle: '前端分支规则',
     frontendRuleDesc: 'ohr-workspace 不使用 release_* 分支，构建时固定检出 master；上方选择的版本分支会同时用于四个子项目。',
     directSourceDesc: 'Direct 方式：conf_prod 来自 ohr-cicd 生成，help 来自 ohr-help-docs + SVN 生成。',
@@ -2369,7 +2551,7 @@ const I18N = {
     needTarget: '请至少选择一个构建目标',
     needBackend: '请选择或填写后端分支',
     needFrontend: '请选择或填写前端版本分支',
-    needHelp: '请填写 Help 文档分支',
+    needHelp: 'Help SVN revision 只能填写数字',
     needCustomer: '请填写客户访问地址',
     badPort: 'Web 端口必须在 1-65535 之间',
     badWorker: 'worker 配置必须是大于 0 的整数',
@@ -2395,9 +2577,12 @@ const I18N = {
     variantNho: 'NHO',
     buildBackend: 'Build backend package.zip',
     buildFrontend: 'Build frontend web.zip',
+    buildHelp: 'Build Help package and resources',
     backendBranch: 'Backend branch',
     frontendBranch: 'Frontend release branch',
     helpBranch: 'Help docs branch',
+    helpSvnRevision: 'Help SVN Revision',
+    helpSvnRevisionPlaceholder: 'Leave empty to use the latest revision',
     frontendRuleTitle: 'Frontend branch rule',
     frontendRuleDesc: 'ohr-workspace does not use release_* branches and stays on master. The selected release branch is used for the four frontend child projects.',
     directSourceDesc: 'Direct mode: conf_prod is generated from ohr-cicd; help is generated from ohr-help-docs + SVN.',
@@ -2422,7 +2607,7 @@ const I18N = {
     needTarget: 'Select at least one build target',
     needBackend: 'Enter a backend branch',
     needFrontend: 'Enter a frontend release branch',
-    needHelp: 'Enter a Help docs branch',
+    needHelp: 'Help SVN revision must be numeric',
     needCustomer: 'Enter a customer access address',
     badPort: 'Web port must be between 1 and 65535',
     badWorker: 'Worker settings must be integers greater than 0',
@@ -2519,9 +2704,10 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const isNho = productVariant === 'nho';
   const buildBackend = document.getElementById('toggle-backend').checked;
   const buildFrontend = document.getElementById('toggle-frontend').checked;
+  const buildHelp = document.getElementById('toggle-help') ? document.getElementById('toggle-help').checked : true;
   const backendBranch = (form.get('backend_branch') || '').trim();
   const ws = getFrontendWorkspaceBranch();
-  const helpDocsBranch = (form.get('help_docs_branch') || '').trim();
+  const helpDocsRevision = (form.get('help_docs_svn_revision') || '').trim();
   const confServerHost = (form.get('conf_server_host') || '').trim();
   const confWebPort = Number(form.get('conf_web_port') || 80);
   const confEnableHttps = document.getElementById('input-conf-enable-https').checked;
@@ -2542,7 +2728,7 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
     alert(t('needFrontend'));
     return;
   }
-  if (!isNho && buildFrontend && !helpDocsBranch) {
+  if (!isNho && buildFrontend && buildHelp && helpDocsRevision && !/^\d+$/.test(helpDocsRevision)) {
     setFormLocked(false);
     alert(t('needHelp'));
     return;
@@ -2567,9 +2753,10 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
     product_variant: productVariant,
     build_backend: buildBackend,
     build_frontend: buildFrontend,
+    build_help: buildHelp,
     backend_branch: backendBranch,
     frontend_release_branch: ws,
-    help_docs_branch: helpDocsBranch,
+    help_docs_svn_revision: helpDocsRevision,
     conf_server_host: confServerHost,
     conf_web_port: confWebPort,
     conf_enable_https: confEnableHttps,
@@ -2636,7 +2823,8 @@ function syncBuildTargetInputs() {
   const frontendToggle = document.getElementById('toggle-frontend');
   const backendInput = document.getElementById('input-backend-branch');
   const frontendInput = document.getElementById('input-frontend-release');
-  const helpDocsInput = document.getElementById('input-help-docs-branch');
+  const helpDocsInput = document.getElementById('input-help-docs-revision');
+  const helpToggle = document.getElementById('toggle-help');
   const confInputs = [
     document.getElementById('input-conf-server-host'),
     document.getElementById('input-conf-web-port'),
@@ -2647,7 +2835,8 @@ function syncBuildTargetInputs() {
   backendInput.disabled = !backendToggle.checked;
   frontendInput.disabled = !frontendToggle.checked;
   const isNho = getProductVariant() === 'nho';
-  helpDocsInput.disabled = isNho || !frontendToggle.checked;
+  if (helpToggle) helpToggle.disabled = isNho || !frontendToggle.checked;
+  helpDocsInput.disabled = isNho || !frontendToggle.checked || (helpToggle && !helpToggle.checked);
   confInputs.forEach(input => { input.disabled = isNho || !frontendToggle.checked; });
 }
 
@@ -2660,6 +2849,8 @@ function syncBuildTargetInputs() {
   }
   backendToggle.addEventListener('change', syncIfEditable);
   frontendToggle.addEventListener('change', syncIfEditable);
+  const helpToggle = document.getElementById('toggle-help');
+  if (helpToggle) helpToggle.addEventListener('change', syncIfEditable);
   syncBuildTargetInputs();
 })();
 
@@ -2811,8 +3002,8 @@ function renderDetail(build) {
         <strong>${build.request.frontend_workspace_branch || ''}</strong>
       </div>
       <div>
-        <div class="muted">${t('helpBranch')}</div>
-        <strong>${build.request.help_docs_branch || ''}</strong>
+        <div class="muted">${t('helpSvnRevision')}</div>
+        <strong>${build.request.help_docs_svn_revision || 'HEAD'}</strong>
       </div>
       <div>
         <div class="muted">${t('customerHost')}</div>

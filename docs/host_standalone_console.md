@@ -45,7 +45,7 @@
 5. `sql_assets`：获取并配置 `1.tenant` / `2.ohr` SQL 资材。
 6. `data_sync_assets`：获取并配置 `データ連携`。
 7. `account_sql`：按页面参数修改 `2.ohr/4.account.sql`。
-8. `help_sql`：如果 `web.zip` 中存在 `insert_ohr_help.sql`，替换 `1.tenant/ohr_help.sql`。
+8. `help_sql`：勾选生成 Help 时，从 `web.zip` 中读取 `insert_ohr_help.sql`，在顶部追加 `DELETE FROM ohr_help;` 后替换 `1.tenant/ohr_help.sql`；缺失时打包失败。取消勾选时该步骤跳过。
 9. `standalone_zip`：重建 `OneHrStandalone.zip`。
 10. `complete`：完整交付目录生成完成。
 

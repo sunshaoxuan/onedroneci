@@ -10,7 +10,8 @@
 - 资材编号：写入最终 `version.txt` 第一行 `資材:<资材编号>`
 - 后端分支：不为空时构建 `package.zip`
 - 前端分支：不为空时构建 `web.zip`
-- Help 分支：默认 `release_ci`
+- 生成 Help 包及相关资源：默认勾选。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
+- Help SVN revision：可空。填写时必须为 SVN revision 数字，并由构建终端校验；为空时使用最新 revision。该字段只在生成 Help 时使用。
 - 客户访问地址、Web 端口、HTTPS / 443 选项
 - PostgreSQL Host / Port / User / Password
 - 应用服务主机名、OHR 服务端口
@@ -24,7 +25,7 @@
 
 1. 检查构建终端状态。
 2. 创建主控任务并落盘 `metadata.json` / `job.log`。
-3. 将产品版本、前后端分支、Help 分支和客户配置传给构建终端。
+3. 将产品版本、前后端分支、是否生成 Help、Help SVN revision 和客户配置传给构建终端。
 4. 轮询构建终端状态与日志。
 5. 下载构建终端产物。
 6. 执行 SQL、数据连携、`version.txt`、`OneHrStandalone.zip` 二次打包。
@@ -98,12 +99,14 @@
 
 ## 6. Help 生成
 
-標準版 Help 来自 `ohr-help-docs + SVN`。
+標準版 Help 来自 `ohr-help-docs + SVN`。`ohr-help-docs` Git 仓库提供构建脚手架，分支由构建终端环境变量 `HELP_DOCS_BRANCH` 控制；页面参数控制是否生成 Help 和 SVN 文档内容 revision。
+
+取消勾选“生成 Help 包及相关资源”时，本节全部跳过。
 
 主要动作：
 
 1. 增量同步 `HELP_DOCS_GIT_URL`，默认 `ohr/ohr-help-docs.git`。
-2. SVN 文档目录使用持久工作副本；存在 `.svn` 时执行 cleanup / update，不存在时首次 checkout。
+2. SVN 文档目录使用持久工作副本；存在 `.svn` 时执行 cleanup / update，不存在时首次 checkout。页面填写 Help SVN revision 时使用指定 revision，留空时使用最新 revision。
 3. 清理并同步 `markdowns`。
 4. 执行 `pnpm i`。
 5. 执行 `npm run copy-images`。
@@ -167,19 +170,27 @@ HOST_STANDALONE_DATA_DIR/<job_id>/
 
 ## 11. Help SQL
 
-如果 `web.zip` 内存在：
+勾选生成 Help 时，`web.zip` 内必须存在：
 
 ```text
 ohr-cicd/web_prod/help/insert_ohr_help.sql
 ```
 
-则复制为最终：
+最终打包器会将该文件写入：
 
 ```text
 製品/1.tenant/ohr_help.sql
 ```
 
-这样 Help 菜单 SQL 与本次构建出的 Help 内容保持一致。
+写入时会在顶部追加：
+
+```sql
+DELETE FROM ohr_help;
+```
+
+这样 Help 菜单 SQL 与本次构建出的 Help 内容保持一致，并保证重复执行时先清空旧帮助信息。该文件缺失时最终打包失败。
+
+取消勾选生成 Help 时，最终打包器保留 SQL 模板中的 `製品/1.tenant/ohr_help.sql`，不执行覆盖。
 
 ## 12. tenant 导入设置 SQL
 

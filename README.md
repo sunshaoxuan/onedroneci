@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.39`
+当前版本：`0.3.46`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -20,16 +20,17 @@
    - 前端 `web.zip`
 4. `標準版` 前端 Direct 构建中：
    - `conf_prod` 来自 `ohr-cicd generateConf.js`
-   - help 来自 `ohr-help-docs + SVN`
+   - help 构建脚手架来自 `ohr-help-docs`，文档内容来自 SVN；页面可指定是否生成 Help 包及相关资源，也可指定 Help SVN revision，留空时使用最新 revision
    - 前端版本分支来自四个前端子项目共同存在的 `release_*` 分支
    - `ohr-workspace` 固定使用配置分支，默认 `master`
 5. 主控台下载中间产物。
 6. 主控台从 SVN 取得最新 `1.tenant` / `2.ohr` SQL 资材。
 7. 主控台修改 `2.ohr/4.account.sql` 中的机构名称和开始日。
-8. 主控台根据 `導入計画` 和服务利用设定生成 `導入/tenant/import_plan.sql` 与 `導入/ohr/import_plan.sql`，用于数据库脚本执行后更新 tenant 导入设置、菜单公开状态和定时任务状态。
-9. 主控台从 `data-synchronization.git` 的 `updsv7phr/PHR` 复制 `データ連携` 白名单目录。
-10. 主控台把页面填写的资材编号与前后端分支写入 `version.txt`，重建 `OneHrStandalone.zip`。
-11. 最终输出到 `dist\standalone\<构建终端构建ID>\`：
+8. 主控台根据 `導入計画` 和服务利用设定生成 `導入/tenant/import_plan.sql` 与 `導入/ohr/import_plan.sql`，用于数据库脚本执行后显式更新 tenant 导入设置、菜单公开状态和定时任务状态，启用项与停用项都会输出更新语句。
+9. 主控台从 `data-synchronization.git` 的 `updsv7phr/PHR` 复制 `データ連携` 白名单目录；如填写补充脚本代码源，可粘贴完整 GitLab tree URL 或仓库内目录路径，构建终端校验有效后追加复制该路径下的白名单目录，同名脚本以补充源为准。
+10. 勾选生成 Help 时，主控台把 Help 构建产物中的 `insert_ohr_help.sql` 写入 `製品/1.tenant/ohr_help.sql`，并在文件顶部追加清空 `ohr_help` 的 SQL；如果 Help SQL 缺失则终止打包。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
+11. 主控台把页面填写的资材编号与前后端分支写入 `version.txt`，重建 `OneHrStandalone.zip`。
+12. 最终输出到 `dist\standalone\<构建终端构建ID>\`：
     - `製品\`
     - `データ連携\`
 

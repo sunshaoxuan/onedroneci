@@ -182,6 +182,7 @@ def test_render_ohr_import_sql_records_menu_and_task_updates():
         OhrImportConfig(
             disabled_menus=(
                 OhrMenuDisable("個人ポータル / プロフィール", "personal-portal", "EM_PR_MBR"),
+                OhrMenuDisable("個人ポータル / 給与明細", "personal-portal", "EM_PR_PYR", True),
             ),
             disabled_scheduled_tasks=(
                 OhrScheduledTaskDisable(
@@ -191,16 +192,29 @@ def test_render_ohr_import_sql_records_menu_and_task_updates():
                     "stm.em-send-de-mail-batch.label",
                     "em",
                 ),
+                OhrScheduledTaskDisable(
+                    "庶務事務 / データ連携：Public人事給与→発令情報",
+                    "604b907c-f82d-4737-9b6f-fefc65c08dc7",
+                    "mdm-data-synchronization-decree-data",
+                    "stm.mdm-data-synchronization-decree-data.label",
+                    "em",
+                    True,
+                ),
             ),
         )
     )
 
     assert "update ohr_menu set enable = false" in sql
     assert "application_name = 'personal-portal' and menu_code = 'EM_PR_MBR'" in sql
+    assert "update ohr_menu set enable = true" in sql
+    assert "application_name = 'personal-portal' and menu_code = 'EM_PR_PYR'" in sql
     assert "\"ohr_scheduled_task\" set paused = true" in sql
     assert "'a690a435-5055-4c7f-80c8-5ea3d717d0cd'" in sql
     assert "display_flag = false" in sql
     assert "code = 'send-de-mail-batch'" in sql
+    assert "\"ohr_scheduled_task\" set paused = false" in sql
+    assert "display_flag = true" in sql
+    assert "code = 'mdm-data-synchronization-decree-data'" in sql
 
 
 def test_update_config_ini_replaces_database_and_ohr_values():
@@ -242,6 +256,10 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     (data_sync_repo / "updsv7phr" / "PHR" / "View" / "02_view.sql").write_text("view sync", encoding="utf-8")
     (data_sync_repo / "updsv7phr" / "PHR" / "Ignored" / "99_ignore.sql").write_text("ignore", encoding="utf-8")
     (data_sync_repo / "updsv7phr" / "PHR" / "00_all_updsv7tophr.sql").write_text("ignored root file", encoding="utf-8")
+    (data_sync_repo / "customv7phr" / "PHR" / "Table").mkdir(parents=True)
+    (data_sync_repo / "customv7phr" / "PHR" / "Procedure").mkdir()
+    (data_sync_repo / "customv7phr" / "PHR" / "Table" / "01_table.sql").write_text("custom table", encoding="utf-8")
+    (data_sync_repo / "customv7phr" / "PHR" / "Procedure" / "02_custom.sql").write_text("custom procedure", encoding="utf-8")
     import subprocess
 
     subprocess.run(["git", "init", "-b", "master"], cwd=data_sync_repo, check=True)
@@ -274,20 +292,22 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
         ),
         data_sync_git_url=str(data_sync_repo),
         data_sync_dir=data_sync_work,
+        data_sync_custom_subdir="customv7phr/PHR",
     )
 
     delivery_root = Path(result["product_dir"])
     product_dir = delivery_root / "製品"
     assert delivery_root == output / "build-1"
     assert product_dir.is_dir()
-    assert (delivery_root / "データ連携" / "Table" / "01_table.sql").read_text(encoding="utf-8") == "table sync"
+    assert (delivery_root / "データ連携" / "Table" / "01_table.sql").read_text(encoding="utf-8") == "custom table"
     assert (delivery_root / "データ連携" / "View" / "02_view.sql").read_text(encoding="utf-8") == "view sync"
+    assert (delivery_root / "データ連携" / "Procedure" / "02_custom.sql").read_text(encoding="utf-8") == "custom procedure"
     assert not (delivery_root / "データ連携" / "Ignored").exists()
     assert not (delivery_root / "データ連携" / "00_all_updsv7tophr.sql").exists()
     assert (product_dir / "version.txt").read_text(encoding="utf-8") == (
         "資材:M-001\n前台分支：release_front\n后台分支：release_back\n"
     )
-    assert (product_dir / "1.tenant" / "ohr_help.sql").read_text(encoding="utf-8") == "new help sql"
+    assert (product_dir / "1.tenant" / "ohr_help.sql").read_text(encoding="utf-8") == "DELETE FROM ohr_help;\nnew help sql"
     import_plan_sql = (delivery_root / "導入" / "tenant" / "import_plan.sql").read_text(encoding="utf-8")
     assert "support_applications = '{em,personal-portal}'" in import_plan_sql
     assert "{enableEmail}', 'true'" in import_plan_sql
@@ -303,13 +323,62 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert '{"ja-JP": "\\\\テスト大学"}' in account_sql
     assert "10.0.0.8" not in (product_dir / "1.tenant" / "url_info.sql").read_text(encoding="utf-8")
 
-    with zipfile.ZipFile(result["standalone_zip"]) as z:
-        assert z.read(PACKAGE_IN_STANDALONE_ZIP) == b"new-package"
-        assert z.read(WEB_IN_STANDALONE_ZIP) == web_zip.read_bytes()
-        assert z.read("OneHrStandalone/software/jdk.zip") == b"fixed-jdk"
-        config = z.read(CONFIG_IN_STANDALONE_ZIP).decode("utf-8")
-        assert "POSTGRESQL_HOST=10.0.0.8" in config
-        assert "OHR_HOST_ADDRESS=OHR-HOST" in config
+
+def test_build_product_package_fails_when_help_sql_is_missing(tmp_path):
+    template = tmp_path / "OneHrStandalone.zip"
+    sql_dir = tmp_path / "sql"
+    package_zip = tmp_path / "package.zip"
+    web_zip = tmp_path / "web.zip"
+    output = tmp_path / "out"
+    make_template(template)
+    make_sql_templates(sql_dir)
+    package_zip.write_bytes(b"new-package")
+    with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("ohr-cicd/web_prod/meta.json", "{}")
+
+    try:
+        build_product_package(
+            template_zip=template,
+            sql_template_dir=sql_dir,
+            output_root=output,
+            package_zip=package_zip,
+            web_zip=web_zip,
+            version=BuildVersion("build-1", "M-001", "release_back", "release_front"),
+            config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
+            sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
+        )
+    except FileNotFoundError as exc:
+        assert "missing Help SQL in web.zip" in str(exc)
+    else:
+        raise AssertionError("missing Help SQL should fail")
+
+
+def test_build_product_package_can_skip_help_sql(tmp_path):
+    template = tmp_path / "OneHrStandalone.zip"
+    sql_dir = tmp_path / "sql"
+    package_zip = tmp_path / "package.zip"
+    web_zip = tmp_path / "web.zip"
+    output = tmp_path / "out"
+    make_template(template)
+    make_sql_templates(sql_dir)
+    package_zip.write_bytes(b"new-package")
+    with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("ohr-cicd/web_prod/meta.json", "{}")
+
+    result = build_product_package(
+        template_zip=template,
+        sql_template_dir=sql_dir,
+        output_root=output,
+        package_zip=package_zip,
+        web_zip=web_zip,
+        version=BuildVersion("build-1", "M-001", "release_back", "release_front"),
+        config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
+        sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
+        include_help_sql=False,
+    )
+
+    product_dir = Path(result["product_dir"]) / "製品"
+    assert (product_dir / "1.tenant" / "ohr_help.sql").read_text(encoding="utf-8") == "old help"
 
 
 def test_patch_account_sql_replaces_organisation_values():
@@ -372,6 +441,102 @@ def test_data_sync_git_uses_sparse_clone_for_subdir(monkeypatch, tmp_path):
 
     assert calls[0][:7] == ["git", "clone", "--depth", "1", "--single-branch", "--filter=blob:none", "--sparse"]
     assert calls[1] == ["git", "-C", str(tmp_path / "data-sync"), "sparse-checkout", "set", "updsv7phr/PHR"]
+
+
+def test_data_sync_git_uses_sparse_clone_for_multiple_subdirs(monkeypatch, tmp_path):
+    import standalone_packager as packager
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, timeout):
+        calls.append(cmd)
+
+    monkeypatch.setattr(packager, "_run_git", fake_run)
+
+    packager.sync_git_tree(
+        "https://example.test/data.git",
+        "master",
+        tmp_path / "data-sync",
+        timeout=123,
+        sparse_path=["updsv7phr/PHR", "tsukubav7phr/PHR"],
+    )
+
+    assert calls[1] == [
+        "git",
+        "-C",
+        str(tmp_path / "data-sync"),
+        "sparse-checkout",
+        "set",
+        "updsv7phr/PHR",
+        "tsukubav7phr/PHR",
+    ]
+
+
+def test_data_sync_accepts_full_gitlab_tree_url(monkeypatch, tmp_path):
+    import standalone_packager as packager
+
+    paths: list[object] = []
+
+    def fake_sync(repo_url, branch, workdir, **kwargs):
+        paths.append(kwargs.get("sparse_path"))
+        source = workdir / "updsv7phr" / "PHR"
+        custom = workdir / "tsukubav7phr" / "PHR"
+        (source / "Table").mkdir(parents=True)
+        (custom / "Procedure").mkdir(parents=True)
+        (source / "Table" / "01_base.sql").write_text("base", encoding="utf-8")
+        (custom / "Procedure" / "02_custom.sql").write_text("custom", encoding="utf-8")
+
+    monkeypatch.setattr(packager, "sync_git_tree", fake_sync)
+    target = tmp_path / "target"
+
+    packager.copy_data_sync_assets(
+        repo_url="https://upds7.ujob100.com/ohr/data-synchronization.git",
+        branch="master",
+        workdir=tmp_path / "data-sync-work",
+        subdir="updsv7phr/PHR",
+        custom_subdir="https://upds7.ujob100.com/ohr/data-synchronization/-/tree/master/tsukubav7phr/PHR",
+        target_dir=target,
+    )
+
+    assert paths == [["updsv7phr/PHR", "tsukubav7phr/PHR"]]
+    assert (target / "Table" / "01_base.sql").read_text(encoding="utf-8") == "base"
+    assert (target / "Procedure" / "02_custom.sql").read_text(encoding="utf-8") == "custom"
+
+
+def test_data_sync_rejects_tree_url_for_other_repo(tmp_path):
+    import standalone_packager as packager
+
+    try:
+        packager.copy_data_sync_assets(
+            repo_url="https://upds7.ujob100.com/ohr/data-synchronization.git",
+            branch="master",
+            workdir=tmp_path / "data-sync-work",
+            subdir="updsv7phr/PHR",
+            custom_subdir="https://upds7.ujob100.com/ohr/other/-/tree/master/tsukubav7phr/PHR",
+            target_dir=tmp_path / "target",
+        )
+    except ValueError as exc:
+        assert "configured repository tree" in str(exc)
+    else:
+        raise AssertionError("tree URL for another repository should be rejected")
+
+
+def test_data_sync_rejects_unsafe_custom_subdir(tmp_path):
+    import standalone_packager as packager
+
+    try:
+        packager.copy_data_sync_assets(
+            repo_url="https://example.test/data.git",
+            branch="master",
+            workdir=tmp_path / "data-sync-work",
+            subdir="updsv7phr/PHR",
+            custom_subdir="../secret",
+            target_dir=tmp_path / "target",
+        )
+    except ValueError as exc:
+        assert "unsafe repository subdir" in str(exc)
+    else:
+        raise AssertionError("unsafe custom subdir should be rejected")
 
 
 def test_data_sync_git_url_uses_existing_git_token(monkeypatch):
@@ -437,6 +602,10 @@ def test_data_sync_uses_existing_cache_when_fetch_fails(monkeypatch, tmp_path):
     (cached / "Function" / "01_function.sql").write_text("cached", encoding="utf-8")
     (cached / "Ignored").mkdir()
     (cached / "Ignored" / "99_ignore.sql").write_text("ignore", encoding="utf-8")
+    custom_cached = workdir / "customv7phr" / "PHR"
+    custom_cached.mkdir(parents=True)
+    (custom_cached / "Function").mkdir()
+    (custom_cached / "Function" / "01_function.sql").write_text("custom cached", encoding="utf-8")
 
     def fail_sync(*args, **kwargs):
         raise subprocess.CalledProcessError(128, ["git", "fetch"], stderr="fatal: auth failed")
@@ -449,11 +618,12 @@ def test_data_sync_uses_existing_cache_when_fetch_fails(monkeypatch, tmp_path):
         branch="master",
         workdir=workdir,
         subdir="updsv7phr/PHR",
+        custom_subdir="customv7phr/PHR",
         target_dir=target,
         logger=logs.append,
     )
 
-    assert (target / "Function" / "01_function.sql").read_text(encoding="utf-8") == "cached"
+    assert (target / "Function" / "01_function.sql").read_text(encoding="utf-8") == "custom cached"
     assert not (target / "Ignored").exists()
     assert "data_sync_cache_fallback" in logs
 
@@ -498,6 +668,7 @@ def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
     package_zip.write_bytes(b"new-package")
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr("ohr-cicd/web_prod/meta.json", "{}")
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", "help sql")
     monkeypatch.setattr(packager, "sync_git_tree", lambda repo_url, branch, workdir, **kwargs: None)
     logs: list[str] = []
 

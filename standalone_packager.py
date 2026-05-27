@@ -28,9 +28,11 @@ DEFAULT_DATA_SYNC_GIT_URL = "https://upds7.ujob100.com/ohr/data-synchronization.
 DEFAULT_DATA_SYNC_BRANCH = "master"
 DEFAULT_DATA_SYNC_DIR = DEFAULT_TEMPLATE_ROOT / "data-synchronization"
 DEFAULT_DATA_SYNC_SUBDIR = "updsv7phr/PHR"
+DEFAULT_DATA_SYNC_CUSTOM_SUBDIR = ""
 DEFAULT_DATA_SYNC_GIT_TIMEOUT = int(os.environ.get("DATA_SYNC_GIT_TIMEOUT", "300"))
 DATA_SYNC_ALLOWED_DIRS = ("ForeignTable", "Function", "Procedure", "Sequence", "Table", "View")
 HELP_SQL_IN_WEB_ZIP = "ohr-cicd/web_prod/help/insert_ohr_help.sql"
+HELP_SQL_RESET_PREFIX = "DELETE FROM ohr_help;\n"
 CONFIG_IN_STANDALONE_ZIP = "OneHrStandalone/bin/kernel/config.ini"
 PACKAGE_IN_STANDALONE_ZIP = "OneHrStandalone/software/package.zip"
 WEB_IN_STANDALONE_ZIP = "OneHrStandalone/software/web.zip"
@@ -73,6 +75,7 @@ class OhrMenuDisable:
     label: str
     application_name: str
     menu_code: str
+    enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,7 @@ class OhrScheduledTaskDisable:
     code: str
     name_i18n_key: str
     application_name: str
+    enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -131,6 +135,10 @@ def configured_data_sync_dir() -> Path:
 
 def configured_data_sync_subdir() -> str:
     return os.environ.get("DATA_SYNC_SUBDIR", DEFAULT_DATA_SYNC_SUBDIR)
+
+
+def configured_data_sync_custom_subdir() -> str:
+    return os.environ.get("DATA_SYNC_CUSTOM_SUBDIR", DEFAULT_DATA_SYNC_CUSTOM_SUBDIR)
 
 
 def default_organisation_dstart(today: date | None = None) -> str:
@@ -196,25 +204,28 @@ def render_tenant_import_sql(config: TenantImportConfig) -> str:
 def render_ohr_import_sql(config: OhrImportConfig) -> str:
     lines = ["-- 導入計画", ""]
     if not config.disabled_menus and not config.disabled_scheduled_tasks:
-        lines.extend(["-- 画面公開計画による非公開メニュー、停止タスクはありません。", ""])
+        lines.extend(["-- 画面公開計画による更新対象はありません。", ""])
         return "\n".join(lines)
 
     for item in config.disabled_menus:
+        enabled_value = "true" if item.enabled else "false"
         lines.extend(
             [
-                f"-- {item.label}",
-                "update ohr_menu set enable = false",
+                f"-- {item.label}={'公開' if item.enabled else '非公開'}",
+                f"update ohr_menu set enable = {enabled_value}",
                 f"where application_name = {sql_quote(item.application_name)} and menu_code = {sql_quote(item.menu_code)};",
                 "",
             ]
         )
     for item in config.disabled_scheduled_tasks:
+        paused_value = "false" if item.enabled else "true"
+        display_value = "true" if item.enabled else "false"
         lines.extend(
             [
-                f"-- {item.label}",
-                f'update "ohr_scheduled_task" set paused = true where "uuid" = {sql_quote(item.uuid)};',
+                f"-- {item.label}={'有効' if item.enabled else '停止'}",
+                f'update "ohr_scheduled_task" set paused = {paused_value} where "uuid" = {sql_quote(item.uuid)};',
                 "",
-                "update ohr_scheduled_task_type set display_flag = false "
+                f"update ohr_scheduled_task_type set display_flag = {display_value} "
                 f"where code = {sql_quote(item.code)} "
                 f'and "name_i18n_key" = {sql_quote(item.name_i18n_key)} '
                 f"and application_name = {sql_quote(item.application_name)};",
@@ -504,23 +515,84 @@ def format_git_failure(exc: subprocess.CalledProcessError) -> str:
     return f"git command failed with exit {exc.returncode}: {detail}"
 
 
-def sync_git_tree(repo_url: str, branch: str, workdir: Path, timeout: int = DEFAULT_DATA_SYNC_GIT_TIMEOUT, sparse_path: str | None = None) -> None:
+def safe_repo_subdir(value: str) -> str:
+    normalized = str(value or "").strip().replace("\\", "/").strip("/")
+    if not normalized:
+        return ""
+    parts = Path(normalized).parts
+    if normalized.startswith("/") or ":" in normalized or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError(f"unsafe repository subdir: {value}")
+    return normalized
+
+
+def repo_subdir_from_input(value: str, *, repo_url: str, branch: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = urllib.parse.urlparse(raw)
+    repo = urllib.parse.urlparse(repo_url)
+    repo_host = (repo.hostname or "").lower()
+    if not parsed.scheme:
+        schemeless = urllib.parse.urlparse(f"https://{raw}")
+        if (schemeless.hostname or "").lower() == repo_host and "/-/tree/" in (schemeless.path or ""):
+            parsed = schemeless
+        else:
+            return safe_repo_subdir(raw)
+    input_host = (parsed.hostname or "").lower()
+    if input_host != repo_host:
+        raise ValueError("custom data synchronization URL must use configured repository host")
+    repo_path = (repo.path or "").rstrip("/")
+    input_path = (parsed.path or "").rstrip("/")
+    if repo_path.endswith(".git"):
+        repo_path = repo_path[:-4]
+    if not input_path.startswith(repo_path + "/-/tree/"):
+        raise ValueError("custom data synchronization URL must point to configured repository tree")
+    remainder = input_path[len(repo_path + "/-/tree/") :]
+    url_branch, _, subdir = remainder.partition("/")
+    if urllib.parse.unquote(url_branch) != branch or not subdir:
+        raise ValueError("custom data synchronization URL must use configured branch and include a directory")
+    return safe_repo_subdir(urllib.parse.unquote(subdir))
+
+
+def _sparse_paths(paths: str | list[str] | tuple[str, ...] | None) -> list[str]:
+    if paths is None:
+        return []
+    if isinstance(paths, str):
+        paths = [paths]
+    result: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        normalized = safe_repo_subdir(path)
+        if normalized and normalized not in seen:
+            result.append(normalized)
+            seen.add(normalized)
+    return result
+
+
+def sync_git_tree(
+    repo_url: str,
+    branch: str,
+    workdir: Path,
+    timeout: int = DEFAULT_DATA_SYNC_GIT_TIMEOUT,
+    sparse_path: str | list[str] | tuple[str, ...] | None = None,
+) -> None:
+    sparse_paths = _sparse_paths(sparse_path)
     workdir.parent.mkdir(parents=True, exist_ok=True)
     if (workdir / ".git").is_dir() and not _valid_git_worktree(workdir):
         shutil.rmtree(workdir)
     if _valid_git_worktree(workdir):
         _run_git(["git", "-C", str(workdir), "remote", "set-url", "origin", repo_url], timeout)
         _run_git(["git", "-C", str(workdir), "fetch", "origin", branch, "--prune", "--depth", "1"], timeout)
-        if sparse_path:
+        if sparse_paths:
             _run_git(["git", "-C", str(workdir), "sparse-checkout", "init", "--cone"], timeout)
-            _run_git(["git", "-C", str(workdir), "sparse-checkout", "set", sparse_path], timeout)
+            _run_git(["git", "-C", str(workdir), "sparse-checkout", "set", *sparse_paths], timeout)
         _run_git(["git", "-C", str(workdir), "checkout", "-B", branch, f"origin/{branch}"], timeout)
         _run_git(["git", "-C", str(workdir), "reset", "--hard", f"origin/{branch}"], timeout)
         _run_git(["git", "-C", str(workdir), "clean", "-fd"], timeout)
         return
     if workdir.exists():
         shutil.rmtree(workdir)
-    if sparse_path:
+    if sparse_paths:
         _run_git(
             [
                 "git",
@@ -537,9 +609,16 @@ def sync_git_tree(repo_url: str, branch: str, workdir: Path, timeout: int = DEFA
             ],
             timeout,
         )
-        _run_git(["git", "-C", str(workdir), "sparse-checkout", "set", sparse_path], timeout)
+        _run_git(["git", "-C", str(workdir), "sparse-checkout", "set", *sparse_paths], timeout)
         return
     _run_git(["git", "clone", "--depth", "1", "--single-branch", "--branch", branch, repo_url, str(workdir)], timeout)
+
+
+def _copy_allowed_data_sync_dirs(source: Path, target_dir: Path) -> None:
+    for name in DATA_SYNC_ALLOWED_DIRS:
+        child = source / name
+        if child.is_dir():
+            shutil.copytree(child, target_dir / name, dirs_exist_ok=True)
 
 
 def copy_data_sync_assets(
@@ -549,36 +628,46 @@ def copy_data_sync_assets(
     workdir: Path,
     subdir: str,
     target_dir: Path,
+    custom_subdir: str = "",
     logger: Any | None = None,
 ) -> None:
+    primary_subdir = repo_subdir_from_input(subdir, repo_url=repo_url, branch=branch)
+    overlay_subdir = repo_subdir_from_input(custom_subdir, repo_url=repo_url, branch=branch)
+    if not primary_subdir:
+        raise ValueError("data synchronization subdir is required")
     if logger:
         logger("data_sync_git_sync")
-    source = workdir / Path(subdir)
+    source = workdir / Path(primary_subdir)
+    overlay_source = workdir / Path(overlay_subdir) if overlay_subdir else None
+    sparse_paths = [primary_subdir] + ([overlay_subdir] if overlay_subdir else [])
     try:
-        sync_git_tree(repo_url, branch, workdir, sparse_path=subdir)
+        sync_git_tree(repo_url, branch, workdir, sparse_path=sparse_paths)
     except subprocess.CalledProcessError as exc:
-        if source.is_dir():
+        if source.is_dir() and (overlay_source is None or overlay_source.is_dir()):
             if logger:
                 logger("data_sync_cache_fallback")
         else:
             raise RuntimeError(format_git_failure(exc)) from exc
     except subprocess.TimeoutExpired as exc:
-        if source.is_dir():
+        if source.is_dir() and (overlay_source is None or overlay_source.is_dir()):
             if logger:
                 logger("data_sync_cache_fallback")
         else:
             raise RuntimeError(f"git command timed out after {exc.timeout} seconds") from exc
     if not source.is_dir():
         raise FileNotFoundError(f"missing data synchronization directory: {source}")
+    if overlay_source is not None and not overlay_source.is_dir():
+        raise FileNotFoundError(f"missing custom data synchronization directory: {overlay_source}")
     if target_dir.exists():
         shutil.rmtree(target_dir)
     if logger:
         logger("data_sync_copy")
     target_dir.mkdir(parents=True, exist_ok=True)
-    for name in DATA_SYNC_ALLOWED_DIRS:
-        child = source / name
-        if child.is_dir():
-            shutil.copytree(child, target_dir / name)
+    _copy_allowed_data_sync_dirs(source, target_dir)
+    if overlay_source is not None:
+        if logger:
+            logger("data_sync_custom_copy")
+        _copy_allowed_data_sync_dirs(overlay_source, target_dir)
 
 
 def build_product_package(
@@ -598,6 +687,8 @@ def build_product_package(
     data_sync_branch: str = DEFAULT_DATA_SYNC_BRANCH,
     data_sync_dir: Path | None = None,
     data_sync_subdir: str = DEFAULT_DATA_SYNC_SUBDIR,
+    data_sync_custom_subdir: str = DEFAULT_DATA_SYNC_CUSTOM_SUBDIR,
+    include_help_sql: bool = True,
     logger: Any | None = None,
 ) -> dict[str, Any]:
     if not template_zip.is_file():
@@ -634,6 +725,7 @@ def build_product_package(
                 workdir=data_sync_dir or configured_data_sync_dir(),
                 subdir=data_sync_subdir,
                 target_dir=data_sync_target,
+                custom_subdir=data_sync_custom_subdir,
                 logger=logger,
             )
         account_sql = product_dir / "2.ohr" / "4.account.sql"
@@ -643,9 +735,10 @@ def build_product_package(
             patch_account_sql(account_sql.read_text(encoding="utf-8"), sql_config),
             encoding="utf-8",
         )
-        if logger:
-            logger("help_sql_replace")
-        _replace_help_sql_if_present(web_zip, product_dir / "1.tenant" / "ohr_help.sql")
+        if include_help_sql:
+            if logger:
+                logger("help_sql_replace")
+            _replace_help_sql_if_present(web_zip, product_dir / "1.tenant" / "ohr_help.sql")
         import_dir = delivery_root / "導入"
         if tenant_import_config:
             tenant_import_dir = import_dir / "tenant"
@@ -759,8 +852,11 @@ def _replace_help_sql_if_present(web_zip: Path, target: Path) -> None:
         try:
             data = zf.read(HELP_SQL_IN_WEB_ZIP)
         except KeyError:
-            return
-    target.write_bytes(data)
+            raise FileNotFoundError(f"missing Help SQL in web.zip: {HELP_SQL_IN_WEB_ZIP}") from None
+    text = data.decode("utf-8-sig")
+    if not text.lstrip().lower().startswith("delete from ohr_help"):
+        text = HELP_SQL_RESET_PREFIX + text
+    target.write_text(text, encoding="utf-8")
 
 
 def _rebuild_standalone_zip(

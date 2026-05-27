@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.3.46 - 2026-05-27
+
+### Added
+
+- 標準版新增“生成 Help 包及相关资源”选项。勾选时构建 Help 并覆盖 `製品/1.tenant/ohr_help.sql`，取消勾选时跳过 Help 构建和 Help SQL 覆盖。
+
+## 0.3.45 - 2026-05-27
+
+### Changed
+
+- 標準版最终打包时，`製品/1.tenant/ohr_help.sql` 会在 Help 构建产物 SQL 顶部追加 `DELETE FROM ohr_help;`，保证重复执行时先清空旧帮助信息。
+- Help 构建产物中缺少 `ohr-cicd/web_prod/help/insert_ohr_help.sql` 时，最终打包直接失败，避免沿用模板中的旧 `ohr_help.sql`。
+
+## 0.3.44 - 2026-05-27
+
+### Changed
+
+- 標準版 Help 参数从页面上的 Git 分支改为可选 SVN revision。留空时使用最新 revision，填写数字时由构建终端校验后再构造。
+- `ohr-help-docs` Git 分支保留为构建终端环境配置 `HELP_DOCS_BRANCH`，用于 Help 构建脚手架同步。
+
+## 0.3.43 - 2026-05-27
+
+### Changed
+
+- “補充スクリプトコード源”的在线有效性校验改为由构建终端执行，主控台仅转发校验请求和展示结果，避免主控台宿主机 Git 环境影响路径判断。
+
+## 0.3.42 - 2026-05-27
+
+### Changed
+
+- 標準版“補充スクリプトコード源”支持完整 GitLab tree URL 或仓库内目录路径输入，失焦和提交构造时会校验路径是否存在；无效路径会标红并阻止构造。
+
+## 0.3.41 - 2026-05-27
+
+### Added
+
+- 標準版事前準備的 UPDS サービス情報新增“補充スクリプトコード源”输入项，可填写 `data-synchronization.git` 仓库内相对路径。打包时先复制默认 `DATA_SYNC_SUBDIR`，再合并补充源白名单目录，同名文件由补充源覆盖。
+
+## 0.3.40 - 2026-05-26
+
+### Changed
+
+- 標準版 `導入/ohr/import_plan.sql` 改为显式输出全部画面公開計画目标状态，启用项写入 `enable = true`、定时任务 `paused = false` / `display_flag = true`，停用项继续写入关闭语句，用于覆盖安装环境中的脏数据。
+
 ## 0.3.39 - 2026-05-26
 
 ### Changed

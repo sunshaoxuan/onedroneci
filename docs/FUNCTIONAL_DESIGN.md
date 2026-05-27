@@ -50,8 +50,8 @@
 ### help
 
 - 来源为 `ohr-help-docs + SVN`。
-- Git 仓库增量同步。
-- SVN 文档目录保留持久工作副本。
+- Git 仓库增量同步，用于 Help 构建脚手架，分支由构建终端环境配置控制。
+- SVN 文档目录保留持久工作副本。页面可指定 Help SVN revision，留空时使用最新 revision，填写时由构建终端校验后按指定 revision 同步。
 - 执行 `copy-images`、`build`、`bundle`。
 - 将生成 help zip 解压到 `web.zip/ohr-cicd/web_prod/help/`。
 

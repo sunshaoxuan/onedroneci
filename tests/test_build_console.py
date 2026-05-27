@@ -69,6 +69,62 @@ def test_build_console_page_has_i18n_without_breaking_api():
         assert step_id in server.APP_JS
 
 
+def test_build_console_validates_data_sync_custom_source(monkeypatch):
+    server = load_server()
+    calls: list[str] = []
+
+    def fake_sync(subdir):
+        calls.append(subdir)
+        (server.DATA_SYNC_DIR / subdir).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(server, "sync_data_sync_validation_tree", fake_sync)
+    monkeypatch.setattr(server, "DATA_SYNC_DIR", Path("build-console-test-data-sync-validation"))
+
+    result = server.validate_data_sync_custom_source(
+        "https://upds7.ujob100.com/ohr/data-synchronization/-/tree/master/tsukubav7phr/PHR"
+    )
+
+    assert result == {"ok": True, "path": "tsukubav7phr/PHR"}
+    assert calls == ["tsukubav7phr/PHR"]
+
+
+def test_build_console_rejects_data_sync_custom_source_from_other_repo():
+    server = load_server()
+
+    try:
+        server.validate_data_sync_custom_source("https://upds7.ujob100.com/ohr/other/-/tree/master/tsukubav7phr/PHR")
+    except ValueError as exc:
+        assert "data-synchronization tree" in str(exc)
+    else:
+        raise AssertionError("other repository URL should be rejected")
+
+
+def test_build_console_validates_help_docs_svn_revision(monkeypatch):
+    server = load_server()
+    calls: list[list[str]] = []
+
+    class Proc:
+        returncode = 0
+        stdout = "Revision: 12345\n"
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return Proc()
+
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+
+    assert server.validate_help_docs_svn_revision("") == {"ok": True, "revision": ""}
+    assert server.validate_help_docs_svn_revision("abc") == {
+        "ok": False,
+        "revision": "abc",
+        "error": "invalid_revision",
+    }
+    assert server.validate_help_docs_svn_revision("12345") == {"ok": True, "revision": "12345"}
+    assert calls[0][:4] == ["svn", "info", server.HELP_DOCS_SVN_URL, "-r"]
+    assert calls[0][4] == "12345"
+
+
 def test_build_console_supports_nho_variant_scripts_and_ui(monkeypatch):
     monkeypatch.setenv("MAVEN_ONEHR_PASSWORD", "test-password")
     server = load_server()
@@ -227,6 +283,7 @@ def test_create_build_allows_frontend_only_without_backend_branch(tmp_path, monk
     assert meta["request"]["build_backend"] is False
     assert meta["request"]["build_frontend"] is True
     assert meta["request"]["help_docs_branch"] == "release_ci"
+    assert meta["request"]["help_docs_svn_revision"] == ""
     assert meta["request"]["conf_server_host"] == "192.168.70.136"
     assert meta["request"]["conf_web_port"] == 80
     assert meta["request"]["backend_branch"] == ""
@@ -298,6 +355,7 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
     assert meta["request"]["frontend_workspace_branch"] == "master"
     assert meta["request"]["frontend_release_branch"] == "release_front"
     assert meta["request"]["help_docs_branch"] == "release_ci"
+    assert meta["request"]["help_docs_svn_revision"] == ""
     assert meta["request"]["conf_server_host"] == "192.168.70.136"
     assert meta["request"]["conf_web_port"] == 40443
     assert meta["request"]["conf_enable_https"] is True
@@ -305,6 +363,27 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
     assert meta["request"]["conf_worker_connections"] == 1024
     assert (tmp_path / "standard" / meta["id"] / "metadata.json").is_file()
     assert [step["id"] for step in meta["steps"]] == list(server.DIRECT_STEP_IDS)
+
+
+def test_create_build_rejects_missing_help_svn_revision(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
+    monkeypatch.setattr(server, "validate_help_docs_svn_revision", lambda value: {"ok": False, "revision": value, "error": "not_found"})
+
+    try:
+        server.create_build(
+            {
+                "backend_branch": "release_20260129",
+                "frontend_release_branch": "release_front",
+                "help_docs_svn_revision": "999999",
+                "conf_server_host": "192.168.70.136",
+            }
+        )
+    except ValueError as exc:
+        assert "Help SVN revision 不存在" in str(exc)
+    else:
+        raise AssertionError("missing Help SVN revision should fail")
 
 
 def test_create_build_requires_drone_config_when_drone_executor(tmp_path, monkeypatch):
@@ -596,6 +675,10 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "HELP_CACHE_KEY" in script
     assert "[cache help] reuse help bundle" in script
     assert "svn info --show-item revision" in script
+    assert "HELP_DOCS_SVN_REVISION" in script
+    assert 'SVN_REV_ARGS=(-r "$HELP_DOCS_SVN_REVISION")' in script
+    assert 'if [ "${BUILD_HELP:-true}" = "true" ]; then' in script
+    assert "Help 构建已跳过" in script
     assert "pnpm i --frozen-lockfile --prefer-offline" in script
     assert "git -C \"$CICD_DIR\" clean -fd -e node_modules" in script
     assert "-e .ci-cache" in script
@@ -622,7 +705,8 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
         {
             "frontend_release_branch": "release_front",
             "frontend_workspace_branch": "master",
-            "help_docs_branch": "release_ci",
+            "help_docs_svn_revision": "12345",
+            "build_help": False,
             "conf_server_host": "customer.local",
             "conf_web_port": 80,
             "conf_enable_https": True,
@@ -635,6 +719,9 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
     assert env["OHR_CICD_GIT_URL"] == "https://example.test/ohr-cicd.git"
     assert env["OHR_CICD_BRANCH"] == "master"
     assert env["OHR_CICD_ENV"] == "direct_prod"
+    assert env["HELP_DOCS_BRANCH"] == "release_ci"
+    assert env["HELP_DOCS_SVN_REVISION"] == "12345"
+    assert env["BUILD_HELP"] == "false"
     assert env["CONF_SERVER_HOST"] == "customer.local"
     assert env["CONF_ENABLE_HTTPS"] == "true"
 

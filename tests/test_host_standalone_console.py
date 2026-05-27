@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.39"
+    assert console.APP_VERSION == "0.3.46"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -486,7 +486,8 @@ def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
         "request": {
             "backend_branch": "",
             "frontend_release_branch": "release_front",
-            "help_docs_branch": "release_ci",
+            "help_docs_svn_revision": "12345",
+            "build_help": False,
             "conf_server_host": "customer.local",
             "conf_enable_https": True,
         },
@@ -527,6 +528,8 @@ def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
     assert payloads[0]["build_backend"] is False
     assert payloads[0]["build_frontend"] is True
     assert payloads[0]["conf_enable_https"] is True
+    assert payloads[0]["help_docs_svn_revision"] == "12345"
+    assert payloads[0]["build_help"] is False
 
 
 def test_tenant_import_config_is_derived_from_standard_request():
@@ -591,16 +594,18 @@ def test_ohr_import_config_is_derived_from_publish_plan():
         }
     )
 
-    menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus}
-    task_codes = {item.code for item in config.disabled_scheduled_tasks}
+    menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus if not item.enabled}
+    enabled_menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus if item.enabled}
+    task_codes = {item.code for item in config.disabled_scheduled_tasks if not item.enabled}
+    enabled_task_codes = {item.code for item in config.disabled_scheduled_tasks if item.enabled}
     assert ("personal-portal", "EM_PR_MBR") in menu_codes
     assert ("personal-portal", "EM_PR_TXW") in menu_codes
     assert ("taxadjustment", "EMA_PR_PRT") in menu_codes
-    assert ("taxadjustment", "EMA_HR_PRT") not in menu_codes
+    assert ("taxadjustment", "EMA_HR_PRT") in enabled_menu_codes
     assert "mdm-data-synchronization-tax-data" in task_codes
     assert "send-tax-mail-batch" in task_codes
     assert "hr-to-upds-getsukazoku" in task_codes
-    assert "mdm-data-synchronization-decree-data" not in task_codes
+    assert "mdm-data-synchronization-decree-data" in enabled_task_codes
 
 
 def test_ohr_import_config_disables_children_when_publish_group_is_off():
@@ -614,7 +619,7 @@ def test_ohr_import_config_disables_children_when_publish_group_is_off():
         }
     )
 
-    menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus}
+    menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus if not item.enabled}
     assert ("personal-portal", "EM_PR_HRJ") in menu_codes
     assert ("em", "EM_HR_HRJ") in menu_codes
 
@@ -629,8 +634,25 @@ def test_ohr_import_config_keeps_shared_menu_when_any_control_is_enabled():
         }
     )
 
-    menu_codes = {(item.application_name, item.menu_code) for item in config.disabled_menus}
-    assert ("personal-portal", "BP_PR_ASS") not in menu_codes
+    menu_states = {(item.application_name, item.menu_code): item.enabled for item in config.disabled_menus}
+    assert menu_states[("personal-portal", "BP_PR_ASS")] is True
+
+
+def test_ohr_import_config_records_enabled_items_too():
+    config = console.ohr_import_config_from_request(
+        {
+            "publish_group_shomuSystem": "on",
+            "publish_shomu_profile": "on",
+            "publish_shomu_issue_info": "on",
+        }
+    )
+
+    menu_states = {(item.application_name, item.menu_code): item.enabled for item in config.disabled_menus}
+    task_states = {item.code: item.enabled for item in config.disabled_scheduled_tasks}
+    assert menu_states[("personal-portal", "EM_PR_MBR")] is True
+    assert menu_states[("personal-portal", "EM_PR_TXW")] is False
+    assert task_states["mdm-data-synchronization-decree-data"] is True
+    assert task_states["mdm-data-synchronization-tax-data"] is False
 
 
 def test_running_status_uses_single_animated_heartbeat_not_log_spam():
@@ -724,6 +746,7 @@ def test_standard_console_has_preparation_and_import_plan_tabs():
         "web_key_name",
         "mail_host_ip",
         "upds_db_name",
+        "data_sync_custom_subdir",
         "ekispert_url",
         "facility_situation",
         "publish_common_log",
@@ -745,6 +768,7 @@ def test_usage_options_are_in_preparation_service_sections():
 
     assert 'name="mail_usage"' in mail_section
     assert 'name="workflow_upds_usage"' in upds_section
+    assert 'name="data_sync_custom_subdir"' in upds_section
     assert 'name="ekispert_usage"' in ekispert_section
     assert 'name="mail_usage"' not in import_option_matrix
     assert 'name="workflow_upds_usage"' not in import_option_matrix
@@ -754,6 +778,48 @@ def test_usage_options_are_in_preparation_service_sections():
     assert 'name="mail_usage"><option value="none"' in console.INDEX_HTML
     assert 'name="workflow_upds_usage"><option value="none"' in console.INDEX_HTML
     assert 'name="ekispert_usage"><option value="none"' in console.INDEX_HTML
+    assert "/-/tree/master/" in console.APP_JS
+    assert "tsukubav7phr/PHR" not in console.INDEX_HTML
+    assert "/api/data-sync-custom-source/validate" in console.APP_JS
+    assert "field-invalid" in console.STYLE_CSS
+    assert "dataSyncCustomSourceInvalid" in console.APP_JS
+    assert "input.value = data.path" in console.APP_JS
+
+
+def test_data_sync_custom_source_validation_normalizes_full_tree_url(monkeypatch, tmp_path):
+    calls: list[tuple[str, str]] = []
+
+    def fake_remote_json(base_url, path, payload=None):
+        calls.append((base_url, path))
+        return {"ok": True, "path": "tsukubav7phr/PHR"}
+
+    monkeypatch.setattr(console, "remote_json", fake_remote_json)
+
+    result = console.validate_data_sync_custom_source(
+        "https://upds7.ujob100.com/ohr/data-synchronization/-/tree/master/tsukubav7phr/PHR"
+    )
+
+    assert result == {"ok": True, "path": "tsukubav7phr/PHR"}
+    assert calls[0][0] == console.REMOTE_BUILD_CONSOLE_URL
+    assert calls[0][1].startswith("/api/data-sync-custom-source/validate?value=")
+
+
+def test_help_docs_svn_revision_validation_is_forwarded_to_build_terminal(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def fake_remote_json(base_url, path, payload=None):
+        calls.append((base_url, path))
+        return {"ok": True, "revision": "12345"}
+
+    monkeypatch.setattr(console, "remote_json", fake_remote_json)
+
+    assert console.validate_help_docs_svn_revision("") == {"ok": True, "revision": ""}
+    result = console.validate_help_docs_svn_revision("12345")
+
+    assert result == {"ok": True, "revision": "12345"}
+    assert calls[0][0] == console.REMOTE_BUILD_CONSOLE_URL
+    assert calls[0][1] == "/api/help-docs-svn-revision/validate?value=12345"
+    assert "/api/help-docs-svn-revision/validate" in console.APP_JS
 
 
 def test_service_usage_requires_related_fields_when_enabled():
