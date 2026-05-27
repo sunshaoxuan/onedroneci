@@ -796,3 +796,14 @@ def test_build_console_log_rendering_keeps_fixed_line_window():
     assert "logLines = logLines.slice(logLines.length - MAX_LOG_LINES)" in server.APP_JS
     assert "shouldStickToBottom" in server.APP_JS
     assert "pre.textContent += translateLogText" not in server.APP_JS
+
+
+def test_append_log_strips_ansi_escape_sequences(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    build_id = "20260527000102"
+    server.build_dir(build_id).mkdir(parents=True)
+
+    server.append_log(build_id, "\x1b[36mdist/static/js/app.js\x1b[39m")
+
+    assert server.log_path(build_id).read_text(encoding="utf-8") == "dist/static/js/app.js\n"

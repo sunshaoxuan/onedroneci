@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.48"
+    assert console.APP_VERSION == "0.3.49"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -671,6 +671,7 @@ def test_running_status_uses_single_animated_heartbeat_not_log_spam():
     assert "'产物已收集': '成果物収集完了'" in console.APP_JS
     assert "const status = translateLogText(rawStatus)" in console.APP_JS
     assert console.filter_display_log("a\nremote_build_status: running\nb") == "a\nb"
+    assert console.filter_display_log("\x1b[32mdist/static/js/app.js\x1b[39m") == "dist/static/js/app.js"
 
 
 def test_build_terminal_iframe_uses_host_proxy_not_direct_url():

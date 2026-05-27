@@ -300,7 +300,14 @@ def parse_bool_field(payload: dict[str, Any], key: str, default: bool = False) -
 
 def append_log(build_id: str, line: str) -> None:
     with log_path(build_id).open("a", encoding="utf-8") as f:
-        f.write(line.rstrip("\n") + "\n")
+        f.write(strip_ansi_escape(line).rstrip("\n") + "\n")
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def strip_ansi_escape(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
 
 
 def update_build(build_id: str, **updates: Any) -> dict[str, Any]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import shutil
 import threading
@@ -44,7 +45,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.48"
+APP_VERSION = "0.3.49"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -217,6 +218,7 @@ def make_progress() -> list[dict[str, Any]]:
 JOBS: dict[str, dict[str, Any]] = {}
 LOCK = threading.RLock()
 CANCELLED: set[str] = set()
+ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 class JobCancelled(RuntimeError):
@@ -555,6 +557,10 @@ def append_log(job_id: str, message: str) -> None:
     append_log_lines(job_id, [message])
 
 
+def strip_ansi_escape(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
+
+
 def append_log_lines(job_id: str, messages: list[str]) -> None:
     if not messages:
         return
@@ -562,7 +568,7 @@ def append_log_lines(job_id: str, messages: list[str]) -> None:
         job = JOBS.get(job_id) or read_job(job_id)
         lang = str((job.get("request") or {}).get("ui_language") or "ja-JP")
         stamp = time.strftime("%H:%M:%S")
-        lines = [f"{stamp} {redact_build_terminal(message, lang)}" for message in messages]
+        lines = [f"{stamp} {redact_build_terminal(strip_ansi_escape(message), lang)}" for message in messages]
         job.setdefault("log", []).extend(lines)
         job["log"] = job["log"][-200:]
         job["updated_at"] = now()
@@ -648,7 +654,8 @@ def fetch_remote_log(job_id: str, remote_id: str) -> None:
 
 
 def filter_display_log(text: str) -> str:
-    return "\n".join(line for line in text.splitlines() if "remote_build_status:" not in line)
+    cleaned = strip_ansi_escape(text)
+    return "\n".join(line for line in cleaned.splitlines() if "remote_build_status:" not in line)
 
 
 def remote_post(path: str) -> dict[str, Any]:
