@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.50 - 2026-05-27
+
+### Changed
+
+- 標準版前端 Direct 构建参数调整为适配 32GB / 8 vCPU 构建终端：默认 `STANDARD_NODE_OPTIONS=--max-old-space-size=4096`，并把標準版前端脚本中临时注入的 Node heap 从 1536MB 提升到 4096MB。
+
 ## 0.3.49 - 2026-05-27
 
 ### Fixed

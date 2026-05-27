@@ -87,7 +87,7 @@
 2. 增量同步四个前端子仓。
 3. 使用 `/opt/pnpm-cache` 作为 pnpm store。
 4. 按 lock/package 指纹尽量跳过不必要的依赖安装。
-5. 默认设置 `STANDARD_NODE_OPTIONS=--max-old-space-size=1536`。
+5. 默认设置 `STANDARD_NODE_OPTIONS=--max-old-space-size=4096`，用于 32GB / 8 vCPU 构建终端。
 6. 构建前临时把 `build:parallel`、`ohr-cli mono-build --parallel` 和部分 lerna 并发收敛为串行或低并发，适配低内存构建终端。
 7. 执行 `npm run build`。
 8. 执行 `npm run bundle`。

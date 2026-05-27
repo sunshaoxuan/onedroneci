@@ -733,7 +733,8 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "-e .ci-cache" in script
     assert "[cache yarn] ohr-cicd unchanged; skip yarn install" in script
     assert "STANDARD_NODE_OPTIONS" in script
-    assert "--max-old-space-size=1536" in script
+    assert "--max-old-space-size=4096" in script
+    assert "NODE_OPTIONS=--max_old_space_size=4096" in script
     assert "apply_standard_low_memory_overrides" in script
     assert 'replace("npm run build:parallel", "npm run build")' in script
     assert 'replace("ohr-cli mono-build --parallel", "ohr-cli mono-build")' in script

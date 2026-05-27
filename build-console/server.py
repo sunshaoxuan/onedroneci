@@ -1377,7 +1377,7 @@ ls -lh "$OUT_WEB_ZIP"
 DIRECT_FRONTEND_BUILD_SCRIPT = r"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export HOME="${HOME:-/root}"
-export NODE_OPTIONS="${STANDARD_NODE_OPTIONS:---max-old-space-size=1536}"
+export NODE_OPTIONS="${STANDARD_NODE_OPTIONS:---max-old-space-size=4096}"
 cd "$OHR_FRONTEND_WORKDIR"
 npm i -g pnpm@10.22.0 --registry=https://registry.npmmirror.com/
 npm i -g yarn@1.22.22 --registry=https://registry.npmmirror.com/
@@ -1622,15 +1622,13 @@ for name in script_files:
         new_value = new_value.replace("yarn build:parallel", "yarn build")
         new_value = new_value.replace("ohr-cli mono-build --parallel", "ohr-cli mono-build")
         new_value = new_value.replace(" --parallel", "")
-        new_value = new_value.replace("NODE_OPTIONS=--max_old_space_size=8192", "NODE_OPTIONS=--max_old_space_size=1536")
-        new_value = new_value.replace("NODE_OPTIONS=--max-old-space-size=8192", "NODE_OPTIONS=--max-old-space-size=1536")
-        new_value = new_value.replace("NODE_OPTIONS=--max_old_space_size=4096", "NODE_OPTIONS=--max_old_space_size=1536")
-        new_value = new_value.replace("NODE_OPTIONS=--max-old-space-size=4096", "NODE_OPTIONS=--max-old-space-size=1536")
+        new_value = new_value.replace("NODE_OPTIONS=--max_old_space_size=8192", "NODE_OPTIONS=--max_old_space_size=4096")
+        new_value = new_value.replace("NODE_OPTIONS=--max-old-space-size=8192", "NODE_OPTIONS=--max-old-space-size=4096")
         new_value = re.sub(r"(lerna run build --stream)(?!\s+--concurrency)", r"\1 --concurrency 1", new_value)
         new_value = re.sub(r"(lerna run build --scope=@omf/subsys-\*)(?!\s+--concurrency)", r"\1 --concurrency 1", new_value)
         if name.startswith("ohr-nocode-engine/packages/"):
-            new_value = new_value.replace("yarn set-env-prod build-scripts build", "yarn set-env-prod NODE_OPTIONS=--max_old_space_size=1536 build-scripts build")
-            new_value = new_value.replace("yarn set-env-dev build-scripts build", "yarn set-env-dev NODE_OPTIONS=--max_old_space_size=1536 build-scripts build")
+            new_value = new_value.replace("yarn set-env-prod build-scripts build", "yarn set-env-prod NODE_OPTIONS=--max_old_space_size=4096 build-scripts build")
+            new_value = new_value.replace("yarn set-env-dev build-scripts build", "yarn set-env-dev NODE_OPTIONS=--max_old_space_size=4096 build-scripts build")
         if new_value != value:
             data["scripts"][key] = new_value
             changed.append(key)

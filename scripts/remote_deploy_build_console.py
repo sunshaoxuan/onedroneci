@@ -107,7 +107,7 @@ def render_env() -> str:
         "OHR_CICD_RUSTFS_HOST": base.get("OHR_CICD_RUSTFS_HOST", "127.0.0.1:12345"),
         "FRONTEND_GIT_TOKEN": base.get("FRONTEND_GIT_TOKEN", git.get("OHR_BACK_GIT_TOKEN", "")),
         "NPM_AUTH_B64": base.get("NPM_AUTH_B64", ""),
-        "STANDARD_NODE_OPTIONS": base.get("STANDARD_NODE_OPTIONS", "--max-old-space-size=1536"),
+        "STANDARD_NODE_OPTIONS": base.get("STANDARD_NODE_OPTIONS", "--max-old-space-size=4096"),
     }
     return "".join(f"{key}={quote_env(value)}\n" for key, value in values.items())
 
