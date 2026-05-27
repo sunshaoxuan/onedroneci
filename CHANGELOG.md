@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.47 - 2026-05-27
+
+### Added
+
+- 標準版资材番号支持从 `お客様環境` SVN 读取候选目录，目录名兼容 `資材-YYYYMMDD` 与 `資材_YYYYMMDD`。选择资材番号后读取该目录 `version.txt`，自动回填后台分支、前台分支和 Help SVN revision。
+
 ## 0.3.46 - 2026-05-27
 
 ### Added

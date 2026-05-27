@@ -55,6 +55,12 @@
 - 执行 `copy-images`、`build`、`bundle`。
 - 将生成 help zip 解压到 `web.zip/ohr-cicd/web_prod/help/`。
 
+### 标准版资材番号
+
+- 构建终端从 `STANDARD_MATERIAL_SVN_URL` 读取 `お客様環境` SVN 目录。
+- 目录名 `資材-YYYYMMDD` 或 `資材_YYYYMMDD` 会进入資材番号候选。
+- 选择候选后读取该目录的 `version.txt`，回填后台分支、前台分支和 Help SVN revision。
+
 ### 构建终端 API
 
 - `POST /api/builds`

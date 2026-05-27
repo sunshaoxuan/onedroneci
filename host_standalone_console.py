@@ -44,7 +44,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.46"
+APP_VERSION = "0.3.47"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1045,7 +1045,7 @@ INDEX_HTML = """<!doctype html>
           <button class="standard-tab active" type="button" data-standard-tab="prep" data-i18n="tabPreparation">事前準備</button>
           <button class="standard-tab" type="button" data-standard-tab="import" data-i18n="tabImportPlan">導入計画</button>
         </div>
-        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle nho-only" type="button" aria-label="NHO material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
+        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle" type="button" aria-label="material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
         <section class="standard-only standard-tab-panel" data-standard-tab-panel="prep">
@@ -1694,7 +1694,7 @@ function chooseComboItem(item) {
     : document.getElementById(target);
   if (input) input.value = item.dataset.value || item.textContent || '';
   closeMaterialMenu();
-  if (target === 'material_number') loadNhoMaterialReleaseBranches(input && input.value);
+  if (target === 'material_number') loadMaterialReleaseBranches(input && input.value);
 }
 function fillBranchSelect(id, branches) {
   const input = document.getElementById(id);
@@ -1967,38 +1967,38 @@ async function loadBranchLists() {
   }
 }
 async function loadMaterialNumbers() {
-  if (getProductVariant() !== 'nho') {
-    fillDatalist('material-numbers', []);
-    fillMaterialSelect([]);
-    return;
-  }
+  const variant = getProductVariant();
+  const endpoint = variant === 'nho' ? '/build-terminal/api/nho-material-numbers' : '/build-terminal/api/standard-material-numbers';
   try {
-    const res = await fetch('/build-terminal/api/nho-material-numbers');
+    const res = await fetch(endpoint);
     const data = await res.json();
     const values = data.material_numbers || [];
     fillDatalist('material-numbers', values);
     fillMaterialSelect(values, !values.length && Boolean(data.error));
   } catch (error) {
-    console.warn('failed to load NHO material numbers', error);
+    console.warn('failed to load material numbers', error);
     fillDatalist('material-numbers', []);
     fillMaterialSelect([], true);
   }
 }
-async function loadNhoMaterialReleaseBranches(materialNumber) {
-  if (getProductVariant() !== 'nho') return;
+async function loadMaterialReleaseBranches(materialNumber) {
+  const variant = getProductVariant();
   const value = String(materialNumber || '').trim();
   if (!/^\d{8}$/.test(value)) return;
+  const endpoint = variant === 'nho' ? '/api/nho-material-release-branches' : '/api/standard-material-release-branches';
   try {
-    const res = await fetch(`/api/nho-material-release-branches?material_number=${encodeURIComponent(value)}`);
+    const res = await fetch(`${endpoint}?material_number=${encodeURIComponent(value)}`);
     const data = await res.json();
     if (data.error) {
-      console.warn('failed to load NHO release branches', data.error);
+      console.warn('failed to load material release branches', data.error);
       return;
     }
     document.getElementById('backend-branches').value = data.backend_branch || '';
     document.getElementById('frontend-branches').value = data.frontend_branch || '';
+    const helpRevision = document.querySelector('input[name="help_docs_svn_revision"]');
+    if (helpRevision && variant === 'standard') helpRevision.value = data.help_docs_svn_revision || '';
   } catch (error) {
-    console.warn('failed to load NHO release branches', error);
+    console.warn('failed to load material release branches', error);
   }
 }
 function translateLogText(text) {
@@ -2366,7 +2366,7 @@ document.querySelectorAll('.material-combo input').forEach(input => {
   });
 });
 document.querySelector('input[name="material_number"]').addEventListener('change', event => {
-  loadNhoMaterialReleaseBranches(event.target.value);
+  loadMaterialReleaseBranches(event.target.value);
 });
 const dataSyncCustomInput = document.querySelector('input[name="data_sync_custom_subdir"]');
 if (dataSyncCustomInput) {
@@ -3491,6 +3491,17 @@ class Handler(BaseHTTPRequestHandler):
                 data = remote_json(
                     REMOTE_BUILD_CONSOLE_URL,
                     f"/api/nho-material-release-branches?material_number={urllib.parse.quote(material_number)}",
+                )
+                return self.send_json(data)
+            except Exception as exc:
+                return self.send_json({"error": redact_build_terminal(str(exc))}, HTTPStatus.BAD_GATEWAY)
+        if parsed.path == "/api/standard-material-release-branches":
+            query = urllib.parse.parse_qs(parsed.query)
+            material_number = str((query.get("material_number") or [""])[0]).strip()
+            try:
+                data = remote_json(
+                    REMOTE_BUILD_CONSOLE_URL,
+                    f"/api/standard-material-release-branches?material_number={urllib.parse.quote(material_number)}",
                 )
                 return self.send_json(data)
             except Exception as exc:

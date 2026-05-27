@@ -78,6 +78,13 @@ def render_env() -> str:
         "NHO_MATERIAL_SVN_USERNAME": base.get("NHO_MATERIAL_SVN_USERNAME", ""),
         "NHO_MATERIAL_SVN_PASSWORD": base.get("NHO_MATERIAL_SVN_PASSWORD", ""),
         "NHO_MATERIAL_CACHE_SECONDS": base.get("NHO_MATERIAL_CACHE_SECONDS", "300"),
+        "STANDARD_MATERIAL_SVN_URL": base.get(
+            "STANDARD_MATERIAL_SVN_URL",
+            "http://192.168.21.111/svn/PHR1.5/98.環境構築手順書/お客様環境",
+        ),
+        "STANDARD_MATERIAL_SVN_USERNAME": base.get("STANDARD_MATERIAL_SVN_USERNAME", ""),
+        "STANDARD_MATERIAL_SVN_PASSWORD": base.get("STANDARD_MATERIAL_SVN_PASSWORD", ""),
+        "STANDARD_MATERIAL_CACHE_SECONDS": base.get("STANDARD_MATERIAL_CACHE_SECONDS", "300"),
         "HELP_DOCS_GIT_URL": base.get("HELP_DOCS_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-help-docs.git"),
         "HELP_DOCS_BRANCH": base.get("HELP_DOCS_BRANCH", "release_ci"),
         "HELP_DOCS_DIR": base.get("HELP_DOCS_DIR", "/opt/ohr-help-docs-src"),

@@ -526,6 +526,55 @@ def test_nho_material_numbers_are_loaded_from_build_terminal_svn(monkeypatch):
     assert "svn-user" in called[0]
 
 
+def test_standard_material_numbers_are_loaded_from_customer_environment_svn(monkeypatch):
+    server = load_server()
+    server.STANDARD_MATERIAL_CACHE["numbers"] = []
+    server.STANDARD_MATERIAL_CACHE["dirs"] = {}
+    server.STANDARD_MATERIAL_CACHE["expires_at"] = 0
+
+    called = []
+
+    class Proc:
+        returncode = 0
+        stdout = "資材-20260527/\n資材_20260424/\n資材-次回リリース/\n初期構築/\n"
+        stderr = ""
+
+    def fake_run(command, capture_output=True, text=True, timeout=60):
+        called.append(command)
+        return Proc()
+
+    monkeypatch.setattr(server.shutil, "which", lambda name: "/usr/bin/svn")
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    monkeypatch.setattr(server, "STANDARD_MATERIAL_SVN_URL", "http://example.test/svn/お客様環境")
+
+    assert server.list_standard_material_numbers(force_refresh=True) == ["20260527", "20260424"]
+    assert server.STANDARD_MATERIAL_CACHE["dirs"]["20260527"] == "資材-20260527"
+    assert called and called[0][-1] == "http://example.test/svn/お客様環境"
+
+
+def test_standard_material_release_branches_are_loaded_from_version_txt(monkeypatch):
+    server = load_server()
+    calls = []
+    server.STANDARD_MATERIAL_CACHE["numbers"] = ["20260527"]
+    server.STANDARD_MATERIAL_CACHE["dirs"] = {"20260527": "資材-20260527"}
+    server.STANDARD_MATERIAL_CACHE["expires_at"] = 9999999999
+
+    def fake_run_svn_text(args, timeout=60):
+        calls.append(args)
+        return "后台分支：release_20260527\r\n前台分支：release_20260527\r\nhelp version：2024\r\n"
+
+    monkeypatch.setattr(server, "run_svn_text", fake_run_svn_text)
+    monkeypatch.setattr(server, "STANDARD_MATERIAL_SVN_URL", "http://example.test/svn/お客様環境")
+
+    result = server.get_standard_material_release_branches("20260527")
+
+    assert result["backend_branch"] == "release_20260527"
+    assert result["frontend_branch"] == "release_20260527"
+    assert result["help_docs_svn_revision"] == "2024"
+    assert result["source"] == "http://example.test/svn/お客様環境/資材-20260527/version.txt"
+    assert calls[0][-1] == result["source"]
+
+
 def test_extract_nho_release_branches_from_rows():
     server = load_server()
     rows = [

@@ -69,6 +69,13 @@ NHO_MATERIAL_SVN_URL = os.environ.get(
 NHO_MATERIAL_SVN_USERNAME = os.environ.get("NHO_MATERIAL_SVN_USERNAME", "")
 NHO_MATERIAL_SVN_PASSWORD = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", "")
 NHO_MATERIAL_CACHE_SECONDS = int(os.environ.get("NHO_MATERIAL_CACHE_SECONDS", "300"))
+STANDARD_MATERIAL_SVN_URL = os.environ.get(
+    "STANDARD_MATERIAL_SVN_URL",
+    "http://192.168.21.111/svn/PHR1.5/98.環境構築手順書/お客様環境",
+)
+STANDARD_MATERIAL_SVN_USERNAME = os.environ.get("STANDARD_MATERIAL_SVN_USERNAME", "")
+STANDARD_MATERIAL_SVN_PASSWORD = os.environ.get("STANDARD_MATERIAL_SVN_PASSWORD", "")
+STANDARD_MATERIAL_CACHE_SECONDS = int(os.environ.get("STANDARD_MATERIAL_CACHE_SECONDS", "300"))
 FRONTEND_WORKSPACE_DIR = Path(os.environ.get("FRONTEND_WORKSPACE_DIR", "/opt/ohr-workspace-src"))
 FRONTEND_WORKSPACE_GIT_URL = os.environ.get(
     "FRONTEND_WORKSPACE_GIT_URL", "https://upds7.ujob100.com/ohr/ohr-workspace.git"
@@ -121,6 +128,7 @@ DRONE_CONTROL_BRANCH = os.environ.get("DRONE_CONTROL_BRANCH", "master")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 CONF_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+$")
 NHO_MATERIAL_RE = re.compile(r"^(\d{8})リリース作業$")
+STANDARD_MATERIAL_RE = re.compile(r"^資材[-_](\d{8})$")
 XLSX_NS = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 DIRECT_STEP_IDS = (
     "validate",
@@ -136,6 +144,7 @@ BUILD_THREADS: dict[str, threading.Thread] = {}
 BUILD_PROCS: dict[str, subprocess.Popen[str]] = {}
 CANCELLED_BUILDS: set[str] = set()
 NHO_MATERIAL_CACHE: dict[str, Any] = {"expires_at": 0.0, "numbers": []}
+STANDARD_MATERIAL_CACHE: dict[str, Any] = {"expires_at": 0.0, "numbers": [], "dirs": {}}
 DATA_SYNC_VALIDATE_LOCK = threading.Lock()
 
 
@@ -1755,6 +1764,19 @@ def parse_nho_material_names(names: list[str], limit: int = 200) -> list[str]:
     return sorted(set(numbers), reverse=True)[:limit]
 
 
+def parse_standard_material_names(names: list[str], limit: int = 200) -> tuple[list[str], dict[str, str]]:
+    dirs: dict[str, str] = {}
+    for raw_name in names:
+        name = urllib.parse.unquote(raw_name.strip().rstrip("/"))
+        if not name or name in ("..", ".") or "/" in name or "\\" in name:
+            continue
+        match = STANDARD_MATERIAL_RE.fullmatch(name)
+        if match:
+            dirs[match.group(1)] = name
+    numbers = sorted(dirs, reverse=True)[:limit]
+    return numbers, {number: dirs[number] for number in numbers}
+
+
 def list_nho_material_numbers_with_svn(
     svn_url: str,
     svn_username: str,
@@ -1781,6 +1803,24 @@ def list_nho_material_numbers_with_svn(
         detail = (proc.stderr or proc.stdout or "svn ls failed").strip().splitlines()
         raise RuntimeError(detail[-1] if detail else "svn ls failed")
     return parse_nho_material_names(proc.stdout.splitlines(), limit)
+
+
+def list_standard_material_numbers_with_svn(
+    svn_url: str,
+    svn_username: str,
+    svn_password: str,
+    limit: int = 200,
+) -> tuple[list[str], dict[str, str]]:
+    svn_bin = shutil.which("svn")
+    if not svn_bin:
+        raise RuntimeError("svn command is not available")
+    command = svn_auth_command(["ls"], svn_username, svn_password)
+    command.append(svn_url.rstrip("/"))
+    proc = subprocess.run([svn_bin, *command], capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "svn ls failed").strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else "svn ls failed")
+    return parse_standard_material_names(proc.stdout.splitlines(), limit)
 
 
 def list_nho_material_numbers(force_refresh: bool = False, limit: int = 200) -> list[str]:
@@ -1813,6 +1853,41 @@ def list_nho_material_numbers(force_refresh: bool = False, limit: int = 200) -> 
     numbers = parse_nho_material_names(parser.hrefs, limit)
     NHO_MATERIAL_CACHE["numbers"] = numbers
     NHO_MATERIAL_CACHE["expires_at"] = now_ts + int(os.environ.get("NHO_MATERIAL_CACHE_SECONDS", str(NHO_MATERIAL_CACHE_SECONDS)))
+    return numbers[:limit]
+
+
+def list_standard_material_numbers(force_refresh: bool = False, limit: int = 200) -> list[str]:
+    now_ts = time.time()
+    cached = list(STANDARD_MATERIAL_CACHE.get("numbers") or [])
+    if cached and not force_refresh and now_ts < float(STANDARD_MATERIAL_CACHE.get("expires_at") or 0):
+        return cached[:limit]
+
+    svn_url = os.environ.get("STANDARD_MATERIAL_SVN_URL", STANDARD_MATERIAL_SVN_URL)
+    svn_username = os.environ.get("STANDARD_MATERIAL_SVN_USERNAME", STANDARD_MATERIAL_SVN_USERNAME)
+    svn_password = os.environ.get("STANDARD_MATERIAL_SVN_PASSWORD", STANDARD_MATERIAL_SVN_PASSWORD)
+    try:
+        numbers, dirs = list_standard_material_numbers_with_svn(svn_url, svn_username, svn_password, limit)
+        STANDARD_MATERIAL_CACHE["numbers"] = numbers
+        STANDARD_MATERIAL_CACHE["dirs"] = dirs
+        STANDARD_MATERIAL_CACHE["expires_at"] = now_ts + int(os.environ.get("STANDARD_MATERIAL_CACHE_SECONDS", str(STANDARD_MATERIAL_CACHE_SECONDS)))
+        return numbers[:limit]
+    except RuntimeError:
+        if svn_username or svn_password:
+            raise
+
+    headers = {}
+    if svn_username or svn_password:
+        token = f"{svn_username}:{svn_password}".encode("utf-8")
+        headers["Authorization"] = "Basic " + base64.b64encode(token).decode("ascii")
+    req = urllib.request.Request(quote_url(svn_url.rstrip("/") + "/"), headers=headers)
+    with urllib.request.urlopen(req, timeout=30) as response:
+        html = response.read().decode("utf-8", "replace")
+    parser = SvnIndexParser()
+    parser.feed(html)
+    numbers, dirs = parse_standard_material_names(parser.hrefs, limit)
+    STANDARD_MATERIAL_CACHE["numbers"] = numbers
+    STANDARD_MATERIAL_CACHE["dirs"] = dirs
+    STANDARD_MATERIAL_CACHE["expires_at"] = now_ts + int(os.environ.get("STANDARD_MATERIAL_CACHE_SECONDS", str(STANDARD_MATERIAL_CACHE_SECONDS)))
     return numbers[:limit]
 
 
@@ -1967,6 +2042,52 @@ def get_nho_material_release_branches(material_number: str) -> dict[str, str]:
     cat_args = svn_auth_command(["cat"], svn_username, svn_password)
     source_url = f"{material_url}/{checklist}"
     result = extract_nho_release_branches_from_xlsx(run_svn_binary([*cat_args, source_url]))
+    result["material_number"] = material_number
+    result["source"] = source_url
+    return result
+
+
+def parse_standard_version_txt(text: str) -> dict[str, str]:
+    result = {"frontend_branch": "", "backend_branch": "", "help_docs_svn_revision": ""}
+    for raw in text.replace("\r", "\n").splitlines():
+        line = raw.strip()
+        if not line or ("：" not in line and ":" not in line):
+            continue
+        key, _, value = line.replace("：", ":", 1).partition(":")
+        key_lower = key.strip().lower()
+        value = value.strip()
+        if not value or value in ("-", "無し"):
+            value = ""
+        if "前台" in key or "frontend" in key_lower or "front" in key_lower:
+            result["frontend_branch"] = value
+        elif "后台" in key or "backend" in key_lower or "back" in key_lower:
+            result["backend_branch"] = value
+        elif "help" in key_lower and ("revision" in key_lower or "version" in key_lower or "rev" in key_lower):
+            result["help_docs_svn_revision"] = value if re.fullmatch(r"\d+", value or "") else ""
+    return result
+
+
+def standard_material_dir_name(material_number: str) -> str:
+    if not re.fullmatch(r"\d{8}", material_number or ""):
+        raise RuntimeError("invalid material_number")
+    cached_dirs = dict(STANDARD_MATERIAL_CACHE.get("dirs") or {})
+    if material_number in cached_dirs:
+        return cached_dirs[material_number]
+    list_standard_material_numbers(force_refresh=True)
+    cached_dirs = dict(STANDARD_MATERIAL_CACHE.get("dirs") or {})
+    if material_number in cached_dirs:
+        return cached_dirs[material_number]
+    raise RuntimeError("standard material directory not found")
+
+
+def get_standard_material_release_branches(material_number: str) -> dict[str, str]:
+    svn_url = os.environ.get("STANDARD_MATERIAL_SVN_URL", STANDARD_MATERIAL_SVN_URL).rstrip("/")
+    svn_username = os.environ.get("STANDARD_MATERIAL_SVN_USERNAME", STANDARD_MATERIAL_SVN_USERNAME)
+    svn_password = os.environ.get("STANDARD_MATERIAL_SVN_PASSWORD", STANDARD_MATERIAL_SVN_PASSWORD)
+    material_dir = standard_material_dir_name(material_number)
+    source_url = f"{svn_url}/{material_dir}/version.txt"
+    cat_args = svn_auth_command(["cat"], svn_username, svn_password)
+    result = parse_standard_version_txt(run_svn_text([*cat_args, source_url], timeout=60))
     result["material_number"] = material_number
     result["source"] = source_url
     return result
@@ -2174,11 +2295,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"material_numbers": list_nho_material_numbers(force_refresh=force)})
             except Exception as exc:
                 return self.send_json({"material_numbers": [], "error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+        if path == "/api/standard-material-numbers":
+            qs = urllib.parse.parse_qs(parsed.query)
+            force = str(qs.get("refresh", [""])[0]).lower() in ("1", "true", "yes")
+            try:
+                return self.send_json({"material_numbers": list_standard_material_numbers(force_refresh=force)})
+            except Exception as exc:
+                return self.send_json({"material_numbers": [], "error": str(exc)}, HTTPStatus.BAD_GATEWAY)
         if path == "/api/nho-material-release-branches":
             qs = urllib.parse.parse_qs(parsed.query)
             material_number = str(qs.get("material_number", [""])[0] or "").strip()
             try:
                 return self.send_json(get_nho_material_release_branches(material_number))
+            except Exception as exc:
+                return self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+        if path == "/api/standard-material-release-branches":
+            qs = urllib.parse.parse_qs(parsed.query)
+            material_number = str(qs.get("material_number", [""])[0] or "").strip()
+            try:
+                return self.send_json(get_standard_material_release_branches(material_number))
             except Exception as exc:
                 return self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
         if path == "/api/nho-material-database-assets":

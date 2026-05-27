@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.46"
+    assert console.APP_VERSION == "0.3.47"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -171,7 +171,8 @@ def test_host_console_uses_build_terminal_branch_lists_via_proxy():
     assert "getProductVariant() !== expectedVariant" in console.APP_JS
     assert "clearBranchInputs()" in console.APP_JS
     assert "/api/nho-material-release-branches" in console.APP_JS
-    assert "loadNhoMaterialReleaseBranches" in console.APP_JS
+    assert "/api/standard-material-release-branches" in console.APP_JS
+    assert "loadMaterialReleaseBranches" in console.APP_JS
     assert "event.key !== 'Enter'" in console.APP_JS
     assert "event.preventDefault()" in console.APP_JS
     assert "chooseComboItem(firstVisible)" in console.APP_JS
@@ -712,7 +713,8 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "required-field material-field" in console.INDEX_HTML
     assert "materialNumber" in console.APP_JS
     assert "/build-terminal/api/nho-material-numbers" in console.APP_JS
-    assert "getProductVariant() !== 'nho'" in console.APP_JS
+    assert "/build-terminal/api/standard-material-numbers" in console.APP_JS
+    assert "variant === 'nho' ? '/build-terminal/api/nho-material-numbers'" in console.APP_JS
     assert "fillMaterialSelect" in console.APP_JS
     assert "materialNumberLoadFailed" in console.APP_JS
     assert "input[name=\"material_number\"]" in console.APP_JS
