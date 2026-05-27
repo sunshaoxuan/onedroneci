@@ -2337,6 +2337,18 @@ function renderTerminalResources(resources) {
   document.getElementById('terminalDisk').textContent = formatMetricBytes(data.disk_free_bytes);
 }
 
+async function refreshTerminalResources() {
+  try {
+    const res = await fetch('/build-terminal/api/system-resources', {headers: authHeaders()});
+    if (!res.ok) return null;
+    const data = await res.json();
+    renderTerminalResources(data);
+    return data;
+  } catch (error) {
+    return null;
+  }
+}
+
 async function refreshTerminal() {
   const res = await fetch('/api/build-terminal/status', {headers: authHeaders()});
   if (!res.ok) {
@@ -2348,6 +2360,7 @@ async function refreshTerminal() {
   const data = await res.json();
   renderTerminal(data.status);
   renderTerminalResources(data.resources);
+  if (data.status === 'running' && !data.resources) await refreshTerminalResources();
   if (data.status === 'running') loadBranchLists();
   if (data.status === 'running') loadMaterialNumbers();
   setFormLocked(['queued', 'running'].includes(selectedJob && selectedJob.status));

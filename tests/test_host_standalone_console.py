@@ -159,6 +159,9 @@ def test_terminal_panel_shows_resource_metrics_and_polls_while_building():
     assert 'id="terminalDisk"' in console.INDEX_HTML
     assert "function renderTerminalResources(resources)" in console.APP_JS
     assert "renderTerminalResources(data.resources)" in console.APP_JS
+    assert "async function refreshTerminalResources()" in console.APP_JS
+    assert "fetch('/build-terminal/api/system-resources'" in console.APP_JS
+    assert "if (data.status === 'running' && !data.resources) await refreshTerminalResources();" in console.APP_JS
     assert "(activeBuild || shouldPoll) ? 10000 : 300000" in console.APP_JS
     assert "setInterval(refreshTerminal, nextInterval)" in console.APP_JS
     assert "syncTerminalResourceTimer(false);" in console.APP_JS
