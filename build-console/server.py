@@ -263,6 +263,37 @@ def shared_artifact_path(build_id: str, name: str, product_variant: str | None =
     return ARTIFACT_ROOT / build_id / name
 
 
+def cleanup_previous_build_outputs(product_variant: str, current_build_id: str) -> None:
+    variant = normalise_product_variant(product_variant)
+    artifact_root = variant_artifact_root(variant)
+    if artifact_root.exists():
+        for child in artifact_root.iterdir():
+            if child.name != current_build_id:
+                if child.is_dir():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink(missing_ok=True)
+    current_shared = artifact_root / current_build_id
+    shutil.rmtree(current_shared, ignore_errors=True)
+    current_shared.mkdir(parents=True, exist_ok=True)
+
+    for root in (variant_build_root(variant), DATA_DIR):
+        if not root.exists():
+            continue
+        for build_root in root.iterdir():
+            if not build_root.is_dir() or build_root.name == current_build_id:
+                continue
+            for name in ("package.zip", "web.zip"):
+                (build_root / name).unlink(missing_ok=True)
+
+    if ARTIFACT_ROOT.exists():
+        for child in ARTIFACT_ROOT.iterdir():
+            if child.name in PRODUCT_VARIANTS or child.name == current_build_id:
+                continue
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+
+
 def build_id_exists(build_id: str) -> bool:
     if (DATA_DIR / build_id).exists():
         return True
@@ -479,6 +510,8 @@ def run_direct_build(build_id: str) -> None:
             f"构建开始：product_variant={product_variant}, build_backend={build_backend}, build_frontend={build_frontend}, "
             f"backend_branch={branch or '-'}, frontend_release_branch={request.get('frontend_release_branch') or '-'}",
         )
+        append_log(build_id, "清理旧构建产物，保留源码工作区和依赖缓存。")
+        cleanup_previous_build_outputs(product_variant, build_id)
 
         update_step(build_id, "validate", "running")
         back_dir = NHO_BACK_DIR if product_variant == "nho" else OHR_BACK_DIR
@@ -1652,14 +1685,14 @@ find . -maxdepth 1 -type f -name 'release_*.zip' -delete
 find . -maxdepth 1 -type d -name 'release_*' -exec rm -rf {} +
 npm run build
 npm run bundle
-mkdir -p "$(dirname "$OUT_WEB_ZIP")"
+mkdir -p "$(dirname "$OUT_WEB_ZIP")" "$OUT_TMP_DIR"
 rm -f "$OUT_WEB_ZIP"
 bundle_zip="$(find . -maxdepth 1 -type f -name 'release_*.zip' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
 if [ -z "$bundle_zip" ] || [ ! -f "$bundle_zip" ]; then
   echo "前端发布包生成失败：npm run bundle 未生成 release_*.zip"
   exit 3
 fi
-publish_root="$(mktemp -d)"
+publish_root="$(mktemp -d "$OUT_TMP_DIR/publish.XXXXXX")"
 cleanup_publish_root() {
   rm -rf "$publish_root"
 }
@@ -1730,6 +1763,7 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "CONF_WORKER_PROCESSES": str(req.get("conf_worker_processes") or 1),
         "CONF_WORKER_CONNECTIONS": str(req.get("conf_worker_connections") or 1024),
         "OHR_BUILD_ID": build_id,
+        "OUT_TMP_DIR": str(variant_artifact_root("standard") / build_id / "tmp"),
         "OUT_WEB_ZIP": str(shared_artifact_path(build_id, "web.zip", "standard")),
     }
 

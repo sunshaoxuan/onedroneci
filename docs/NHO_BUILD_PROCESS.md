@@ -81,6 +81,8 @@ NHO 工作区也独立于標準版：
 - yarn cache：`NHO_YARN_CACHE_DIR`，默认 `/opt/nho-yarn-cache`
 - Maven cache：`NHO_MAVEN_CACHE_DIR`，默认 `/opt/nho-maven-cache`
 
+Direct 构建每次开始时会清理同产品版本下旧构建产物，保留上述工作区和依赖缓存。
+
 ## 4. NHO 后端流程
 
 后端仓库：

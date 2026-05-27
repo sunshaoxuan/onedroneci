@@ -437,6 +437,40 @@ def test_product_variant_build_and_artifact_roots_are_isolated(tmp_path, monkeyp
     assert server.shared_artifact_path("b1", "web.zip", "nho") == tmp_path / "artifacts" / "nho" / "b1" / "web.zip"
 
 
+def test_cleanup_previous_build_outputs_keeps_cache_and_current_metadata(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path / "builds")
+    monkeypatch.setattr(server, "ARTIFACT_ROOT", tmp_path / "artifacts")
+
+    old_build = server.build_dir("old1", "standard")
+    old_build.mkdir(parents=True)
+    (old_build / "metadata.json").write_text("{}", encoding="utf-8")
+    (old_build / "build.log").write_text("log", encoding="utf-8")
+    (old_build / "web.zip").write_text("web", encoding="utf-8")
+    (old_build / "package.zip").write_text("pkg", encoding="utf-8")
+
+    current_build = server.build_dir("new1", "standard")
+    current_build.mkdir(parents=True)
+    (current_build / "metadata.json").write_text("{}", encoding="utf-8")
+    (current_build / "build.log").write_text("log", encoding="utf-8")
+
+    old_artifact = server.variant_artifact_root("standard") / "old1"
+    old_artifact.mkdir(parents=True)
+    (old_artifact / "web.zip").write_text("web", encoding="utf-8")
+    cache_dir = tmp_path / "pnpm-cache"
+    cache_dir.mkdir()
+
+    server.cleanup_previous_build_outputs("standard", "new1")
+
+    assert (old_build / "metadata.json").is_file()
+    assert (old_build / "build.log").is_file()
+    assert not (old_build / "web.zip").exists()
+    assert not (old_build / "package.zip").exists()
+    assert not old_artifact.exists()
+    assert (server.variant_artifact_root("standard") / "new1").is_dir()
+    assert cache_dir.is_dir()
+
+
 def test_delete_running_build_is_rejected(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)
@@ -742,6 +776,8 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "前端发布包生成失败" in script
     assert 'zip -r "$OUT_WEB_ZIP" .' not in script
     assert "node_modules/*" not in script
+    assert 'mkdir -p "$(dirname "$OUT_WEB_ZIP")" "$OUT_TMP_DIR"' in script
+    assert 'publish_root="$(mktemp -d "$OUT_TMP_DIR/publish.XXXXXX")' in script
 
     restore_script = server.DIRECT_FRONTEND_RESTORE_SCRIPT
     assert "pnpm_install_cached . ohr-workspace" in restore_script
@@ -782,6 +818,7 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
     assert env["OHR_CICD_GIT_URL"] == "https://example.test/ohr-cicd.git"
     assert env["OHR_CICD_BRANCH"] == "master"
     assert env["OHR_CICD_ENV"] == "direct_prod"
+    assert Path(env["OUT_TMP_DIR"]).parts[-3:] == ("standard", "20260514120000", "tmp")
     assert env["HELP_DOCS_BRANCH"] == "release_ci"
     assert env["HELP_DOCS_SVN_REVISION"] == "12345"
     assert env["BUILD_HELP"] == "false"

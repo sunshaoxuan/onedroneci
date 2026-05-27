@@ -83,16 +83,18 @@
 
 主要动作：
 
-1. 增量同步 `ohr-workspace`。
-2. 增量同步四个前端子仓。
-3. 使用 `/opt/pnpm-cache` 作为 pnpm store。
-4. 按 lock/package 指纹尽量跳过不必要的依赖安装。
-5. 默认设置 `STANDARD_NODE_OPTIONS=--max-old-space-size=4096`，用于 32GB / 8 vCPU 构建终端。
-6. 构建前临时把 `build:parallel`、`ohr-cli mono-build --parallel` 和部分 lerna 并发收敛为串行或低并发，适配低内存构建终端。
-7. 执行 `npm run build`。
-8. 执行 `npm run bundle`。
-9. 只接受 workspace 生成的 `release_*.zip` 作为前端发布包来源。
-10. 禁止 fallback 打包整个源码 workspace。
+1. 构建开始时清理同产品版本下旧构建产物，保留源码工作区、依赖缓存和 Help 缓存。
+2. 增量同步 `ohr-workspace`。
+3. 增量同步四个前端子仓。
+4. 使用 `/opt/pnpm-cache` 作为 pnpm store。
+5. 按 lock/package 指纹尽量跳过不必要的依赖安装。
+6. 默认设置 `STANDARD_NODE_OPTIONS=--max-old-space-size=4096`，用于 32GB / 8 vCPU 构建终端。
+7. 构建前临时把 `build:parallel`、`ohr-cli mono-build --parallel` 和部分 lerna 并发收敛为串行或低并发，适配低内存构建终端。
+8. 执行 `npm run build`。
+9. 执行 `npm run bundle`。
+10. 只接受 workspace 生成的 `release_*.zip` 作为前端发布包来源。
+11. 最终打包临时展开目录放在本次 `BUILD_ARTIFACT_ROOT/standard/<build_id>/tmp/` 下，构建退出时自动清理。
+12. 禁止 fallback 打包整个源码 workspace。
 
 ## 5. conf_prod 生成
 
