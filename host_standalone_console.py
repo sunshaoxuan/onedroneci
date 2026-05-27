@@ -696,12 +696,24 @@ def is_remote_console_reachable() -> bool:
         return False
 
 
+def remote_system_resources() -> dict[str, Any] | None:
+    try:
+        return remote_json(REMOTE_BUILD_CONSOLE_URL, "/api/system-resources")
+    except Exception:
+        return None
+
+
 def build_terminal_status() -> dict[str, Any]:
     settings = Settings.from_env()
     vm_name = settings.hyperv_vm_name
     reachable = is_remote_console_reachable()
     if reachable:
-        return {"status": "running", "configured": bool(vm_name), "reachable": True}
+        return {
+            "status": "running",
+            "configured": bool(vm_name),
+            "reachable": True,
+            "resources": remote_system_resources(),
+        }
     if not vm_name:
         return {"status": "unconfigured", "configured": False, "reachable": False}
 
@@ -1023,6 +1035,11 @@ INDEX_HTML = """<!doctype html>
         <p class="section-kicker" data-i18n="terminalTitle">ビルド端末</p>
         <h2 id="terminalStatus" data-i18n="terminalUnknown">状態不明</h2>
         <p id="terminalHint" data-i18n="terminalHint">状態を更新してから開始してください。</p>
+        <div class="terminal-metrics" id="terminalMetrics">
+          <span><b data-i18n="terminalCpu">CPU</b><strong id="terminalCpu">-</strong></span>
+          <span><b data-i18n="terminalMemory">空きメモリ</b><strong id="terminalMemory">-</strong></span>
+          <span><b data-i18n="terminalDisk">空きディスク</b><strong id="terminalDisk">-</strong></span>
+        </div>
       </div>
       <div class="terminal-actions">
         <button class="secondary" id="refreshTerminal" type="button" data-i18n="refreshStatus">状態更新</button>
@@ -1207,6 +1224,9 @@ const I18N = {
     terminalUnreachable: '到達不可',
     terminalPermissionDenied: '権限不足',
     terminalUnconfigured: 'ビルド端末制御が未設定',
+    terminalCpu: 'CPU',
+    terminalMemory: '空きメモリ',
+    terminalDisk: '空きディスク',
     refreshStatus: '状態更新',
     startTerminal: 'ビルド端末を起動',
     stopTerminal: 'ビルド端末を停止',
@@ -1356,6 +1376,9 @@ const I18N = {
     terminalUnreachable: '不可达',
     terminalPermissionDenied: '权限不足',
     terminalUnconfigured: '未配置构建终端控制',
+    terminalCpu: 'CPU',
+    terminalMemory: '空闲内存',
+    terminalDisk: '空闲硬盘',
     refreshStatus: '刷新状态',
     startTerminal: '启动构建终端',
     stopTerminal: '关闭构建终端',
@@ -1505,6 +1528,9 @@ const I18N = {
     terminalUnreachable: 'Unreachable',
     terminalPermissionDenied: 'Permission denied',
     terminalUnconfigured: 'Build terminal control is not configured',
+    terminalCpu: 'CPU',
+    terminalMemory: 'Free memory',
+    terminalDisk: 'Free disk',
     refreshStatus: 'Refresh status',
     startTerminal: 'Start build terminal',
     stopTerminal: 'Stop build terminal',
@@ -1655,6 +1681,7 @@ let heartbeatTick = 0;
 let lastTerminalStatus = 'unknown';
 let lastRenderedResultSignature = '';
 let lastFilledJobId = null;
+let terminalResourceTimer = null;
 let branchListRequestSeq = 0;
 let configHistories = [];
 const MAX_LOG_LINES = 1600;
@@ -2289,19 +2316,51 @@ function renderTerminal(status) {
   document.getElementById('terminalStatus').textContent = statusText(lastTerminalStatus);
 }
 
+function formatMetricBytes(value) {
+  if (value === null || value === undefined || value === '') return '-';
+  let size = Number(value);
+  if (!Number.isFinite(size) || size < 0) return '-';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return unit === 0 ? `${Math.round(size)} ${units[unit]}` : `${size.toFixed(1)} ${units[unit]}`;
+}
+
+function renderTerminalResources(resources) {
+  const data = resources || {};
+  document.getElementById('terminalCpu').textContent = data.cpu_count ? String(data.cpu_count) : '-';
+  document.getElementById('terminalMemory').textContent = formatMetricBytes(data.memory_available_bytes);
+  document.getElementById('terminalDisk').textContent = formatMetricBytes(data.disk_free_bytes);
+}
+
 async function refreshTerminal() {
   const res = await fetch('/api/build-terminal/status', {headers: authHeaders()});
   if (!res.ok) {
     renderTerminal('unknown');
+    renderTerminalResources(null);
     setFormLocked(['queued', 'running'].includes(selectedJob && selectedJob.status));
     return {status: 'unknown'};
   }
   const data = await res.json();
   renderTerminal(data.status);
+  renderTerminalResources(data.resources);
   if (data.status === 'running') loadBranchLists();
   if (data.status === 'running') loadMaterialNumbers();
   setFormLocked(['queued', 'running'].includes(selectedJob && selectedJob.status));
   return data;
+}
+
+function syncTerminalResourceTimer() {
+  const shouldPoll = selectedJob && ['queued', 'running'].includes(selectedJob.status);
+  if (shouldPoll && !terminalResourceTimer) {
+    terminalResourceTimer = setInterval(refreshTerminal, 10000);
+  } else if (!shouldPoll && terminalResourceTimer) {
+    clearInterval(terminalResourceTimer);
+    terminalResourceTimer = null;
+  }
 }
 
 async function terminalAction(action) {
@@ -2602,6 +2661,7 @@ async function refresh() {
     }
     setFormLocked(false);
   }
+  syncTerminalResourceTimer();
   if (mode !== 'create' && selected) await fetchJobLog(false);
 }
 
@@ -2631,6 +2691,7 @@ function render(job) {
   setFormLocked(running);
   syncTerminalConsole(job);
   renderResultIfChanged(job);
+  syncTerminalResourceTimer();
 }
 
 function unloadTerminalFrame() {
@@ -2929,6 +2990,28 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
 .terminal-panel[data-status="unreachable"] h2::before,
 .terminal-panel[data-status="permission_denied"] h2::before { background: var(--danger); }
 #terminalHint { margin: 8px 0 0; color: var(--muted); }
+.terminal-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.terminal-metrics span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafafa;
+}
+.terminal-metrics b {
+  color: var(--muted);
+  font-size: 12px;
+}
+.terminal-metrics strong {
+  font-size: 13px;
+}
 .terminal-actions, .run-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
 .panel { padding: 18px; margin-bottom: 16px; }
 .panel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 16px; }

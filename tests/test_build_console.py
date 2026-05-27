@@ -441,6 +441,10 @@ def test_cleanup_previous_build_outputs_keeps_cache_and_current_metadata(tmp_pat
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path / "builds")
     monkeypatch.setattr(server, "ARTIFACT_ROOT", tmp_path / "artifacts")
+    monkeypatch.setattr(server, "OHR_BACK_DIR", tmp_path / "back")
+    monkeypatch.setattr(server, "FRONTEND_WORKSPACE_DIR", tmp_path / "frontend")
+    monkeypatch.setattr(server, "HELP_DOCS_DIR", tmp_path / "help")
+    monkeypatch.setattr(server, "OHR_CICD_DIR", tmp_path / "cicd")
 
     old_build = server.build_dir("old1", "standard")
     old_build.mkdir(parents=True)
@@ -459,6 +463,17 @@ def test_cleanup_previous_build_outputs_keeps_cache_and_current_metadata(tmp_pat
     (old_artifact / "web.zip").write_text("web", encoding="utf-8")
     cache_dir = tmp_path / "pnpm-cache"
     cache_dir.mkdir()
+    server.OHR_BACK_DIR.mkdir()
+    (server.OHR_BACK_DIR / "package.zip").write_text("backend", encoding="utf-8")
+    (server.OHR_BACK_DIR / "package").mkdir()
+    (server.OHR_BACK_DIR / "package" / "app.jar").write_text("jar", encoding="utf-8")
+    server.FRONTEND_WORKSPACE_DIR.mkdir()
+    (server.FRONTEND_WORKSPACE_DIR / "release_old.zip").write_text("frontend", encoding="utf-8")
+    (server.FRONTEND_WORKSPACE_DIR / "node_modules").mkdir()
+    server.HELP_DOCS_DIR.mkdir()
+    (server.HELP_DOCS_DIR / ".ci-cache").mkdir()
+    (server.HELP_DOCS_DIR / "build").mkdir()
+    (server.HELP_DOCS_DIR / "build" / "asset.js").write_text("asset", encoding="utf-8")
 
     released = server.cleanup_previous_build_outputs("standard", "new1")
 
@@ -469,51 +484,26 @@ def test_cleanup_previous_build_outputs_keeps_cache_and_current_metadata(tmp_pat
     assert not old_artifact.exists()
     assert (server.variant_artifact_root("standard") / "new1").is_dir()
     assert cache_dir.is_dir()
-    assert released == 9
+    assert not (server.OHR_BACK_DIR / "package.zip").exists()
+    assert not (server.OHR_BACK_DIR / "package").exists()
+    assert not (server.FRONTEND_WORKSPACE_DIR / "release_old.zip").exists()
+    assert (server.FRONTEND_WORKSPACE_DIR / "node_modules").is_dir()
+    assert not (server.HELP_DOCS_DIR / "build").exists()
+    assert (server.HELP_DOCS_DIR / ".ci-cache").is_dir()
+    assert released == 32
 
 
-def test_cleanup_log_reports_disk_usage_and_waits(tmp_path, monkeypatch):
+def test_system_resource_status_reports_build_terminal_capacity(tmp_path, monkeypatch):
     server = load_server()
-    monkeypatch.setattr(server, "DATA_DIR", tmp_path / "builds")
     monkeypatch.setattr(server, "ARTIFACT_ROOT", tmp_path / "artifacts")
-    monkeypatch.setattr(server, "OHR_BACK_DIR", tmp_path / "back")
-    monkeypatch.setenv("OHR_BACK_GIT_TOKEN", "token")
+    monkeypatch.setattr(server.os, "cpu_count", lambda: 8)
+    monkeypatch.setattr(server, "memory_available_bytes", lambda: 32 * 1024 * 1024)
 
-    sleeps = []
-    free_values = iter([1000, 2000])
-    monkeypatch.setattr(server.time, "sleep", lambda seconds: sleeps.append(seconds))
-    monkeypatch.setattr(server, "disk_free_bytes", lambda path: next(free_values))
-    monkeypatch.setattr(server, "cleanup_previous_build_outputs", lambda product_variant, build_id: 512)
-    monkeypatch.setattr(server, "run_command", lambda *args, **kwargs: 0)
+    status = server.system_resource_status()
 
-    build_id = "new2"
-    server.build_dir(build_id, "standard").mkdir(parents=True)
-    server.write_json(
-        server.metadata_path(build_id, "standard"),
-        {
-            "id": build_id,
-            "status": "queued",
-            "request": {
-                "product_variant": "standard",
-                "backend_branch": "",
-                "frontend_release_branch": "release_front",
-                "build_backend": False,
-                "build_frontend": False,
-            },
-            "steps": server.make_steps("direct"),
-            "artifacts": [],
-        },
-    )
-    server.log_path(build_id, "standard").write_text("", encoding="utf-8")
-
-    server.run_direct_build(build_id)
-
-    log = server.log_path(build_id, "standard").read_text(encoding="utf-8")
-    assert "清理前空余磁盘大小：1000 B" in log
-    assert "清理释放磁盘大小：512 B" in log
-    assert "清理后空余磁盘大小：1.95 KB" in log
-    assert "清理完成，等待 5 秒后继续构建。" in log
-    assert sleeps == [5]
+    assert status["cpu_count"] == 8
+    assert status["memory_available_bytes"] == 32 * 1024 * 1024
+    assert status["disk_free_bytes"] > 0
 
 
 def test_delete_running_build_is_rejected(tmp_path, monkeypatch):

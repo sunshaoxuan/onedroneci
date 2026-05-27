@@ -45,6 +45,23 @@ def test_build_terminal_status_is_safe_when_vm_name_is_missing(monkeypatch):
     }
 
 
+def test_build_terminal_status_includes_remote_resources_when_reachable(monkeypatch):
+    monkeypatch.setattr(console.Settings, "from_env", classmethod(lambda cls: FakeSettings(hyperv_vm_name="PHRCI")))
+    monkeypatch.setattr(console, "is_remote_console_reachable", lambda: True)
+    monkeypatch.setattr(
+        console,
+        "remote_system_resources",
+        lambda: {"cpu_count": 8, "memory_available_bytes": 16, "disk_free_bytes": 32},
+    )
+
+    assert console.build_terminal_status() == {
+        "status": "running",
+        "configured": True,
+        "reachable": True,
+        "resources": {"cpu_count": 8, "memory_available_bytes": 16, "disk_free_bytes": 32},
+    }
+
+
 def test_build_terminal_status_reports_stopped_when_configured_vm_is_off(monkeypatch):
     monkeypatch.setattr(
         console.Settings,
@@ -123,6 +140,9 @@ def test_i18n_contains_terminal_controls_and_statuses():
         "terminalPermissionDenied",
         "terminalUnconfigured",
         "terminalHeartbeat",
+        "terminalCpu",
+        "terminalMemory",
+        "terminalDisk",
         "startTerminal",
         "stopTerminal",
         "stopTerminalConfirm",
@@ -130,6 +150,18 @@ def test_i18n_contains_terminal_controls_and_statuses():
         "refreshStatus",
     ):
         assert key in console.APP_JS
+
+
+def test_terminal_panel_shows_resource_metrics_and_polls_while_building():
+    assert 'id="terminalMetrics"' in console.INDEX_HTML
+    assert 'id="terminalCpu"' in console.INDEX_HTML
+    assert 'id="terminalMemory"' in console.INDEX_HTML
+    assert 'id="terminalDisk"' in console.INDEX_HTML
+    assert "function renderTerminalResources(resources)" in console.APP_JS
+    assert "renderTerminalResources(data.resources)" in console.APP_JS
+    assert "setInterval(refreshTerminal, 10000)" in console.APP_JS
+    assert "clearInterval(terminalResourceTimer)" in console.APP_JS
+    assert ".terminal-metrics" in console.STYLE_CSS
 
 
 def test_stop_build_terminal_requires_shutdown_keyword():

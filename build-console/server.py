@@ -298,6 +298,33 @@ def cleanup_previous_build_outputs(product_variant: str, current_build_id: str) 
             if child.is_dir():
                 freed_bytes += path_size_bytes(child)
                 shutil.rmtree(child, ignore_errors=True)
+    freed_bytes += cleanup_workspace_build_outputs(variant)
+    return freed_bytes
+
+
+def cleanup_workspace_build_outputs(product_variant: str) -> int:
+    variant = normalise_product_variant(product_variant)
+    targets: list[Path] = []
+    back_dir = NHO_BACK_DIR if variant == "nho" else OHR_BACK_DIR
+    frontend_dir = NHO_FRONTEND_WORKSPACE_DIR if variant == "nho" else FRONTEND_WORKSPACE_DIR
+    targets.extend([back_dir / "package.zip", back_dir / "package"])
+    if frontend_dir.exists():
+        targets.extend(frontend_dir.glob("release_*.zip"))
+        targets.extend(path for path in frontend_dir.glob("release_*") if path.is_dir())
+    if variant == "standard":
+        for work_dir in (HELP_DOCS_DIR, OHR_CICD_DIR):
+            if work_dir.exists():
+                targets.extend(work_dir.glob("ohr_help_docs_release_*.zip"))
+                targets.extend(path for path in work_dir.glob("ohr_help_docs_release_*") if path.is_dir())
+        targets.extend([HELP_DOCS_DIR / "build", HELP_DOCS_DIR / "markdowns"])
+
+    freed_bytes = 0
+    for target in targets:
+        freed_bytes += path_size_bytes(target)
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+        else:
+            target.unlink(missing_ok=True)
     return freed_bytes
 
 
@@ -334,6 +361,26 @@ def format_bytes(size: int) -> str:
                 return f"{int(value)} {unit}"
             return f"{value:.2f} {unit}"
         value /= 1024
+
+
+def memory_available_bytes() -> int | None:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.is_file():
+        return None
+    for line in meminfo.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if line.startswith("MemAvailable:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                return int(parts[1]) * 1024
+    return None
+
+
+def system_resource_status() -> dict[str, Any]:
+    return {
+        "cpu_count": os.cpu_count() or 0,
+        "memory_available_bytes": memory_available_bytes(),
+        "disk_free_bytes": disk_free_bytes(ARTIFACT_ROOT),
+    }
 
 
 def build_id_exists(build_id: str) -> bool:
@@ -552,15 +599,7 @@ def run_direct_build(build_id: str) -> None:
             f"构建开始：product_variant={product_variant}, build_backend={build_backend}, build_frontend={build_frontend}, "
             f"backend_branch={branch or '-'}, frontend_release_branch={request.get('frontend_release_branch') or '-'}",
         )
-        append_log(build_id, "清理旧构建产物，保留源码工作区和依赖缓存。")
-        free_before = disk_free_bytes(ARTIFACT_ROOT)
-        append_log(build_id, f"清理前空余磁盘大小：{format_bytes(free_before)}")
-        released = cleanup_previous_build_outputs(product_variant, build_id)
-        free_after = disk_free_bytes(ARTIFACT_ROOT)
-        append_log(build_id, f"清理释放磁盘大小：{format_bytes(released)}")
-        append_log(build_id, f"清理后空余磁盘大小：{format_bytes(free_after)}")
-        append_log(build_id, "清理完成，等待 5 秒后继续构建。")
-        time.sleep(5)
+        cleanup_previous_build_outputs(product_variant, build_id)
 
         update_step(build_id, "validate", "running")
         back_dir = NHO_BACK_DIR if product_variant == "nho" else OHR_BACK_DIR
@@ -2477,6 +2516,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if path == "/api/system-resources":
+            return self.send_json(system_resource_status())
         m = re.fullmatch(r"/api/builds/([^/]+)", path)
         if m:
             return self.send_build(m.group(1))
