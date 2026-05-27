@@ -1682,6 +1682,7 @@ let lastTerminalStatus = 'unknown';
 let lastRenderedResultSignature = '';
 let lastFilledJobId = null;
 let terminalResourceTimer = null;
+let terminalResourceIntervalMs = 0;
 let branchListRequestSeq = 0;
 let configHistories = [];
 const MAX_LOG_LINES = 1600;
@@ -2353,13 +2354,16 @@ async function refreshTerminal() {
   return data;
 }
 
-function syncTerminalResourceTimer() {
+function syncTerminalResourceTimer(activeBuild) {
   const shouldPoll = selectedJob && ['queued', 'running'].includes(selectedJob.status);
-  if (shouldPoll && !terminalResourceTimer) {
-    terminalResourceTimer = setInterval(refreshTerminal, 10000);
-  } else if (!shouldPoll && terminalResourceTimer) {
+  const nextInterval = (activeBuild || shouldPoll) ? 10000 : 300000;
+  if (terminalResourceTimer && terminalResourceIntervalMs !== nextInterval) {
     clearInterval(terminalResourceTimer);
     terminalResourceTimer = null;
+  }
+  if (!terminalResourceTimer) {
+    terminalResourceIntervalMs = nextInterval;
+    terminalResourceTimer = setInterval(refreshTerminal, nextInterval);
   }
 }
 
@@ -2661,7 +2665,7 @@ async function refresh() {
     }
     setFormLocked(false);
   }
-  syncTerminalResourceTimer();
+  syncTerminalResourceTimer(Boolean(activeJob));
   if (mode !== 'create' && selected) await fetchJobLog(false);
 }
 
@@ -2691,7 +2695,7 @@ function render(job) {
   setFormLocked(running);
   syncTerminalConsole(job);
   renderResultIfChanged(job);
-  syncTerminalResourceTimer();
+  syncTerminalResourceTimer(running);
 }
 
 function unloadTerminalFrame() {
@@ -2855,6 +2859,7 @@ applyI18n();
 document.getElementById('organisation-dstart').value = firstDayOfCurrentMonth();
 applyVariantVisibility();
 refreshTerminal();
+syncTerminalResourceTimer(false);
 loadBranchLists();
 loadMaterialNumbers();
 refreshConfigHistory();
