@@ -32,6 +32,8 @@ def test_start_script_stops_process_occupying_fixed_port():
     assert "HOST_STANDALONE_CONSOLE_HOST" in script
     assert "0.0.0.0" in script
     assert "8091" in script
+    assert '"git-access.env", "vm-access.env"' in script
+    assert "[Environment]::SetEnvironmentVariable" in script
 
 
 def test_build_terminal_status_is_safe_when_vm_name_is_missing(monkeypatch):

@@ -46,5 +46,26 @@ if (-not $NoKill) {
 
 $env:HOST_STANDALONE_CONSOLE_HOST = $HostAddress
 $env:HOST_STANDALONE_CONSOLE_PORT = [string]$Port
+
+foreach ($EnvFileName in @("git-access.env", "vm-access.env")) {
+    $EnvFile = Join-Path $RepoRoot $EnvFileName
+    if (-not (Test-Path -LiteralPath $EnvFile)) {
+        continue
+    }
+    foreach ($RawLine in Get-Content -LiteralPath $EnvFile -Encoding UTF8) {
+        $Line = $RawLine.Trim()
+        if (-not $Line -or $Line.StartsWith("#") -or -not $Line.Contains("=")) {
+            continue
+        }
+        $Key, $Value = $Line.Split("=", 2)
+        $Key = $Key.Trim()
+        $Value = $Value.Trim()
+        if ($Value.Length -ge 2 -and (($Value.StartsWith('"') -and $Value.EndsWith('"')) -or ($Value.StartsWith("'") -and $Value.EndsWith("'")))) {
+            $Value = $Value.Substring(1, $Value.Length - 2)
+        }
+        [Environment]::SetEnvironmentVariable($Key, $Value, "Process")
+    }
+}
+
 Set-Location -LiteralPath $RepoRoot
 & $PythonExe (Join-Path $RepoRoot "host_standalone_console.py")
