@@ -173,7 +173,8 @@ def test_build_console_supports_nho_variant_scripts_and_ui(monkeypatch):
     assert "yarn setup" not in server.NHO_FRONTEND_BUILD_SCRIPT
     assert "yarn build" in server.NHO_FRONTEND_BUILD_SCRIPT
     assert "yarn bundle" in server.NHO_FRONTEND_BUILD_SCRIPT
-    assert "ohr-cicd" not in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "ohr-cicd/web_prod" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert 'zip -qr "$OUT_WEB_ZIP" ohr-cicd' in server.NHO_FRONTEND_BUILD_SCRIPT
     assert "HELP_DOCS" not in server.NHO_FRONTEND_BUILD_SCRIPT
     assert "conf_prod" not in server.NHO_FRONTEND_BUILD_SCRIPT
 

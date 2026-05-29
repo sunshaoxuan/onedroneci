@@ -1490,7 +1490,16 @@ if [ -z "$bundle_zip" ] || [ ! -f "$bundle_zip" ]; then
   exit 7
 fi
 mkdir -p "$(dirname "$OUT_WEB_ZIP")"
-cp "$bundle_zip" "$OUT_WEB_ZIP"
+publish_root="$(dirname "$OUT_WEB_ZIP")/nho-webzip-root"
+rm -rf "$publish_root"
+mkdir -p "$publish_root/ohr-cicd/web_prod"
+unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
+rm -f "$OUT_WEB_ZIP"
+(
+  cd "$publish_root"
+  zip -qr "$OUT_WEB_ZIP" ohr-cicd
+)
+rm -rf "$publish_root"
 ls -lh "$OUT_WEB_ZIP"
 """
 

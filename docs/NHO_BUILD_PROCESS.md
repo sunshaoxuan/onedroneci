@@ -186,7 +186,14 @@ yarn bundle
 ```
 
 8. 从 workspace 生成的 `release_*.zip` 取得前端发布包。
-9. 将其保存为构建终端产物 `web.zip`。
+9. 将 `release_*.zip` 解压到临时目录的 `ohr-cicd/web_prod/` 下。
+10. 从临时目录重新压缩 `ohr-cicd`，保存为构建终端产物 `web.zip`。
+
+NHO 前端 `web.zip` 内部必须保留以下两层目录，否则升级程序无法按既有路径定位前端代码資材：
+
+```text
+ohr-cicd/web_prod/
+```
 
 NHO 前端不会执行以下標準版动作：
 
