@@ -5,6 +5,8 @@ import io
 import zipfile
 from pathlib import Path
 
+import pytest
+
 
 def load_server():
     path = Path(__file__).resolve().parents[1] / "build-console" / "server.py"
@@ -691,6 +693,15 @@ def test_nho_release_checklist_is_found_recursively_from_material_root(monkeypat
     assert binary_calls[0][-1] == result["source"]
 
 
+def test_nho_material_release_branches_require_build_terminal_svn_credentials(monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_USERNAME", "")
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_PASSWORD", "")
+
+    with pytest.raises(RuntimeError, match="NHO material SVN credentials are missing on build terminal"):
+        server.get_nho_material_release_branches("20260325")
+
+
 def test_nho_material_database_assets_are_exported_as_zip(monkeypatch):
     server = load_server()
     calls = []
@@ -730,6 +741,15 @@ def test_nho_material_database_assets_are_exported_as_zip(monkeypatch):
     assert "製品/tenant/i18n_web_message.sql" in members
     assert "データ連携/データ連携プロシージャ.xlsx" not in members
     assert "製品/リリースチェックリスト.xlsx" not in members
+
+
+def test_nho_material_database_assets_require_build_terminal_svn_credentials(monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_USERNAME", "")
+    monkeypatch.setattr(server, "NHO_MATERIAL_SVN_PASSWORD", "")
+
+    with pytest.raises(RuntimeError, match="NHO material SVN credentials are missing on build terminal"):
+        server.export_nho_material_database_assets_zip("20260325")
 
 
 def test_list_release_branches_for_url_parses_refs(monkeypatch):

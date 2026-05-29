@@ -2093,6 +2093,11 @@ def svn_auth_command(base: list[str], svn_username: str, svn_password: str) -> l
     return command
 
 
+def require_nho_material_svn_credentials(svn_username: str, svn_password: str) -> None:
+    if not svn_username or not svn_password:
+        raise RuntimeError("NHO material SVN credentials are missing on build terminal: set NHO_MATERIAL_SVN_USERNAME and NHO_MATERIAL_SVN_PASSWORD")
+
+
 def run_svn_text(args: list[str], timeout: int = 60) -> str:
     svn_bin = shutil.which("svn")
     if not svn_bin:
@@ -2230,6 +2235,7 @@ def get_nho_material_release_branches(material_number: str) -> dict[str, str]:
     svn_url = os.environ.get("NHO_MATERIAL_SVN_URL", NHO_MATERIAL_SVN_URL).rstrip("/")
     svn_username = os.environ.get("NHO_MATERIAL_SVN_USERNAME", NHO_MATERIAL_SVN_USERNAME)
     svn_password = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", NHO_MATERIAL_SVN_PASSWORD)
+    require_nho_material_svn_credentials(svn_username, svn_password)
     material_url = f"{svn_url}/{material_number}リリース作業"
     checklist = find_nho_release_checklist_path(material_url, svn_username, svn_password)
     cat_args = svn_auth_command(["cat"], svn_username, svn_password)
@@ -2292,6 +2298,7 @@ def export_nho_material_database_assets_zip(material_number: str) -> bytes:
     svn_url = os.environ.get("NHO_MATERIAL_SVN_URL", NHO_MATERIAL_SVN_URL).rstrip("/")
     svn_username = os.environ.get("NHO_MATERIAL_SVN_USERNAME", NHO_MATERIAL_SVN_USERNAME)
     svn_password = os.environ.get("NHO_MATERIAL_SVN_PASSWORD", NHO_MATERIAL_SVN_PASSWORD)
+    require_nho_material_svn_credentials(svn_username, svn_password)
     export_args = svn_auth_command(["export", "--force"], svn_username, svn_password)
     material_url = f"{svn_url}/{material_number}リリース作業"
     with tempfile.TemporaryDirectory(prefix=f"nho-material-{material_number}-") as tmp:
