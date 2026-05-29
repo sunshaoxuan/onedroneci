@@ -362,6 +362,35 @@ def list_jobs() -> list[dict[str, Any]]:
     return sorted(jobs.values(), key=lambda item: item.get("created_at", 0), reverse=True)
 
 
+def find_cached_nho_database_assets(material_number: str, current_job_id: str = "") -> Path | None:
+    wanted = str(material_number or "").strip()
+    if not wanted:
+        return None
+    for job in list_jobs():
+        job_id = str(job.get("id") or "")
+        if current_job_id and job_id == current_job_id:
+            continue
+        request = job.get("request") or {}
+        if str(request.get("product_variant") or "standard") != "nho":
+            continue
+        if str(request.get("material_number") or "").strip() != wanted:
+            continue
+        if str(job.get("status") or "") != "success":
+            continue
+        outputs = job.get("outputs") or {}
+        candidates = [
+            outputs.get("database_assets_zip"),
+            job_dir(job_id) / "nho_database_assets.zip",
+        ]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            path = Path(candidate)
+            if path.is_file():
+                return path
+    return None
+
+
 def remote_base_host() -> str:
     return urllib.parse.urlparse(REMOTE_BUILD_CONSOLE_URL).hostname or ""
 
@@ -881,11 +910,22 @@ def run_job(job_id: str) -> None:
             check_cancelled(job_id)
             update_progress(job_id, "sql_assets", "running")
             append_log(job_id, "sql_svn_download")
-            database_assets_zip = download_remote_file(
-                REMOTE_BUILD_CONSOLE_URL,
-                f"/api/nho-material-database-assets?material_number={urllib.parse.quote(material_number)}",
-                work_dir / "nho_database_assets.zip",
-            )
+            database_assets_zip = work_dir / "nho_database_assets.zip"
+            try:
+                database_assets_zip = download_remote_file(
+                    REMOTE_BUILD_CONSOLE_URL,
+                    f"/api/nho-material-database-assets?material_number={urllib.parse.quote(material_number)}",
+                    database_assets_zip,
+                )
+            except RuntimeError as exc:
+                cached_database_assets = find_cached_nho_database_assets(material_number, job_id)
+                if not cached_database_assets:
+                    raise
+                shutil.copy2(cached_database_assets, database_assets_zip)
+                append_log(
+                    job_id,
+                    f"sql_svn_download_failed_use_cache: material_number={material_number}, source={cached_database_assets}, reason={exc}",
+                )
             partial_outputs["database_assets_zip"] = str(database_assets_zip)
             update_progress(job_id, "sql_assets", "success")
             for step_id in ("data_sync_assets", "account_sql", "help_sql"):

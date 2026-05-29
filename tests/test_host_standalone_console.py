@@ -292,6 +292,38 @@ def test_batch_log_write_keeps_metadata_small(tmp_path, monkeypatch):
     assert "line-0" in (tmp_path / job["id"] / "job.log").read_text(encoding="utf-8")
 
 
+def test_find_cached_nho_database_assets_matches_material_from_success_job(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    console.JOBS.clear()
+    old_job_dir = tmp_path / "20260525111115"
+    old_job_dir.mkdir(parents=True)
+    assets = old_job_dir / "nho_database_assets.zip"
+    assets.write_bytes(b"zip")
+    console.write_job(
+        {
+            "id": "20260525111115",
+            "status": "success",
+            "created_at": 1,
+            "updated_at": 1,
+            "request": {"product_variant": "nho", "material_number": "20260522"},
+            "outputs": {"database_assets_zip": str(assets)},
+        }
+    )
+    console.write_job(
+        {
+            "id": "20260529160517",
+            "status": "failed",
+            "created_at": 2,
+            "updated_at": 2,
+            "request": {"product_variant": "nho", "material_number": "20260522"},
+            "outputs": {},
+        }
+    )
+
+    assert console.find_cached_nho_database_assets("20260522", "20260529160517") == assets
+    assert console.find_cached_nho_database_assets("20260523", "20260529160517") is None
+
+
 def test_material_number_is_required_for_standard_and_nho_jobs():
     for product_variant in ("standard", "nho"):
         payload, error = console.validate_job_payload(

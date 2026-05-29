@@ -239,7 +239,7 @@ GET /api/nho-material-database-assets?material_number=<资材编号>
 <NHO_MATERIAL_SVN_URL>/<资材编号>リリース作業/製品
 ```
 
-导出的内容先以临时 zip 返回主控台，再由主控台写入最终 `共通.zip`。
+导出的内容先以临时 zip 返回主控台，再由主控台写入最终 `共通.zip`。如果构建终端临时无法从 NHO 资材 SVN 取得数据库资材，主控台会按当前資材番号查找最近一次成功 NHO 任务留下的 `nho_database_assets.zip`。只有資材番号完全一致且缓存文件存在时才会使用该缓存继续合包，并在任务日志中记录缓存来源和远端失败原因。
 
 输出目录：
 

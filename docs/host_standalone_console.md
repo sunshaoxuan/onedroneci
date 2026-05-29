@@ -87,6 +87,8 @@ NHO版构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/<主控任务ID>/
   version.txt
 ```
 
+NHO版数据库资材会先通过构建终端从 NHO 资材 SVN 获取。若该远端获取失败，主控台会用当前資材番号匹配最近一次成功 NHO 任务的 `nho_database_assets.zip`，匹配成功后继续生成 `共通.zip`，并把缓存来源写入任务日志。
+
 `共通.zip` 内部结构为：
 
 ```text
