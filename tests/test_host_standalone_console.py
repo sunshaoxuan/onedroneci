@@ -242,6 +242,7 @@ def test_console_uses_commercial_delivery_package_naming():
 
 def test_create_job_persists_metadata_and_log(tmp_path, monkeypatch):
     monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(console, "CONFIG_HISTORY_DIR", tmp_path / "config-history")
     monkeypatch.setattr(console, "run_job", lambda job_id: None)
     console.JOBS.clear()
 
@@ -271,6 +272,7 @@ def test_create_job_persists_metadata_and_log(tmp_path, monkeypatch):
 
 def test_batch_log_write_keeps_metadata_small(tmp_path, monkeypatch):
     monkeypatch.setattr(console, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(console, "CONFIG_HISTORY_DIR", tmp_path / "config-history")
     monkeypatch.setattr(console, "run_job", lambda job_id: None)
     console.JOBS.clear()
     job = console.create_job(
