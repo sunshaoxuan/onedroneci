@@ -479,6 +479,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
     help_docs_branch = HELP_DOCS_BRANCH.strip()
     help_docs_svn_revision = str(payload.get("help_docs_svn_revision") or "").strip()
     build_help = parse_bool_field(payload, "build_help", True)
+    build_conf_prod = parse_bool_field(payload, "build_conf_prod", True)
     conf_server_host = str(payload.get("conf_server_host") or "").strip()
     conf_web_port = parse_int_field(payload, "conf_web_port", 80)
     conf_enable_https = parse_bool_field(payload, "conf_enable_https", False)
@@ -506,15 +507,15 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         revision_check = validate_help_docs_svn_revision(help_docs_svn_revision)
         if not revision_check.get("ok"):
             raise ValueError("Help SVN revision 不存在")
-    if product_variant == "standard" and build_frontend and not conf_server_host:
+    if build_conf_prod and build_frontend and not conf_server_host:
         raise ValueError("请填写客户访问地址")
     if conf_server_host and not CONF_HOST_RE.fullmatch(conf_server_host):
         raise ValueError("客户访问地址仅允许字母、数字、点和中划线")
-    if product_variant == "standard" and build_frontend and not (1 <= conf_web_port <= 65535):
+    if build_conf_prod and build_frontend and not (1 <= conf_web_port <= 65535):
         raise ValueError("Web 端口必须在 1-65535 之间")
-    if product_variant == "standard" and build_frontend and conf_worker_processes < 1:
+    if build_conf_prod and build_frontend and conf_worker_processes < 1:
         raise ValueError("worker_processes 必须大于 0")
-    if product_variant == "standard" and build_frontend and conf_worker_connections < 1:
+    if build_conf_prod and build_frontend and conf_worker_connections < 1:
         raise ValueError("worker_connections 必须大于 0")
     # ohr-workspace 不跟随 release_*；它固定使用配置分支。用户选择的是四个子项目共同存在的版本分支。
     frontend_workspace_branch = NHO_FRONTEND_WORKSPACE_BRANCH if product_variant == "nho" else FRONTEND_WORKSPACE_BRANCH
@@ -555,6 +556,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
             "help_docs_branch": help_docs_branch,
             "help_docs_svn_revision": help_docs_svn_revision,
             "build_help": build_help,
+            "build_conf_prod": build_conf_prod,
             "conf_server_host": conf_server_host,
             "conf_web_port": conf_web_port,
             "conf_enable_https": conf_enable_https,
@@ -1494,6 +1496,16 @@ publish_root="$(dirname "$OUT_WEB_ZIP")/nho-webzip-root"
 rm -rf "$publish_root"
 mkdir -p "$publish_root/ohr-cicd/web_prod"
 unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
+if [ "${BUILD_CONF_PROD:-true}" = "true" ]; then
+  if [ ! -d "$CONF_PROD_TEMPLATE_DIR" ]; then
+    echo "NHO conf_prod 生成失败：$CONF_PROD_TEMPLATE_DIR 不存在"
+    exit 8
+  fi
+  cp -a "$CONF_PROD_TEMPLATE_DIR" "$publish_root/ohr-cicd/conf_prod"
+  rm -f "$publish_root/ohr-cicd/conf_prod"/*.crt "$publish_root/ohr-cicd/conf_prod"/*.key "$publish_root/ohr-cicd/conf_prod"/TODO.md
+else
+  echo "NHO conf_prod 生成已跳过"
+fi
 rm -f "$OUT_WEB_ZIP"
 (
   cd "$publish_root"
@@ -1794,16 +1806,20 @@ cleanup_publish_root() {
   rm -rf "$publish_root"
 }
 trap cleanup_publish_root EXIT
-mkdir -p "$publish_root/ohr-cicd/web_prod" "$publish_root/ohr-cicd/conf_prod"
+mkdir -p "$publish_root/ohr-cicd/web_prod"
 unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
 if [ -n "$help_zip" ]; then
   mkdir -p "$publish_root/ohr-cicd/web_prod/help"
   unzip -q "$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
 fi
-conf_dir="$publish_root/ohr-cicd/conf_prod"
-rm -rf "$conf_dir"
-cp -a "$CICD_DIR/conf_$OHR_CICD_ENV" "$conf_dir"
-rm -f "$conf_dir"/*.crt "$conf_dir"/*.key "$conf_dir"/TODO.md
+if [ "${BUILD_CONF_PROD:-true}" = "true" ]; then
+  conf_dir="$publish_root/ohr-cicd/conf_prod"
+  rm -rf "$conf_dir"
+  cp -a "$CICD_DIR/conf_$OHR_CICD_ENV" "$conf_dir"
+  rm -f "$conf_dir"/*.crt "$conf_dir"/*.key "$conf_dir"/TODO.md
+else
+  echo "conf_prod 生成已跳过"
+fi
 (
   cd "$publish_root"
   zip -qr "$OUT_WEB_ZIP" ohr-cicd
@@ -1843,6 +1859,7 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "HELP_DOCS_SVN_PASSWORD": HELP_DOCS_SVN_PASSWORD,
         "HELP_DOCS_SVN_REVISION": req.get("help_docs_svn_revision") or "",
         "BUILD_HELP": "true" if req.get("build_help", True) else "false",
+        "BUILD_CONF_PROD": "true" if req.get("build_conf_prod", True) else "false",
         "CONF_PROD_TEMPLATE_DIR": str(CONF_PROD_TEMPLATE_DIR),
         "OHR_CICD_GIT_URL": git_url_with_token(OHR_CICD_GIT_URL),
         "OHR_CICD_BRANCH": OHR_CICD_BRANCH,
@@ -1889,6 +1906,8 @@ def nho_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "NHO_FRONTEND_NENCHO_GIT_URL": git_url_with_token(NHO_FRONTEND_CHILD_REPOS["frontend_nencho_branch"]),
         "NHO_PNPM_CACHE_DIR": NHO_PNPM_CACHE_DIR,
         "NHO_YARN_CACHE_DIR": NHO_YARN_CACHE_DIR,
+        "BUILD_CONF_PROD": "true" if req.get("build_conf_prod", True) else "false",
+        "CONF_PROD_TEMPLATE_DIR": str(CONF_PROD_TEMPLATE_DIR),
         "OHR_BUILD_ID": build_id,
         "OUT_WEB_ZIP": str(shared_artifact_path(build_id, "web.zip", "nho")),
     }

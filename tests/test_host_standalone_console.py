@@ -763,6 +763,10 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "closeMaterialMenu" in console.APP_JS
     assert "variantStandard" in console.APP_JS
     assert "variantNho" in console.APP_JS
+    assert 'name="build_conf_prod"' in console.INDEX_HTML
+    assert "buildConfProd" in console.APP_JS
+    assert "function getBuildConfProd()" in console.APP_JS
+    assert "payload.build_conf_prod = buildConfProd" in console.APP_JS
     assert "getProductVariant()" in console.APP_JS
     assert "product_variant=${variant}" in console.APP_JS
     assert "build_nho_common_package" in console.__dict__
@@ -775,6 +779,22 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "enterCreateMode();" in console.APP_JS
     assert "document.querySelectorAll('.standard-only')" in console.APP_JS
     assert "[hidden], .standard-only[hidden] { display: none !important; }" in console.STYLE_CSS
+
+
+def test_validate_job_payload_uses_common_org_without_conf_prod():
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260522",
+            "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+            "build_conf_prod": False,
+        }
+    )
+
+    assert error is None
+    assert payload["build_conf_prod"] is False
+    assert payload["organisation_name"] == "共通"
 
 
 def test_standard_console_has_preparation_and_import_plan_tabs():

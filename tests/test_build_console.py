@@ -178,7 +178,8 @@ def test_build_console_supports_nho_variant_scripts_and_ui(monkeypatch):
     assert "ohr-cicd/web_prod" in server.NHO_FRONTEND_BUILD_SCRIPT
     assert 'zip -qr "$OUT_WEB_ZIP" ohr-cicd' in server.NHO_FRONTEND_BUILD_SCRIPT
     assert "HELP_DOCS" not in server.NHO_FRONTEND_BUILD_SCRIPT
-    assert "conf_prod" not in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "BUILD_CONF_PROD" in server.NHO_FRONTEND_BUILD_SCRIPT
+    assert "ohr-cicd/conf_prod" in server.NHO_FRONTEND_BUILD_SCRIPT
 
 
 def test_create_nho_build_does_not_require_standard_customer_fields(tmp_path, monkeypatch):
@@ -193,10 +194,12 @@ def test_create_nho_build_does_not_require_standard_customer_fields(tmp_path, mo
             "build_backend": False,
             "build_frontend": True,
             "frontend_release_branch": "release_20260316",
+            "build_conf_prod": False,
         }
     )
 
     assert meta["request"]["product_variant"] == "nho"
+    assert meta["request"]["build_conf_prod"] is False
     assert meta["request"]["frontend_workspace_branch"] == server.NHO_FRONTEND_WORKSPACE_BRANCH
     assert meta["request"]["frontend_feelin_branch"] == server.NHO_FRONTEND_FEELIN_BRANCH
     assert meta["request"]["frontend_nencho_branch"] == "release_20260316"
@@ -878,8 +881,29 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
     assert env["HELP_DOCS_BRANCH"] == "release_ci"
     assert env["HELP_DOCS_SVN_REVISION"] == "12345"
     assert env["BUILD_HELP"] == "false"
+    assert env["BUILD_CONF_PROD"] == "true"
     assert env["CONF_SERVER_HOST"] == "customer.local"
     assert env["CONF_ENABLE_HTTPS"] == "true"
+
+
+def test_build_conf_prod_can_be_disabled_for_frontend_builds(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
+    monkeypatch.setattr(server, "EXECUTOR", "direct")
+
+    meta = server.create_build(
+        {
+            "product_variant": "nho",
+            "build_backend": False,
+            "build_frontend": True,
+            "frontend_release_branch": "release_20260522",
+            "build_conf_prod": False,
+        }
+    )
+
+    assert meta["request"]["build_conf_prod"] is False
+    assert meta["request"]["conf_server_host"] == ""
 
 
 def test_build_console_log_rendering_keeps_fixed_line_window():

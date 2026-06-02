@@ -38,6 +38,8 @@
 
 標準版資材番号候选由构建终端从 `STANDARD_MATERIAL_SVN_URL` 读取，目录名 `資材-YYYYMMDD` 或 `資材_YYYYMMDD` 会显示为 `YYYYMMDD`。选择后主控台通过构建终端读取该目录 `version.txt`，自动回填后台分支、前台分支和 Help SVN revision。
 
+標準版和 NHO版都有“生成客户环境配置 `conf_prod`”选项。勾选时构建终端在 `web.zip/ohr-cicd/conf_prod/` 中放入环境配置；取消勾选时页面隐藏 AP、DB、WEB、邮件、UPDS、駅すぱあと等环境信息，并把机构名称固定为 `共通`。
+
 ## 主控流程设计
 
 主控台展示完整交付流程，构建终端内嵌页面只展示构建终端自己的六个构建步骤。主控台的结构化进度字段为 `progress`，包含：
@@ -105,7 +107,7 @@ NHO版数据库资材通过构建终端从 NHO 资材 SVN 获取。构建终端�
           web.zip      # 前端分支被选择时存在
 ```
 
-NHO版不执行 SQL、数据连携、`conf_prod`、help 或 `OneHrStandalone.zip` 处理。
+NHO版不执行標準版 SQL、数据连携、help 或 `OneHrStandalone.zip` 处理。NHO 的 `conf_prod` 只由“生成客户环境配置 `conf_prod`”选项控制。
 
 ## 二次打包来源
 

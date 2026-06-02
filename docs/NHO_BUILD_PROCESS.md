@@ -12,6 +12,7 @@ NHO版当前目标是生成代码共通包 `共通.zip`，不生成完整安装�
 - 资材编号：写入 `共通.zip` 内的 `共通/version.txt`
 - 后端分支：不为空时构建 `package.zip`
 - 前端分支：不为空时构建 `web.zip`
+- 生成客户环境配置 `conf_prod`：默认勾选。勾选时 NHO `web.zip` 包含 `ohr-cicd/conf_prod`；取消勾选时不包含该目录，页面隐藏环境信息，机构名称固定为 `共通`。
 
 资材编号支持手工输入，也支持从构建终端读取 SVN 候选。构建终端访问：
 
@@ -31,11 +32,14 @@ NHO_MATERIAL_SVN_PASSWORD=<SVN密码>
 以下標準版字段会隐藏，不参与 NHO 构造：
 
 - Help 分支
+- 標準版 SQL、数据连携、Help 相关参数
+
+以下环境字段只在勾选生成 `conf_prod` 时显示：
+
 - 客户访问地址、Web 端口、HTTPS / 443 选项
 - PostgreSQL 配置
 - 应用服务主机名、OHR 服务端口
 - 客户机构名、机构开始日
-- 標準版 SQL、数据连携、`conf_prod`、Help 相关参数
 
 后端和前端可以只选其一。只选后端时 `共通.zip` 只包含 `package.zip`；只选前端时只包含 `web.zip`；两者都选则同时包含两枚 zip。
 
@@ -45,11 +49,11 @@ NHO_MATERIAL_SVN_PASSWORD=<SVN密码>
 
 1. 检查构建终端状态。
 2. 创建 NHO 主控任务并落盘 `metadata.json` / `job.log`。
-3. 向构建终端发送 `product_variant=nho`、前后端构建开关与分支。
+3. 向构建终端发送 `product_variant=nho`、前后端构建开关、是否生成 `conf_prod` 与分支。
 4. 轮询构建终端状态与日志。
 5. 下载构建终端产物。
 6. 通过构建终端从 NHO 资材 SVN 的对应资材编号目录导出 `データ連携` 与 `製品` 文件夹。
-7. 跳过標準版专用数据连携、Help、`conf_prod` 与完整安装包步骤。
+7. 跳过標準版专用数据连携、Help 与完整安装包步骤。
 8. 调用 `build_nho_common_package` 合成 NHO `共通.zip`。
 
 主控台仍展示统一十步进度，但 NHO版中只隐藏以下標準版专用步骤：

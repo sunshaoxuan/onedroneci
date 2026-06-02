@@ -11,6 +11,7 @@
 - 后端分支：不为空时构建 `package.zip`
 - 前端分支：不为空时构建 `web.zip`
 - 生成 Help 包及相关资源：默认勾选。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
+- 生成客户环境配置 `conf_prod`：默认勾选。取消勾选时前端 `web.zip` 不包含 `ohr-cicd/conf_prod`，页面隐藏 AP、DB、WEB、邮件、UPDS、駅すぱあと等环境信息，机构名称固定为 `共通`。
 - Help SVN revision：可空。填写时必须为 SVN revision 数字，并由构建终端校验；为空时使用最新 revision。该字段只在生成 Help 时使用。
 - 客户访问地址、Web 端口、HTTPS / 443 选项
 - PostgreSQL Host / Port / User / Password
@@ -33,7 +34,7 @@
 
 1. 检查构建终端状态。
 2. 创建主控任务并落盘 `metadata.json` / `job.log`。
-3. 将产品版本、前后端分支、是否生成 Help、Help SVN revision 和客户配置传给构建终端。
+3. 将产品版本、前后端分支、是否生成 Help、是否生成 `conf_prod`、Help SVN revision 和客户配置传给构建终端。
 4. 轮询构建终端状态与日志。
 5. 下载构建终端产物。
 6. 执行 SQL、数据连携、`version.txt`、`OneHrStandalone.zip` 二次打包。

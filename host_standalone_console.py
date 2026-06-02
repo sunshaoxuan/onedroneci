@@ -386,6 +386,10 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     if product_variant not in {"standard", "nho"}:
         return payload, "invalid product_variant"
     payload["product_variant"] = product_variant
+    build_conf_prod = request_bool(payload, "build_conf_prod", True)
+    payload["build_conf_prod"] = build_conf_prod
+    if not build_conf_prod:
+        payload["organisation_name"] = "共通"
 
     if not str(payload.get("material_number") or "").strip():
         return payload, "missing material_number"
@@ -395,14 +399,14 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     if not build_backend and not build_frontend:
         return payload, "missing build target"
 
-    required = ["conf_server_host"] if product_variant == "standard" and build_frontend else []
-    if product_variant == "standard" and build_backend and build_frontend:
+    required = ["conf_server_host"] if build_conf_prod and build_frontend else []
+    if product_variant == "standard" and build_conf_prod and build_backend and build_frontend:
         required.extend(["postgresql_host", "organisation_name"])
-    if product_variant == "standard" and str(payload.get("mail_usage") or "none") == "use":
+    if product_variant == "standard" and build_conf_prod and str(payload.get("mail_usage") or "none") == "use":
         required.extend(["mail_host_ip", "mail_port", "mail_user", "mail_password"])
-    if product_variant == "standard" and str(payload.get("workflow_upds_usage") or "none") == "use":
+    if product_variant == "standard" and build_conf_prod and str(payload.get("workflow_upds_usage") or "none") == "use":
         required.extend(["upds_host_name", "upds_user", "upds_password", "upds_port", "upds_db_name"])
-    if product_variant == "standard" and str(payload.get("ekispert_usage") or "none") == "use":
+    if product_variant == "standard" and build_conf_prod and str(payload.get("ekispert_usage") or "none") == "use":
         required.append("ekispert_url")
     for key in required:
         if not str(payload.get(key) or "").strip():
@@ -836,10 +840,11 @@ def run_job(job_id: str) -> None:
                 "build_backend": build_backend,
                 "build_frontend": build_frontend,
                 "build_help": truthy(req.get("build_help"), True),
+                "build_conf_prod": truthy(req.get("build_conf_prod"), True),
                 "backend_branch": req.get("backend_branch") or "",
                 "frontend_release_branch": req.get("frontend_release_branch") or "",
                 "help_docs_svn_revision": req.get("help_docs_svn_revision") or "",
-                "conf_server_host": req.get("conf_server_host") or "",
+                "conf_server_host": req.get("conf_server_host") or "common.local",
                 "conf_web_port": int(req.get("conf_web_port") or 80),
                 "conf_enable_https": bool(req.get("conf_enable_https")),
                 "conf_worker_processes": int(req.get("conf_worker_processes") or 1),
@@ -944,15 +949,15 @@ def run_job(job_id: str) -> None:
                 frontend_branch=req.get("frontend_release_branch") or "-",
             ),
             config=StandaloneConfig(
-                postgresql_host=req["postgresql_host"],
+                postgresql_host=req.get("postgresql_host") or "localhost",
                 postgresql_port=int(req.get("postgresql_port") or 5432),
                 postgresql_user=req.get("postgresql_user") or "postgres",
                 postgresql_password=req.get("postgresql_password") or "password",
-                ohr_host_address=req.get("ohr_host_address") or req["conf_server_host"],
+                ohr_host_address=req.get("ohr_host_address") or req.get("conf_server_host") or "localhost",
                 ohr_service_port=int(req.get("ohr_service_port") or 3198),
             ),
             sql_config=ProductSqlConfig(
-                organisation_name=req["organisation_name"],
+                organisation_name=req.get("organisation_name") or "共通",
                 organisation_dstart=req.get("organisation_dstart") or default_organisation_dstart(),
             ),
             tenant_import_config=tenant_import_config_from_request(req),
@@ -1072,30 +1077,31 @@ INDEX_HTML = """<!doctype html>
         <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle" type="button" aria-label="material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
-        <section class="standard-only standard-tab-panel" data-standard-tab-panel="prep">
+        <section class="standard-tab-panel" data-standard-tab-panel="prep">
           <fieldset class="form-section">
             <legend data-i18n="basicBuildInfo">構築パラメータ</legend>
             <label class="standard-only"><span data-i18n="helpSvnRevision">Help SVN Revision</span><input name="help_docs_svn_revision" data-i18n-placeholder="helpSvnRevisionPlaceholder"></label>
             <label class="check-row standard-only"><input name="build_help" type="checkbox" checked><span data-i18n="buildHelp">Help パッケージと関連資材を生成</span></label>
-            <label class="standard-only"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
-            <label class="standard-only"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
-            <label class="standard-only"><span data-i18n="employeeNumberDigits">職員番号桁数</span><input name="employee_number_digits" type="number" min="1" max="20" placeholder="8"></label>
+            <label class="check-row"><input name="build_conf_prod" type="checkbox" checked><span data-i18n="buildConfProd">顧客環境設定 conf_prod を生成</span></label>
+            <label class="standard-only env-config"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
+            <label class="standard-only env-config"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
+            <label class="standard-only env-config"><span data-i18n="employeeNumberDigits">職員番号桁数</span><input name="employee_number_digits" type="number" min="1" max="20" placeholder="8"></label>
           </fieldset>
-          <fieldset class="form-section">
+          <fieldset class="form-section env-config">
             <legend data-i18n="apHostInfo">AP 主機情報</legend>
             <label class="standard-only"><span data-i18n="appHostName">AP 主機名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
             <label class="standard-only required-field"><span data-i18n="apHostIp">AP 主機 IP</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
             <label class="standard-only"><span data-i18n="apCpuCount">AP CPU 数</span><input name="ap_cpu_count" type="number" min="1" placeholder="8"></label>
             <label class="standard-only"><span data-i18n="apMemoryGb">AP メモリ GB</span><input name="ap_memory_gb" type="number" min="1" placeholder="32"></label>
           </fieldset>
-          <fieldset class="form-section">
+          <fieldset class="form-section env-config">
             <legend data-i18n="dbHostInfo">DB 主機情報</legend>
             <label class="standard-only required-field"><span data-i18n="postgresHost">DB 主機名</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
             <label class="standard-only"><span data-i18n="postgresUser">DB ユーザー</span><input name="postgresql_user" value="postgres"></label>
             <label class="standard-only"><span data-i18n="postgresPassword">DB パスワード</span><input name="postgresql_password" value="password"></label>
             <label class="standard-only"><span data-i18n="postgresPort">DB ポート</span><input name="postgresql_port" type="number" value="5432"></label>
           </fieldset>
-          <fieldset class="form-section">
+          <fieldset class="form-section env-config">
             <legend data-i18n="webHostInfo">WEB 主機情報</legend>
             <label class="standard-only"><span data-i18n="webHostName">WEB 主機名</span><input name="web_host_name" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
             <label class="standard-only"><span data-i18n="webPort">WEB ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
@@ -1103,7 +1109,7 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only"><span data-i18n="webKeyName">WEB Key 名</span><input name="web_key_name" value="Server.key"></label>
             <label class="check-row standard-only"><input name="conf_enable_https" type="checkbox"><span data-i18n="enableHttps">HTTPS / 443 設定を生成</span></label>
           </fieldset>
-          <fieldset class="form-section">
+          <fieldset class="form-section env-config">
             <legend data-i18n="mailServiceInfo">メールサービス情報</legend>
             <label class="standard-only"><span data-i18n="mailUsage">メール利用</span><select name="mail_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only"><span data-i18n="mailHostIp">メール主機 IP</span><input name="mail_host_ip"></label>
@@ -1114,7 +1120,7 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only"><span data-i18n="mailPassword">メールパスワード</span><input name="mail_password"></label>
             <label class="standard-only section-wide"><span data-i18n="mailNote">メール備考</span><input name="mail_note"></label>
           </fieldset>
-          <fieldset class="form-section">
+          <fieldset class="form-section env-config">
             <legend data-i18n="updsServiceInfo">UPDS サービス情報</legend>
             <label class="standard-only"><span data-i18n="workflowUpds">ワークフロー申請 UPDSへ連携</span><select name="workflow_upds_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only"><span data-i18n="updsHostName">UPDS 主機名</span><input name="upds_host_name"></label>
@@ -1124,14 +1130,14 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only"><span data-i18n="updsDbName">UPDS DB 名</span><input name="upds_db_name"></label>
             <label class="standard-only section-wide"><span data-i18n="dataSyncCustomSource">補充スクリプトコード源</span><input name="data_sync_custom_subdir" data-i18n-placeholder="dataSyncCustomSourcePlaceholder"></label>
           </fieldset>
-          <fieldset class="form-section">
+          <fieldset class="form-section env-config">
             <legend data-i18n="ekispertInfo">駅すぱあと情報</legend>
             <label class="standard-only"><span data-i18n="ekispertServer">駅すぱあとサーバ</span><select name="ekispert_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only section-wide"><span data-i18n="ekispertUrl">駅すぱあと URL</span><input name="ekispert_url" placeholder="https://"></label>
           </fieldset>
         </section>
         <section class="standard-only standard-tab-panel" data-standard-tab-panel="import" hidden>
-          <fieldset class="form-section">
+          <fieldset class="form-section env-config">
             <legend data-i18n="customerSituation">お客様の実績状況収集</legend>
             <div class="option-matrix">
               <label><span data-i18n="facilitySituation">施設状況</span><select name="facility_situation"><option value="single" data-i18n="singleFacility">単施設（一つ給与計算センター）</option><option value="multiple" data-i18n="multipleFacilities">複数施設（複数給与計算センター）</option></select></label>
@@ -1139,7 +1145,7 @@ INDEX_HTML = """<!doctype html>
               <label><span data-i18n="personalNumber">個人識別番号</span><select name="personal_number_usage"><option value="use" data-i18n="use">利用</option><option value="none" data-i18n="notUse">利用しない</option></select></label>
             </div>
           </fieldset>
-          <fieldset class="form-section">
+          <fieldset class="form-section env-config">
             <legend data-i18n="screenPublishPlan">画面公開計画</legend>
             <div class="tag-tree">
               <details open><summary data-i18n="shomuSystem">庶務事務</summary><details class="publish-category" open><summary>個人ポータル</summary><label><input type="checkbox" name="publish_shomu_portal" checked><span>トップページ</span></label><label><input type="checkbox" name="publish_shomu_profile"><span>プロフィール</span></label><label><input type="checkbox" name="publish_shomu_payroll"><span>給与明細</span></label><label><input type="checkbox" name="publish_shomu_source_tax"><span>源泉徴収票</span></label><label><input type="checkbox" name="publish_shomu_issue_info"><span>発令情報</span></label></details><details class="publish-category" open><summary>庶務事務</summary><label><input type="checkbox" name="publish_shomu_admin_portal" checked><span>トップページ</span></label><label><input type="checkbox" name="publish_shomu_staff_admin" checked><span>職員管理</span></label><label><input type="checkbox" name="publish_shomu_salary_reservation"><span>電子交付承諾状況</span></label><label><input type="checkbox" name="publish_shomu_payroll_admin"><span>給与明細管理</span></label><label><input type="checkbox" name="publish_shomu_source_tax_admin"><span>源泉徴収票管理</span></label><label><input type="checkbox" name="publish_shomu_issue_admin"><span>発令情報管理</span></label><label><input type="checkbox" name="publish_shomu_free_search"><span>自由条件検索</span></label><label><input type="checkbox" name="publish_shomu_initial_login" checked><span>初期ログイン設定</span></label><label><input type="checkbox" name="publish_shomu_salary_parameter"><span>給与明細パラメータ設定</span></label><label><input type="checkbox" name="publish_shomu_notification" checked><span>通知設定</span></label><label><input type="checkbox" name="publish_shomu_group" checked><span>グループ設定</span></label><label><input type="checkbox" name="publish_shomu_role" checked><span>ロール管理</span></label><label><input type="checkbox" name="publish_shomu_generic_master" checked><span>汎用マスタ</span></label></details></details>
@@ -1254,6 +1260,7 @@ const I18N = {
     helpSvnRevisionPlaceholder: '空欄の場合は最新 revision',
     helpSvnRevisionInvalid: '存在しない SVN revision です',
     buildHelp: 'Help パッケージと関連資材を生成',
+    buildConfProd: '顧客環境設定 conf_prod を生成',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
     enableHttps: 'HTTPS / 443 設定を生成',
@@ -1406,6 +1413,7 @@ const I18N = {
     helpSvnRevisionPlaceholder: '不填则使用最新 revision',
     helpSvnRevisionInvalid: '不存在的 SVN revision',
     buildHelp: '生成 Help 包及相关资源',
+    buildConfProd: '生成客户环境配置 conf_prod',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
     enableHttps: '生成 HTTPS / 443 配置',
@@ -1558,6 +1566,7 @@ const I18N = {
     helpSvnRevisionPlaceholder: 'Leave empty to use the latest revision',
     helpSvnRevisionInvalid: 'SVN revision does not exist',
     buildHelp: 'Build Help package and resources',
+    buildConfProd: 'Generate customer environment conf_prod',
     customerHost: 'Customer access address',
     webPort: 'Web port',
     enableHttps: 'Generate HTTPS / 443 configuration',
@@ -1807,10 +1816,21 @@ function getProductVariant() {
   const checked = document.querySelector('input[name="product_variant"]:checked');
   return checked ? checked.value : 'standard';
 }
+function getBuildConfProd() {
+  const input = document.querySelector('input[name="build_conf_prod"]');
+  return input ? input.checked : true;
+}
+function applyEnvironmentVisibility() {
+  const buildConfProd = getBuildConfProd();
+  document.querySelectorAll('.env-config').forEach(el => { el.hidden = !buildConfProd; });
+  const orgInput = document.querySelector('input[name="organisation_name"]');
+  if (orgInput && !buildConfProd) orgInput.value = '共通';
+}
 function applyVariantVisibility() {
   const isNho = getProductVariant() === 'nho';
-  document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho; });
+  document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho && !el.closest('.env-config'); });
   document.querySelectorAll('.nho-only').forEach(el => { el.hidden = !isNho; });
+  applyEnvironmentVisibility();
   if (!isNho) {
     const active = document.querySelector('.standard-tab.active');
     switchStandardTab(active ? active.dataset.standardTab : 'prep');
@@ -1825,6 +1845,7 @@ function switchStandardTab(tabName) {
   document.querySelectorAll('[data-standard-tab-panel]').forEach(panel => {
     panel.hidden = panel.dataset.standardTabPanel !== tabName;
   });
+  applyEnvironmentVisibility();
 }
 function initializeFixedPublishItems() {
   document.querySelectorAll('.tag-tree input[type="checkbox"][checked]').forEach(input => {
@@ -1909,6 +1930,7 @@ function markConditionalRequiredFields() {
   });
 }
 function validateConditionalRequiredFields(form) {
+  if (!getBuildConfProd()) return true;
   for (const group of CONDITIONAL_REQUIRED_GROUPS) {
     if (!form.elements[group.toggle] || form.elements[group.toggle].value !== 'use') continue;
     for (const name of group.fields) {
@@ -2201,15 +2223,20 @@ function setFormLocked(locked) {
   const terminalLocked = lastTerminalStatus !== 'running';
   const modeLocked = mode !== 'create';
   const isNho = getProductVariant() === 'nho';
+  const buildConfProd = getBuildConfProd();
   document.querySelectorAll('#form input, #form select, #form button.material-toggle, #startJob').forEach(el => {
     if (el.name === 'product_variant') {
       el.disabled = false;
       return;
     }
     if (el.classList && el.classList.contains('publish-menu-toggle')) {
-      const standardHidden = isNho && el.closest('.standard-only');
+      const standardHidden = isNho && el.closest('.standard-only') && !el.closest('.env-config');
       el.disabled = Boolean(standardHidden) || locked || modeLocked || terminalLocked;
       applyPublishMenuGroupState(el.closest('details'));
+      return;
+    }
+    if (el.closest('.env-config') && !buildConfProd) {
+      el.disabled = true;
       return;
     }
     if (el.dataset.fixedMirror === 'true') {
@@ -2227,7 +2254,7 @@ function setFormLocked(locked) {
       el.disabled = true;
       return;
     }
-    const standardHidden = isNho && el.closest('.standard-only');
+    const standardHidden = isNho && el.closest('.standard-only') && !el.closest('.env-config');
     const nhoHidden = !isNho && el.closest('.nho-only');
     el.disabled = Boolean(standardHidden) || Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
   });
@@ -2465,6 +2492,13 @@ const buildHelpInput = document.querySelector('input[name="build_help"]');
 if (buildHelpInput) {
   buildHelpInput.addEventListener('change', () => setFormLocked(false));
 }
+const buildConfProdInput = document.querySelector('input[name="build_conf_prod"]');
+if (buildConfProdInput) {
+  buildConfProdInput.addEventListener('change', () => {
+    applyEnvironmentVisibility();
+    setFormLocked(false);
+  });
+}
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.material-combo')) closeMaterialMenu();
 });
@@ -2576,8 +2610,10 @@ async function deleteConfigHistory(configId) {
 document.getElementById('form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!validateConditionalRequiredFields(event.target)) return;
+  const buildConfProdInput = event.target.elements.build_conf_prod;
+  const buildConfProd = buildConfProdInput ? buildConfProdInput.checked : true;
   const dataSyncCustomInput = event.target.elements.data_sync_custom_subdir;
-  if (dataSyncCustomInput && !(await validateDataSyncCustomSource(dataSyncCustomInput))) {
+  if (buildConfProd && dataSyncCustomInput && !(await validateDataSyncCustomSource(dataSyncCustomInput))) {
     dataSyncCustomInput.focus();
     return;
   }
@@ -2594,8 +2630,10 @@ document.getElementById('form').addEventListener('submit', async (event) => {
     return;
   }
   const payload = Object.fromEntries(new FormData(event.target).entries());
-  payload.conf_enable_https = event.target.elements.conf_enable_https.checked;
+  payload.conf_enable_https = Boolean(event.target.elements.conf_enable_https && event.target.elements.conf_enable_https.checked);
   payload.build_help = buildHelp;
+  payload.build_conf_prod = buildConfProd;
+  if (!buildConfProd) payload.organisation_name = '共通';
   payload.ui_language = lang;
   const res = await fetch('/api/jobs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
   const job = await res.json();

@@ -46,6 +46,7 @@
 - Direct 构建中临时写入本次环境配置。
 - 执行 `env=<OHR_CICD_ENV> node ./src/generateConf.js`。
 - 将 `conf_<OHR_CICD_ENV>` 写入 `web.zip/ohr-cicd/conf_prod/`。
+- 主控台提供“生成客户环境配置 `conf_prod`”选项，標準版和 NHO版都适用。关闭时不向 `web.zip` 写入 `ohr-cicd/conf_prod/`，环境信息字段隐藏，机构名称固定为 `共通`。
 
 ### help
 
