@@ -1060,6 +1060,7 @@ INDEX_HTML = """<!doctype html>
           <h2 data-i18n="formTitle">構成パラメータ</h2>
         </div>
         <div class="run-actions">
+          <button id="newJobMode" class="secondary" type="button" data-i18n="newBuild">新規構造</button>
           <button id="stopJob" class="danger" type="button" disabled data-i18n="stopJob">停止</button>
           <button id="startJob" type="submit" data-i18n="startJob">構造を開始</button>
         </div>
@@ -1176,7 +1177,6 @@ INDEX_HTML = """<!doctype html>
             <p class="section-kicker" data-i18n="historyKicker">履歴</p>
             <h2 data-i18n="historyTitle">構造履歴</h2>
           </div>
-          <button id="newJobMode" class="secondary" type="button" data-i18n="newBuild">新規構造</button>
         </div>
         <div id="jobs" class="jobs"></div>
       </section>

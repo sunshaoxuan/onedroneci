@@ -482,6 +482,10 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "if (mode !== 'create' && lastFilledJobId !== job.id)" in console.APP_JS
     assert "newBuildReady" in console.APP_JS
     assert "id=\"newJobMode\"" in console.INDEX_HTML
+    run_actions = console.INDEX_HTML.split('<div class="run-actions">', 1)[1].split("</div>", 1)[0]
+    history_heading = console.INDEX_HTML.split('data-i18n="historyTitle"', 1)[1].split("</div>", 1)[0]
+    assert 'id="newJobMode"' in run_actions
+    assert 'id="newJobMode"' not in history_heading
     assert "jobBadge" not in console.APP_JS
     assert "id=\"jobBadge\"" not in console.INDEX_HTML
     assert ".badge" not in console.STYLE_CSS
