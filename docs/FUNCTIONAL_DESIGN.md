@@ -160,6 +160,10 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 
 这些字段使用页面客户机构名称生成。
 
+### all.sql 补全
+
+二次打包器在最终 ZIP 重建前扫描交付目录中已有 `all.sql` 的脚本文件夹。若同级目录存在未出现在 `all.sql` 中的 `.sql` 文件，则追加 `\i 文件名.sql`。`all.sql` 自身不参与检查，没有 `all.sql` 的目录不新建总控脚本。
+
 ### OneHrStandalone.zip 修改
 
 以模板 zip 为基础重建，只替换：

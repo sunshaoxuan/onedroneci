@@ -16,6 +16,7 @@ from standalone_packager import (
     TenantImportConfig,
     build_nho_common_package,
     build_product_package,
+    complete_all_sql_scripts,
     default_organisation_dstart,
     patch_account_sql,
     render_ohr_import_sql,
@@ -147,12 +148,14 @@ def make_sql_templates(path: Path) -> None:
     (path / "2.ohr").mkdir(parents=True)
     (path / "1.tenant" / "ohr_help.sql").write_text("old help", encoding="utf-8")
     (path / "1.tenant" / "url_info.sql").write_text("select '/api/x';", encoding="utf-8")
+    (path / "1.tenant" / "all.sql").write_text("\\i url_info.sql\n", encoding="utf-8")
     (path / "2.ohr" / "4.account.sql").write_text(
         """INSERT INTO "mdm_organisation" ("szk_code", "dstart", "dend", "sname", "rname", "parent_id", "data_kbn", "comment", "create_user", "create_time", "update_user", "update_time", "delete_flag", "hierarchy", "campus", "hierarchy_name", "campus_name", "szk_bu_ka", "record") VALUES ('000000', '2025-07-01', '2222-12-31', '{"ja-JP": "OLD"}', '{"ja-JP": "OLD"}', NULL, '1', NULL, 'RENKEI', '2025-05-13 12:54:15.945549+00', 'RENKEI', '2025-05-13 12:54:15.945549+00', 'f', '\\000000', NULL, '{"ja-JP": "\\OLD"}', NULL, '{"ja-JP": "OLD"}', NULL);
 """,
         encoding="utf-8",
     )
     (path / "2.ohr" / "5.ohr.sql").write_text("update ohr_menu set urls = null;", encoding="utf-8")
+    (path / "2.ohr" / "all.sql").write_text("\\i 4.account.sql", encoding="utf-8")
 
 
 def test_render_version_txt_records_branches():
@@ -217,6 +220,24 @@ def test_render_ohr_import_sql_records_menu_and_task_updates():
     assert "code = 'mdm-data-synchronization-decree-data'" in sql
 
 
+def test_complete_all_sql_scripts_appends_missing_sibling_sql_files(tmp_path):
+    scripts = tmp_path / "データ連携" / "Function"
+    scripts.mkdir(parents=True)
+    (scripts / "all.sql").write_text("\\i existing.sql\n\\i other_missing.sql", encoding="utf-8")
+    (scripts / "existing.sql").write_text("select 1;", encoding="utf-8")
+    (scripts / "missing.sql").write_text("select 2;", encoding="utf-8")
+    (scripts / "space name.sql").write_text("select 3;", encoding="utf-8")
+    (scripts / "other_missing.sql").write_text("select 4;", encoding="utf-8")
+
+    completed = complete_all_sql_scripts(tmp_path)
+
+    assert completed == {"データ連携/Function/all.sql": ["missing.sql", "space name.sql"]}
+    all_sql = (scripts / "all.sql").read_text(encoding="utf-8")
+    assert all_sql.count("\\i existing.sql") == 1
+    assert "\\i missing.sql" in all_sql
+    assert '\\i "space name.sql"' in all_sql
+
+
 def test_update_config_ini_replaces_database_and_ohr_values():
     text = update_config_ini(
         CONFIG,
@@ -253,6 +274,8 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     (data_sync_repo / "updsv7phr" / "PHR" / "View").mkdir()
     (data_sync_repo / "updsv7phr" / "PHR" / "Ignored").mkdir()
     (data_sync_repo / "updsv7phr" / "PHR" / "Table" / "01_table.sql").write_text("table sync", encoding="utf-8")
+    (data_sync_repo / "updsv7phr" / "PHR" / "Table" / "all.sql").write_text("\\i existing.sql\n", encoding="utf-8")
+    (data_sync_repo / "updsv7phr" / "PHR" / "Table" / "existing.sql").write_text("existing", encoding="utf-8")
     (data_sync_repo / "updsv7phr" / "PHR" / "View" / "02_view.sql").write_text("view sync", encoding="utf-8")
     (data_sync_repo / "updsv7phr" / "PHR" / "Ignored" / "99_ignore.sql").write_text("ignore", encoding="utf-8")
     (data_sync_repo / "updsv7phr" / "PHR" / "00_all_updsv7tophr.sql").write_text("ignored root file", encoding="utf-8")
@@ -300,6 +323,9 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert delivery_root == output / "build-1"
     assert product_dir.is_dir()
     assert (delivery_root / "データ連携" / "Table" / "01_table.sql").read_text(encoding="utf-8") == "custom table"
+    assert "\\i 01_table.sql" in (delivery_root / "データ連携" / "Table" / "all.sql").read_text(encoding="utf-8")
+    assert "\\i 5.ohr.sql" in (product_dir / "2.ohr" / "all.sql").read_text(encoding="utf-8")
+    assert "\\i ohr_help.sql" in (product_dir / "1.tenant" / "all.sql").read_text(encoding="utf-8")
     assert (delivery_root / "データ連携" / "View" / "02_view.sql").read_text(encoding="utf-8") == "view sync"
     assert (delivery_root / "データ連携" / "Procedure" / "02_custom.sql").read_text(encoding="utf-8") == "custom procedure"
     assert not (delivery_root / "データ連携" / "Ignored").exists()

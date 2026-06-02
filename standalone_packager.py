@@ -235,6 +235,46 @@ def render_ohr_import_sql(config: OhrImportConfig) -> str:
     return "\n".join(lines)
 
 
+def _include_sql_line(filename: str) -> str:
+    if re.search(r"\s", filename):
+        return f'\\i "{filename}"'
+    return f"\\i {filename}"
+
+
+def _referenced_sql_filenames(text: str) -> set[str]:
+    names: set[str] = set()
+    for match in re.finditer(r'(?im)^\s*\\i\s+(?:"([^"]+)"|(\S+))', text):
+        reference = (match.group(1) or match.group(2)).replace("\\", "/")
+        if reference.lower().endswith(".sql"):
+            names.add(reference.rsplit("/", 1)[-1].lower())
+    return names
+
+
+def complete_all_sql_scripts(root: Path) -> dict[str, list[str]]:
+    completed: dict[str, list[str]] = {}
+    for all_sql in sorted(root.rglob("all.sql"), key=lambda path: str(path).lower()):
+        sql_files = sorted(
+            (
+                item.name
+                for item in all_sql.parent.iterdir()
+                if item.is_file() and item.suffix.lower() == ".sql" and item.name.lower() != "all.sql"
+            ),
+            key=str.lower,
+        )
+        if not sql_files:
+            continue
+        text = all_sql.read_text(encoding="utf-8-sig")
+        known = _referenced_sql_filenames(text)
+        missing = [name for name in sql_files if name.lower() not in known]
+        if not missing:
+            continue
+        separator = "" if not text or text.endswith(("\n", "\r")) else "\n"
+        addition = "\n".join(_include_sql_line(name) for name in missing) + "\n"
+        all_sql.write_text(text + separator + addition, encoding="utf-8")
+        completed[str(all_sql.relative_to(root)).replace("\\", "/")] = missing
+    return completed
+
+
 def _safe_zip_member_name(name: str) -> str:
     normalized = name.replace("\\", "/").lstrip("/")
     if not normalized or normalized.startswith("/") or ".." in Path(normalized).parts:
@@ -754,6 +794,7 @@ def build_product_package(
                 render_ohr_import_sql(ohr_import_config),
                 encoding="utf-8",
             )
+        complete_all_sql_scripts(delivery_root)
         (product_dir / "version.txt").write_text(render_version_txt(version), encoding="utf-8")
 
         final_zip = product_dir / "OneHrStandalone.zip"

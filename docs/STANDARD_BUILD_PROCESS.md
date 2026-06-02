@@ -37,7 +37,7 @@
 3. 将产品版本、前后端分支、是否生成 Help、是否生成 `conf_prod`、Help SVN revision 和客户配置传给构建终端。
 4. 轮询构建终端状态与日志。
 5. 下载构建终端产物。
-6. 执行 SQL、数据连携、`version.txt`、`OneHrStandalone.zip` 二次打包。
+6. 执行 SQL、数据连携、`all.sql` 补全、`version.txt`、`OneHrStandalone.zip` 二次打包。
 
 主控台进度为十个步骤：
 
@@ -267,7 +267,19 @@ DELETE FROM ohr_help;
 
 其他根目录文件和文件夹会被忽略。
 
-## 15. version.txt
+## 15. all.sql 补全
+
+完整標準版交付包在 SQL 资材、数据连携和导入计划写入后，会扫描交付目录下所有已有 `all.sql` 的脚本文件夹。
+
+如果同级目录中存在未出现在 `all.sql` 中的 `.sql` 文件，最终打包器会按现有格式追加：
+
+```sql
+\i 文件名.sql
+```
+
+`all.sql` 自身不参与检查。没有 `all.sql` 的目录不会新建总控脚本。
+
+## 16. version.txt
 
 完整標準版交付包会写入：
 
@@ -285,7 +297,7 @@ DELETE FROM ohr_help;
 
 资材编号由页面输入，用于和前后端分支形成可人工核验的版本体系。
 
-## 16. OneHrStandalone.zip
+## 17. OneHrStandalone.zip
 
 二次打包器以宿主机固定模板 `OneHrStandalone.zip` 为基础重建 zip，只替换：
 
@@ -295,7 +307,7 @@ DELETE FROM ohr_help;
 
 `config.ini` 写入页面 PostgreSQL 与应用服务配置。固定中间件包，例如 JDK、nginx、redis、minio、nssm 等保持模板内容，不从构建终端重复传输。
 
-## 15. 最终输出
+## 18. 最终输出
 
 完整標準版输出目录：
 
@@ -311,11 +323,11 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 
 页面结果区只展示交付目录，避免用户误操作内部中间产物。
 
-## 16. 与 NHO版的主要差异
+## 19. 与 NHO版的主要差异
 
 - 標準版输出完整安装交付目录；NHO版只输出代码共通包 `共通.zip`。
 - 標準版使用 `ohr/*` 仓库；NHO版使用 `nhophr/*` 仓库。
 - 標準版前端包含 `conf_prod` 与 Help；NHO版不执行 `ohr-cicd`、Help、SVN 文档或客户配置。
 - 標準版需要客户环境、数据库、机构名称等页面参数；NHO版隐藏这些参数。
-- 標準版执行 SQL 资材、`4.account.sql`、Help SQL、数据连携和 `OneHrStandalone.zip` 重建；NHO版全部跳过。
+- 標準版执行 SQL 资材、`4.account.sql`、Help SQL、数据连携、`all.sql` 补全和 `OneHrStandalone.zip` 重建；NHO版全部跳过。
 - 標準版最终目录以构建终端构建 ID 为根；NHO版最终目录以主控任务 ID 为根。
