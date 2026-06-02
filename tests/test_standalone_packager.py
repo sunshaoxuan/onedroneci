@@ -222,20 +222,28 @@ def test_render_ohr_import_sql_records_menu_and_task_updates():
 
 def test_complete_all_sql_scripts_appends_missing_sibling_sql_files(tmp_path):
     scripts = tmp_path / "データ連携" / "Function"
+    new_scripts = tmp_path / "データ連携" / "View"
     scripts.mkdir(parents=True)
+    new_scripts.mkdir(parents=True)
     (scripts / "all.sql").write_text("\\i existing.sql\n\\i other_missing.sql", encoding="utf-8")
     (scripts / "existing.sql").write_text("select 1;", encoding="utf-8")
     (scripts / "missing.sql").write_text("select 2;", encoding="utf-8")
     (scripts / "space name.sql").write_text("select 3;", encoding="utf-8")
     (scripts / "other_missing.sql").write_text("select 4;", encoding="utf-8")
+    (new_scripts / "01_view.sql").write_text("select 5;", encoding="utf-8")
+    (new_scripts / "02_view.sql").write_text("select 6;", encoding="utf-8")
 
     completed = complete_all_sql_scripts(tmp_path)
 
-    assert completed == {"データ連携/Function/all.sql": ["missing.sql", "space name.sql"]}
+    assert completed == {
+        "データ連携/Function/all.sql": ["missing.sql", "space name.sql"],
+        "データ連携/View/all.sql": ["01_view.sql", "02_view.sql"],
+    }
     all_sql = (scripts / "all.sql").read_text(encoding="utf-8")
     assert all_sql.count("\\i existing.sql") == 1
     assert "\\i missing.sql" in all_sql
     assert '\\i "space name.sql"' in all_sql
+    assert (new_scripts / "all.sql").read_text(encoding="utf-8") == "\\i 01_view.sql\n\\i 02_view.sql\n"
 
 
 def test_update_config_ini_replaces_database_and_ohr_values():
@@ -326,6 +334,8 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert "\\i 01_table.sql" in (delivery_root / "データ連携" / "Table" / "all.sql").read_text(encoding="utf-8")
     assert "\\i 5.ohr.sql" in (product_dir / "2.ohr" / "all.sql").read_text(encoding="utf-8")
     assert "\\i ohr_help.sql" in (product_dir / "1.tenant" / "all.sql").read_text(encoding="utf-8")
+    assert "\\i 02_view.sql" in (delivery_root / "データ連携" / "View" / "all.sql").read_text(encoding="utf-8")
+    assert "\\i 02_custom.sql" in (delivery_root / "データ連携" / "Procedure" / "all.sql").read_text(encoding="utf-8")
     assert (delivery_root / "データ連携" / "View" / "02_view.sql").read_text(encoding="utf-8") == "view sync"
     assert (delivery_root / "データ連携" / "Procedure" / "02_custom.sql").read_text(encoding="utf-8") == "custom procedure"
     assert not (delivery_root / "データ連携" / "Ignored").exists()

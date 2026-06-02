@@ -252,18 +252,27 @@ def _referenced_sql_filenames(text: str) -> set[str]:
 
 def complete_all_sql_scripts(root: Path) -> dict[str, list[str]]:
     completed: dict[str, list[str]] = {}
-    for all_sql in sorted(root.rglob("all.sql"), key=lambda path: str(path).lower()):
+    script_dirs = sorted(
+        {
+            item.parent
+            for item in root.rglob("*.sql")
+            if item.is_file() and item.name.lower() != "all.sql"
+        },
+        key=lambda path: str(path).lower(),
+    )
+    for script_dir in script_dirs:
+        all_sql = script_dir / "all.sql"
         sql_files = sorted(
             (
                 item.name
-                for item in all_sql.parent.iterdir()
+                for item in script_dir.iterdir()
                 if item.is_file() and item.suffix.lower() == ".sql" and item.name.lower() != "all.sql"
             ),
             key=str.lower,
         )
         if not sql_files:
             continue
-        text = all_sql.read_text(encoding="utf-8-sig")
+        text = all_sql.read_text(encoding="utf-8-sig") if all_sql.exists() else ""
         known = _referenced_sql_filenames(text)
         missing = [name for name in sql_files if name.lower() not in known]
         if not missing:

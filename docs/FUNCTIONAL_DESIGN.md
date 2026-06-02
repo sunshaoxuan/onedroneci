@@ -162,7 +162,7 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 
 ### all.sql 补全
 
-二次打包器在最终 ZIP 重建前扫描交付目录中已有 `all.sql` 的脚本文件夹。若同级目录存在未出现在 `all.sql` 中的 `.sql` 文件，则追加 `\i 文件名.sql`。`all.sql` 自身不参与检查，没有 `all.sql` 的目录不新建总控脚本。
+二次打包器在最终 ZIP 重建前扫描交付目录中所有含 `.sql` 文件的脚本文件夹。若目录中没有 `all.sql`，则创建一个；若同级目录存在未出现在 `all.sql` 中的 `.sql` 文件，则追加 `\i 文件名.sql`。`all.sql` 自身不参与检查，没有普通 `.sql` 文件的目录不创建总控脚本。
 
 ### OneHrStandalone.zip 修改
 
