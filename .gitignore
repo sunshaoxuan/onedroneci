@@ -26,3 +26,17 @@ secrets/*.tmp
 _*.txt
 _*.log
 _subagent_vm_proxy_retest.py
+
+# 本地验证样本和历史打包资料，不纳入版本管理。
+scripts/ekispert_install.sh
+scripts/ekispert_uninstall.sh
+scripts/ekispert_update.sh
+tests/20260316/
+tests/20260325/
+tests/conf_prod_001/
+tests/conf_prod_002/
+tests/conf_prod_003/
+tests/conf_prod_compare/
+tests/phr-packing/
+tests/zip_compare/
+tests/製品/
