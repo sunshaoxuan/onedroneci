@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import io
 import os
 import re
 import signal
@@ -36,6 +37,17 @@ HELP_SQL_RESET_PREFIX = "DELETE FROM ohr_help;\n"
 CONFIG_IN_STANDALONE_ZIP = "OneHrStandalone/bin/kernel/config.ini"
 PACKAGE_IN_STANDALONE_ZIP = "OneHrStandalone/software/package.zip"
 WEB_IN_STANDALONE_ZIP = "OneHrStandalone/software/web.zip"
+MIDDLEWARE_IN_STANDALONE_ZIP = {
+    "nginx": "OneHrStandalone/software/nginx.zip",
+    "redis": "OneHrStandalone/software/redis.zip",
+    "minio": "OneHrStandalone/software/minio.zip",
+}
+DEFAULT_MIDDLEWARE_CACHE_DIR = DEFAULT_TEMPLATE_ROOT / "middleware-cache"
+NGINX_DOWNLOAD_PAGE = "https://nginx.org/en/download.html"
+NGINX_DOWNLOAD_BASE = "https://nginx.org/download"
+REDIS_WINDOWS_RELEASES_API = "https://api.github.com/repos/redis-windows/redis-windows/releases"
+MINIO_WINDOWS_ARCHIVE_URL = "https://dl.min.io/server/minio/release/windows-amd64/archive/"
+MIDDLEWARE_BUNDLED_VERSION = "bundled"
 
 
 @dataclass(frozen=True)
@@ -94,12 +106,29 @@ class OhrImportConfig:
     disabled_scheduled_tasks: tuple[OhrScheduledTaskDisable, ...] = ()
 
 
+@dataclass(frozen=True)
+class MiddlewareRelease:
+    product: str
+    version: str
+    url: str
+
+
+@dataclass(frozen=True)
+class MiddlewareSelection:
+    product: str
+    version: str = MIDDLEWARE_BUNDLED_VERSION
+
+
 def configured_output_dir() -> Path:
     return Path(os.environ.get("STANDALONE_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR)))
 
 
 def configured_template_zip() -> Path:
     return Path(os.environ.get("STANDALONE_TEMPLATE_ZIP", str(DEFAULT_TEMPLATE_ZIP)))
+
+
+def configured_middleware_cache_dir() -> Path:
+    return Path(os.environ.get("STANDALONE_MIDDLEWARE_CACHE_DIR", str(DEFAULT_MIDDLEWARE_CACHE_DIR)))
 
 
 def configured_sql_template_dir() -> Path:
@@ -161,6 +190,251 @@ def init_template_cache(source_product_dir: Path, template_zip: Path | None = No
     if sql_template_dir.exists():
         shutil.rmtree(sql_template_dir)
     shutil.copytree(source_product_dir, sql_template_dir, ignore=shutil.ignore_patterns("OneHrStandalone.zip", "version.txt"))
+
+
+def _read_template_nested_zip(template_zip: Path, product: str) -> bytes | None:
+    member = MIDDLEWARE_IN_STANDALONE_ZIP.get(product)
+    if not member or not template_zip.is_file():
+        return None
+    try:
+        with zipfile.ZipFile(template_zip) as zf:
+            return zf.read(member)
+    except (KeyError, zipfile.BadZipFile):
+        return None
+
+
+def detect_template_middleware_versions(template_zip: Path | None = None) -> dict[str, str]:
+    template_zip = template_zip or configured_template_zip()
+    versions = {name: MIDDLEWARE_BUNDLED_VERSION for name in MIDDLEWARE_IN_STANDALONE_ZIP}
+    nginx_zip = _read_template_nested_zip(template_zip, "nginx")
+    if nginx_zip:
+        try:
+            with zipfile.ZipFile(io.BytesIO(nginx_zip)) as nested:  # type: ignore[name-defined]
+                text = nested.read("nginx/docs/CHANGES").decode("utf-8", "replace")
+                match = re.search(r"Changes with nginx\s+([0-9.]+)", text)
+                if match:
+                    versions["nginx"] = match.group(1)
+        except Exception:
+            pass
+    redis_zip = _read_template_nested_zip(template_zip, "redis")
+    if redis_zip:
+        try:
+            with zipfile.ZipFile(io.BytesIO(redis_zip)) as nested:  # type: ignore[name-defined]
+                text = nested.read("redis/00-RELEASENOTES").decode("utf-8", "replace")
+                match = re.search(r"Redis\s+([0-9.]+)\s+Released", text)
+                if match:
+                    versions["redis"] = match.group(1)
+        except Exception:
+            pass
+    return versions
+
+
+def _urlopen_text(url: str, timeout: int = 20) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "OHR-Standalone-Builder"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8", "replace")
+
+
+def _urlopen_json(url: str, timeout: int = 20) -> Any:
+    return json.loads(_urlopen_text(url, timeout=timeout))
+
+
+def _dedupe_releases(releases: list[MiddlewareRelease]) -> list[MiddlewareRelease]:
+    result: list[MiddlewareRelease] = []
+    seen: set[tuple[str, str]] = set()
+    for release in releases:
+        key = (release.product, release.version)
+        if key in seen:
+            continue
+        result.append(release)
+        seen.add(key)
+    return result
+
+
+def fetch_nginx_releases(timeout: int = 20, limit: int = 30) -> list[MiddlewareRelease]:
+    html = _urlopen_text(os.environ.get("MIDDLEWARE_NGINX_DOWNLOAD_PAGE", NGINX_DOWNLOAD_PAGE), timeout=timeout)
+    releases: list[MiddlewareRelease] = []
+    for version in re.findall(r"nginx-([0-9]+\.[0-9]+\.[0-9]+)\.zip", html):
+        releases.append(MiddlewareRelease("nginx", version, f"{NGINX_DOWNLOAD_BASE}/nginx-{version}.zip"))
+    return _dedupe_releases(releases)[:limit]
+
+
+def _redis_asset_score(name: str) -> tuple[int, str]:
+    lower = name.lower()
+    score = 0
+    if "windows-x64" in lower:
+        score += 10
+    if "with-service" in lower:
+        score += 6
+    if "msys2" in lower:
+        score += 4
+    if "cygwin" in lower:
+        score += 2
+    return (-score, lower)
+
+
+def fetch_redis_releases(timeout: int = 20, limit: int = 30) -> list[MiddlewareRelease]:
+    url = os.environ.get("MIDDLEWARE_REDIS_RELEASES_API", REDIS_WINDOWS_RELEASES_API)
+    data = _urlopen_json(url, timeout=timeout)
+    releases: list[MiddlewareRelease] = []
+    for item in data if isinstance(data, list) else []:
+        version = str(item.get("tag_name") or item.get("name") or "").lstrip("v")
+        assets = item.get("assets") or []
+        candidates = [
+            asset
+            for asset in assets
+            if str(asset.get("name") or "").lower().endswith(".zip")
+            and "windows-x64" in str(asset.get("name") or "").lower()
+        ]
+        if not version or not candidates:
+            continue
+        asset = sorted(candidates, key=lambda candidate: _redis_asset_score(str(candidate.get("name") or "")))[0]
+        download_url = str(asset.get("browser_download_url") or "")
+        if download_url:
+            releases.append(MiddlewareRelease("redis", version, download_url))
+    return _dedupe_releases(releases)[:limit]
+
+
+def fetch_minio_releases(timeout: int = 20, limit: int = 30) -> list[MiddlewareRelease]:
+    base = os.environ.get("MIDDLEWARE_MINIO_ARCHIVE_URL", MINIO_WINDOWS_ARCHIVE_URL).rstrip("/") + "/"
+    html = _urlopen_text(base, timeout=timeout)
+    releases: list[MiddlewareRelease] = []
+    for version in re.findall(r"minio\.(RELEASE\.[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z)(?!\.)", html):
+        releases.append(MiddlewareRelease("minio", version, urllib.parse.urljoin(base, f"minio.{version}")))
+    return _dedupe_releases(releases)[:limit]
+
+
+def fetch_middleware_catalog(template_zip: Path | None = None, timeout: int = 20, limit: int = 30) -> dict[str, dict[str, Any]]:
+    current = detect_template_middleware_versions(template_zip or configured_template_zip())
+    fetchers = {
+        "nginx": fetch_nginx_releases,
+        "redis": fetch_redis_releases,
+        "minio": fetch_minio_releases,
+    }
+    catalog: dict[str, dict[str, Any]] = {}
+    for product, fetcher in fetchers.items():
+        releases: list[dict[str, str]] = []
+        error = ""
+        try:
+            releases = [release.__dict__ for release in fetcher(timeout=timeout, limit=limit)]
+        except Exception as exc:
+            error = str(exc)
+        catalog[product] = {
+            "product": product,
+            "current_version": current.get(product, MIDDLEWARE_BUNDLED_VERSION),
+            "bundled_value": MIDDLEWARE_BUNDLED_VERSION,
+            "releases": releases,
+            "error": error,
+        }
+    return catalog
+
+
+def _zip_with_normalized_root(source_zip: Path, target_zip: Path, root_name: str) -> None:
+    with zipfile.ZipFile(source_zip) as source, zipfile.ZipFile(target_zip, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as target:
+        names = [name for name in source.namelist() if name and not name.endswith("/")]
+        first_parts = {name.split("/", 1)[0] for name in names if "/" in name}
+        strip_root = len(first_parts) == 1
+        root_prefix = next(iter(first_parts)) + "/" if strip_root else ""
+        written_dirs: set[str] = set()
+        for item in source.infolist():
+            name = item.filename.replace("\\", "/").lstrip("/")
+            if not name:
+                continue
+            if strip_root and name.startswith(root_prefix):
+                name = name[len(root_prefix) :]
+            if not name:
+                continue
+            target_name = f"{root_name}/{name}".rstrip("/")
+            if item.is_dir():
+                directory = target_name + "/"
+                if directory not in written_dirs:
+                    target.writestr(directory, b"")
+                    written_dirs.add(directory)
+                continue
+            directory = target_name.rsplit("/", 1)[0] + "/"
+            if directory not in written_dirs:
+                target.writestr(directory, b"")
+                written_dirs.add(directory)
+            target.writestr(target_name, source.read(item.filename))
+
+
+def _minio_start_bat_from_template(template_zip: Path) -> bytes:
+    minio_zip = _read_template_nested_zip(template_zip, "minio")
+    if minio_zip:
+        try:
+            with zipfile.ZipFile(io.BytesIO(minio_zip)) as nested:
+                return nested.read("minio/start.bat")
+        except Exception:
+            pass
+    return b"minio.exe server data\r\n"
+
+
+def _download_file(url: str, destination: Path, timeout: int = 600) -> None:
+    request = urllib.request.Request(url, headers={"User-Agent": "OHR-Standalone-Builder"})
+    with urllib.request.urlopen(request, timeout=timeout) as response, destination.open("wb") as output:
+        shutil.copyfileobj(response, output)
+
+
+def _find_release(product: str, version: str) -> MiddlewareRelease:
+    fetchers = {
+        "nginx": fetch_nginx_releases,
+        "redis": fetch_redis_releases,
+        "minio": fetch_minio_releases,
+    }
+    fetcher = fetchers.get(product)
+    if not fetcher:
+        raise ValueError(f"unsupported middleware: {product}")
+    for release in fetcher(timeout=30, limit=200):
+        if release.version == version:
+            return release
+    raise ValueError(f"middleware release not found: {product} {version}")
+
+
+def _build_cached_middleware_zip(product: str, version: str, url: str, cache_zip: Path, template_zip: Path) -> None:
+    cache_zip.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        raw = tmp / "download"
+        normalized = tmp / f"{product}.zip"
+        _download_file(url, raw)
+        if product in {"nginx", "redis"}:
+            _zip_with_normalized_root(raw, normalized, product)
+        elif product == "minio":
+            with zipfile.ZipFile(normalized, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+                zf.writestr("minio/", b"")
+                zf.write(raw, "minio/minio.exe")
+                zf.writestr("minio/start.bat", _minio_start_bat_from_template(template_zip))
+        else:
+            raise ValueError(f"unsupported middleware: {product}")
+        temp_cache = cache_zip.with_suffix(cache_zip.suffix + ".tmp")
+        shutil.copy2(normalized, temp_cache)
+        temp_cache.replace(cache_zip)
+
+
+def prepare_middleware_overrides(
+    selections: dict[str, str] | None,
+    *,
+    template_zip: Path,
+    cache_dir: Path | None = None,
+    logger: Any | None = None,
+) -> dict[str, Path]:
+    overrides: dict[str, Path] = {}
+    if not selections:
+        return overrides
+    cache_dir = cache_dir or configured_middleware_cache_dir()
+    for product, version in selections.items():
+        product = product.strip().lower()
+        version = str(version or "").strip()
+        if product not in MIDDLEWARE_IN_STANDALONE_ZIP or not version or version == MIDDLEWARE_BUNDLED_VERSION:
+            continue
+        if logger:
+            logger("middleware_assets")
+        cache_zip = cache_dir / product / version / f"{product}.zip"
+        if not cache_zip.is_file():
+            release = _find_release(product, version)
+            _build_cached_middleware_zip(product, version, release.url, cache_zip, template_zip)
+        overrides[MIDDLEWARE_IN_STANDALONE_ZIP[product]] = cache_zip
+    return overrides
 
 
 def render_version_txt(version: BuildVersion) -> str:
@@ -738,6 +1012,8 @@ def build_product_package(
     data_sync_subdir: str = DEFAULT_DATA_SYNC_SUBDIR,
     data_sync_custom_subdir: str = DEFAULT_DATA_SYNC_CUSTOM_SUBDIR,
     include_help_sql: bool = True,
+    middleware_versions: dict[str, str] | None = None,
+    middleware_cache_dir: Path | None = None,
     logger: Any | None = None,
 ) -> dict[str, Any]:
     if not template_zip.is_file():
@@ -809,7 +1085,13 @@ def build_product_package(
         final_zip = product_dir / "OneHrStandalone.zip"
         if logger:
             logger("standalone_zip_rebuild")
-        _rebuild_standalone_zip(template_zip, final_zip, package_zip, web_zip, config)
+        middleware_overrides = prepare_middleware_overrides(
+            middleware_versions,
+            template_zip=template_zip,
+            cache_dir=middleware_cache_dir,
+            logger=logger,
+        )
+        _rebuild_standalone_zip(template_zip, final_zip, package_zip, web_zip, config, middleware_overrides=middleware_overrides)
         return {
             "product_dir": str(delivery_root),
             "standalone_zip": str(final_zip),
@@ -915,7 +1197,9 @@ def _rebuild_standalone_zip(
     package_zip: Path,
     web_zip: Path,
     config: StandaloneConfig,
+    middleware_overrides: dict[str, Path] | None = None,
 ) -> None:
+    middleware_overrides = middleware_overrides or {}
     final_zip.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(delete=False, dir=final_zip.parent, suffix=".tmp") as tmp:
         tmp_path = Path(tmp.name)
@@ -924,7 +1208,7 @@ def _rebuild_standalone_zip(
             tmp_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
         ) as zout:
             for item in zin.infolist():
-                if item.filename in {PACKAGE_IN_STANDALONE_ZIP, WEB_IN_STANDALONE_ZIP}:
+                if item.filename in {PACKAGE_IN_STANDALONE_ZIP, WEB_IN_STANDALONE_ZIP} or item.filename in middleware_overrides:
                     continue
                 if item.filename == CONFIG_IN_STANDALONE_ZIP:
                     original = zin.read(item).decode("utf-8-sig", "replace")
@@ -933,6 +1217,10 @@ def _rebuild_standalone_zip(
                 zout.writestr(item, zin.read(item))
             zout.write(package_zip, PACKAGE_IN_STANDALONE_ZIP)
             zout.write(web_zip, WEB_IN_STANDALONE_ZIP)
+            for member, source in sorted(middleware_overrides.items()):
+                if not source.is_file():
+                    raise FileNotFoundError(f"missing middleware cache: {source}")
+                zout.write(source, member)
         tmp_path.replace(final_zip)
     finally:
         tmp_path.unlink(missing_ok=True)

@@ -172,7 +172,7 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 - `OneHrStandalone/software/web.zip`
 - `OneHrStandalone/bin/kernel/config.ini`
 
-固定中间件包保持模板内容。
+JDK、nssm 等固定中间件包保持模板内容。nginx、Redis、MinIO 默认使用模板内置包；主控台选择其他版本时，构造阶段从官方发布源下载到宿主机缓存，并替换 `OneHrStandalone/software/` 下对应 zip。
 
 ## 缓存设计
 
@@ -182,7 +182,7 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 - SVN：保留工作副本，已有 `.svn` 时 cleanup/update。
 - help：以 Git revision、SVN revision、lock hash 作为发布包缓存 key。
 - 数据连携：使用 shallow clone/fetch 和超时。
-- 固定模板和中间件：保留在宿主机 `.standalone-template`，不提交 Git。
+- 固定模板和中间件：保留在宿主机 `.standalone-template`，不提交 Git。nginx、Redis、MinIO 的非内置版本缓存到 `.standalone-template/middleware-cache`。
 
 ## 安全设计
 

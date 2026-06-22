@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.51"
+    assert console.APP_VERSION == "0.3.52"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -130,6 +130,16 @@ def test_page_assets_do_not_expose_build_terminal_address():
     assert "192.168.250.50" not in console.APP_JS
     assert "250.50" not in console.INDEX_HTML
     assert "250.50" not in console.APP_JS
+
+
+def test_standard_page_supports_middleware_version_selection():
+    for name in ("middleware_nginx_version", "middleware_redis_version", "middleware_minio_version"):
+        assert f'name="{name}"' in console.INDEX_HTML
+    assert "/api/middleware-versions" in console.APP_JS
+    assert "function loadMiddlewareVersions()" in console.APP_JS
+    assert "middlewareBundled" in console.APP_JS
+    assert "middleware_assets" in console.APP_JS
+    assert "fetch_middleware_catalog" in Path("host_standalone_console.py").read_text(encoding="utf-8")
 
 
 def test_i18n_contains_terminal_controls_and_statuses():

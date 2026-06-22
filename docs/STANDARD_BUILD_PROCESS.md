@@ -13,6 +13,7 @@
 - 生成 Help 包及相关资源：默认勾选。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
 - 生成客户环境配置 `conf_prod`：默认勾选。取消勾选时前端 `web.zip` 不包含 `ohr-cicd/conf_prod`，页面隐藏 AP、DB、WEB、邮件、UPDS、駅すぱあと等环境信息，机构名称固定为 `共通`。
 - Help SVN revision：可空。填写时必须为 SVN revision 数字，并由构建终端校验；为空时使用最新 revision。该字段只在生成 Help 时使用。
+- nginx / Redis / MinIO 版本：默认使用宿主机模板内置版本；选择其他版本时，构造时下载到宿主机缓存并替换最终 `OneHrStandalone.zip` 中的同名中间件包。
 - 客户访问地址、Web 端口、HTTPS / 443 选项
 - PostgreSQL Host / Port / User / Password
 - 应用服务主机名、OHR 服务端口
@@ -299,13 +300,24 @@ DELETE FROM ohr_help;
 
 ## 17. OneHrStandalone.zip
 
-二次打包器以宿主机固定模板 `OneHrStandalone.zip` 为基础重建 zip，只替换：
+二次打包器以宿主机固定模板 `OneHrStandalone.zip` 为基础重建 zip，固定替换：
 
 - `OneHrStandalone/software/package.zip`
 - `OneHrStandalone/software/web.zip`
 - `OneHrStandalone/bin/kernel/config.ini`
 
-`config.ini` 写入页面 PostgreSQL 与应用服务配置。固定中间件包，例如 JDK、nginx、redis、minio、nssm 等保持模板内容，不从构建终端重复传输。
+`config.ini` 写入页面 PostgreSQL 与应用服务配置。JDK、nssm 等固定中间件保持模板内容，不从构建终端重复传输。
+
+nginx、Redis、MinIO 可在主控台页面选择版本：
+
+- `bundled`：使用模板内置 zip。
+- 其他版本：主控台从发布源下载并缓存到 `STANDALONE_MIDDLEWARE_CACHE_DIR`，然后替换 `OneHrStandalone/software/nginx.zip`、`redis.zip`、`minio.zip`。
+
+下载和标准化规则：
+
+- nginx 使用 nginx 官方下载页的 Windows zip，打包器会整理为 `nginx/` 根目录。
+- Redis 使用 Redis Windows GitHub Releases 的 Windows x64 zip，打包器会整理为 `redis/` 根目录。
+- MinIO 使用 MinIO Windows archive 的 `minio.RELEASE.*` 二进制包，打包器会生成 `minio/minio.exe`，并复用模板中的 `minio/start.bat`。
 
 ## 18. 最终输出
 

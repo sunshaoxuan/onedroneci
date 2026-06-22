@@ -40,12 +40,13 @@ from standalone_packager import (
     default_organisation_dstart,
     download_remote_artifact,
     download_remote_file,
+    fetch_middleware_catalog,
     remote_json,
     repo_subdir_from_input,
 )
 
 
-APP_VERSION = "0.3.51"
+APP_VERSION = "0.3.52"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -78,6 +79,7 @@ PACKAGING_STEP_MAP = {
     "data_sync_copy": "data_sync_assets",
     "account_sql_patch": "account_sql",
     "help_sql_replace": "help_sql",
+    "middleware_assets": "standalone_zip",
     "standalone_zip_rebuild": "standalone_zip",
 }
 
@@ -968,7 +970,12 @@ def run_job(job_id: str) -> None:
             data_sync_dir=configured_data_sync_dir(),
             data_sync_subdir=configured_data_sync_subdir(),
             data_sync_custom_subdir=req.get("data_sync_custom_subdir") or configured_data_sync_custom_subdir(),
-                include_help_sql=truthy(req.get("build_help"), True),
+            include_help_sql=truthy(req.get("build_help"), True),
+            middleware_versions={
+                "nginx": req.get("middleware_nginx_version") or "bundled",
+                "redis": req.get("middleware_redis_version") or "bundled",
+                "minio": req.get("middleware_minio_version") or "bundled",
+            },
             logger=package_log,
         )
         outputs.update(partial_outputs)
@@ -1087,6 +1094,13 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only env-config"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
             <label class="standard-only env-config"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
             <label class="standard-only env-config"><span data-i18n="employeeNumberDigits">職員番号桁数</span><input name="employee_number_digits" type="number" min="1" max="20" placeholder="8"></label>
+          </fieldset>
+          <fieldset class="form-section standard-only">
+            <legend data-i18n="middlewareVersions">ミドルウェアバージョン</legend>
+            <label><span>Nginx</span><select name="middleware_nginx_version" id="middleware-nginx-version" data-middleware-product="nginx"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
+            <label><span>Redis</span><select name="middleware_redis_version" id="middleware-redis-version" data-middleware-product="redis"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
+            <label><span>MinIO</span><select name="middleware_minio_version" id="middleware-minio-version" data-middleware-product="minio"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
+            <p class="section-note section-wide" id="middleware-version-note" data-i18n="middlewareVersionNote">同梱版以外を選択した場合、構造時に公式配布元から取得して宿主機キャッシュに保存し、OneHrStandalone.zip 内の同名パッケージを差し替えます。</p>
           </fieldset>
           <fieldset class="form-section env-config">
             <legend data-i18n="apHostInfo">AP 主機情報</legend>
@@ -1261,6 +1275,10 @@ const I18N = {
     helpSvnRevisionInvalid: '存在しない SVN revision です',
     buildHelp: 'Help パッケージと関連資材を生成',
     buildConfProd: '顧客環境設定 conf_prod を生成',
+    middlewareVersions: 'ミドルウェアバージョン',
+    middlewareBundled: '同梱版',
+    middlewareVersionNote: '同梱版以外を選択した場合、構造時に公式配布元から取得して宿主機キャッシュに保存し、OneHrStandalone.zip 内の同名パッケージを差し替えます。',
+    middlewareLoadFailed: '候補を取得できません。同梱版を使用します。',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
     enableHttps: 'HTTPS / 443 設定を生成',
@@ -1414,6 +1432,10 @@ const I18N = {
     helpSvnRevisionInvalid: '不存在的 SVN revision',
     buildHelp: '生成 Help 包及相关资源',
     buildConfProd: '生成客户环境配置 conf_prod',
+    middlewareVersions: '中间件版本',
+    middlewareBundled: '内置版本',
+    middlewareVersionNote: '选择内置版本以外的版本时，构造时会从官方发布源下载并缓存到宿主机，再替换 OneHrStandalone.zip 内的同名包。',
+    middlewareLoadFailed: '候选取得失败，将使用内置版本。',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
     enableHttps: '生成 HTTPS / 443 配置',
@@ -1567,6 +1589,10 @@ const I18N = {
     helpSvnRevisionInvalid: 'SVN revision does not exist',
     buildHelp: 'Build Help package and resources',
     buildConfProd: 'Generate customer environment conf_prod',
+    middlewareVersions: 'Middleware versions',
+    middlewareBundled: 'Bundled version',
+    middlewareVersionNote: 'When a non-bundled version is selected, the builder downloads it from the official release source during packaging, caches it on the host, and replaces the package with the same name in OneHrStandalone.zip.',
+    middlewareLoadFailed: 'Could not load candidates; bundled versions will be used.',
     customerHost: 'Customer access address',
     webPort: 'Web port',
     enableHttps: 'Generate HTTPS / 443 configuration',
@@ -2038,6 +2064,44 @@ async function loadMaterialNumbers() {
     fillMaterialSelect([], true);
   }
 }
+function fillMiddlewareSelect(product, data) {
+  const select = document.querySelector(`select[data-middleware-product="${product}"]`);
+  if (!select) return;
+  const currentValue = select.value || 'bundled';
+  const currentVersion = data && data.current_version ? data.current_version : 'bundled';
+  select.innerHTML = '';
+  const bundled = document.createElement('option');
+  bundled.value = 'bundled';
+  bundled.textContent = `${t('middlewareBundled')} (${currentVersion})`;
+  select.appendChild(bundled);
+  ((data && data.releases) || []).forEach(release => {
+    if (!release || !release.version) return;
+    const option = document.createElement('option');
+    option.value = release.version;
+    option.textContent = release.version;
+    select.appendChild(option);
+  });
+  if (Array.from(select.options).some(option => option.value === currentValue)) {
+    select.value = currentValue;
+  } else {
+    select.value = 'bundled';
+  }
+}
+async function loadMiddlewareVersions() {
+  try {
+    const res = await fetch('/api/middleware-versions');
+    const data = await res.json();
+    ['nginx', 'redis', 'minio'].forEach(product => fillMiddlewareSelect(product, data.middleware && data.middleware[product]));
+    const note = document.getElementById('middleware-version-note');
+    if (note && data.middleware && Object.values(data.middleware).some(item => item && item.error)) {
+      note.textContent = t('middlewareLoadFailed');
+    }
+  } catch (error) {
+    console.warn('failed to load middleware versions', error);
+    const note = document.getElementById('middleware-version-note');
+    if (note) note.textContent = t('middlewareLoadFailed');
+  }
+}
 async function loadMaterialReleaseBranches(materialNumber) {
   const variant = getProductVariant();
   const value = String(materialNumber || '').trim();
@@ -2075,6 +2139,7 @@ function translateLogText(text) {
       'data_sync_custom_copy': '補充データ連携資材を配置しています',
       'account_sql_patch': '4.account.sql を反映しています',
       'help_sql_replace': 'Help SQL を反映しています',
+      'middleware_assets': 'ミドルウェアパッケージを準備しています',
       'standalone_zip_rebuild': 'OneHrStandalone.zip を生成しています',
       'standalone_package_done': '製品交付パッケージの生成が完了しました',
       'cancelled': '停止しました',
@@ -2107,6 +2172,7 @@ function translateLogText(text) {
       'data_sync_custom_copy': 'Copying additional data synchronization assets',
       'account_sql_patch': 'Applying 4.account.sql changes',
       'help_sql_replace': 'Applying Help SQL',
+      'middleware_assets': 'Preparing middleware packages',
       'standalone_zip_rebuild': 'Generating OneHrStandalone.zip',
       'standalone_package_done': 'Delivery package generated',
       'cancelled': 'Stopped',
@@ -2135,6 +2201,7 @@ function translateLogText(text) {
       'data_sync_custom_copy': '正在配置补充数据连携资材',
       'account_sql_patch': '正在修改 4.account.sql',
       'help_sql_replace': '正在反映 Help SQL',
+      'middleware_assets': '正在准备中间件安装包',
       'standalone_zip_rebuild': '正在生成 OneHrStandalone.zip',
       'standalone_package_done': '产品交付包生成完成',
       '构建开始': '构建开始',
@@ -2426,6 +2493,7 @@ document.getElementById('language').addEventListener('change', event => {
   localStorage.setItem('hostConsoleLang', lang);
   lastRenderedResultSignature = '';
   applyI18n();
+  loadMiddlewareVersions();
   refresh();
 });
 document.getElementById('refreshTerminal').addEventListener('click', refreshTerminal);
@@ -2509,6 +2577,7 @@ document.querySelectorAll('input[name="product_variant"]').forEach(el => {
     applyVariantVisibility();
     loadBranchLists();
     loadMaterialNumbers();
+    loadMiddlewareVersions();
     renderConfigHistory();
     setFormLocked(false);
     refresh();
@@ -2913,6 +2982,7 @@ refreshTerminal();
 syncTerminalResourceTimer(false);
 loadBranchLists();
 loadMaterialNumbers();
+loadMiddlewareVersions();
 refreshConfigHistory();
 refresh();
 timer = setInterval(refresh, 5000);
@@ -3616,6 +3686,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"configs": list_config_histories()})
         if parsed.path == "/api/jobs":
             return self.send_json({"jobs": [public_job(job) for job in list_jobs()]})
+        if parsed.path == "/api/middleware-versions":
+            try:
+                return self.send_json({"middleware": fetch_middleware_catalog(configured_template_zip(), timeout=15, limit=40)})
+            except Exception as exc:
+                return self.send_json({"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
         if parsed.path == "/api/data-sync-custom-source/validate":
             query = urllib.parse.parse_qs(parsed.query)
             value = str((query.get("value") or [""])[0]).strip()

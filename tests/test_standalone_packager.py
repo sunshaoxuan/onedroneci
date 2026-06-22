@@ -5,6 +5,7 @@ from pathlib import Path
 
 from standalone_packager import (
     CONFIG_IN_STANDALONE_ZIP,
+    MIDDLEWARE_IN_STANDALONE_ZIP,
     PACKAGE_IN_STANDALONE_ZIP,
     WEB_IN_STANDALONE_ZIP,
     BuildVersion,
@@ -23,6 +24,7 @@ from standalone_packager import (
     render_tenant_import_sql,
     render_version_txt,
     update_config_ini,
+    _rebuild_standalone_zip,
 )
 
 
@@ -39,12 +41,31 @@ OHR_SERVICE_PORT=3198
 """
 
 
+def make_nested_zip(path: Path, root: str, files: dict[str, str | bytes]) -> None:
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr(f"{root}/", b"")
+        for name, data in files.items():
+            payload = data.encode("utf-8") if isinstance(data, str) else data
+            z.writestr(f"{root}/{name}", payload)
+
+
 def make_template(path: Path) -> None:
+    temp_dir = path.parent / f"{path.stem}-middleware"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    nginx = temp_dir / "nginx.zip"
+    redis = temp_dir / "redis.zip"
+    minio = temp_dir / "minio.zip"
+    make_nested_zip(nginx, "nginx", {"docs/CHANGES": "Changes with nginx 1.26.2\n"})
+    make_nested_zip(redis, "redis", {"00-RELEASENOTES": "Redis 5.0.9     Released Thu Apr 17 12:41:00 CET 2020\n"})
+    make_nested_zip(minio, "minio", {"minio.exe": b"old-minio", "start.bat": "minio.exe server data\r\n"})
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr(CONFIG_IN_STANDALONE_ZIP, CONFIG)
         z.writestr(PACKAGE_IN_STANDALONE_ZIP, b"old-package")
         z.writestr(WEB_IN_STANDALONE_ZIP, b"old-web")
         z.writestr("OneHrStandalone/software/jdk.zip", b"fixed-jdk")
+        z.write(nginx, MIDDLEWARE_IN_STANDALONE_ZIP["nginx"])
+        z.write(redis, MIDDLEWARE_IN_STANDALONE_ZIP["redis"])
+        z.write(minio, MIDDLEWARE_IN_STANDALONE_ZIP["minio"])
         z.writestr("OneHrStandalone/bin/kernel/start.ps1", "start")
 
 
@@ -358,6 +379,79 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert '{"ja-JP": "テスト大学"}' in account_sql
     assert '{"ja-JP": "\\\\テスト大学"}' in account_sql
     assert "10.0.0.8" not in (product_dir / "1.tenant" / "url_info.sql").read_text(encoding="utf-8")
+
+
+def test_rebuild_standalone_zip_can_replace_selected_middleware(tmp_path):
+    template = tmp_path / "OneHrStandalone.zip"
+    package_zip = tmp_path / "package.zip"
+    web_zip = tmp_path / "web.zip"
+    redis_override = tmp_path / "redis-new.zip"
+    final_zip = tmp_path / "final.zip"
+    make_template(template)
+    package_zip.write_bytes(b"new-package")
+    web_zip.write_bytes(b"new-web")
+    make_nested_zip(redis_override, "redis", {"redis-server.exe": b"new-redis"})
+
+    _rebuild_standalone_zip(
+        template,
+        final_zip,
+        package_zip,
+        web_zip,
+        StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
+        middleware_overrides={MIDDLEWARE_IN_STANDALONE_ZIP["redis"]: redis_override},
+    )
+
+    with zipfile.ZipFile(final_zip) as outer:
+        assert outer.read(PACKAGE_IN_STANDALONE_ZIP) == b"new-package"
+        assert outer.read(WEB_IN_STANDALONE_ZIP) == b"new-web"
+        assert outer.read("OneHrStandalone/software/jdk.zip") == b"fixed-jdk"
+        redis_data = outer.read(MIDDLEWARE_IN_STANDALONE_ZIP["redis"])
+        nginx_data = outer.read(MIDDLEWARE_IN_STANDALONE_ZIP["nginx"])
+    with zipfile.ZipFile(redis_override) as expected:
+        assert redis_data == redis_override.read_bytes()
+        assert "redis/redis-server.exe" in expected.namelist()
+    with zipfile.ZipFile(template) as original:
+        assert nginx_data == original.read(MIDDLEWARE_IN_STANDALONE_ZIP["nginx"])
+
+
+def test_build_product_package_prepares_middleware_versions(monkeypatch, tmp_path):
+    import standalone_packager as packager
+
+    template = tmp_path / "OneHrStandalone.zip"
+    sql_dir = tmp_path / "sql"
+    package_zip = tmp_path / "package.zip"
+    web_zip = tmp_path / "web.zip"
+    output = tmp_path / "out"
+    redis_override = tmp_path / "redis-cache.zip"
+    make_template(template)
+    make_sql_templates(sql_dir)
+    package_zip.write_bytes(b"new-package")
+    with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", "new help sql")
+    make_nested_zip(redis_override, "redis", {"redis-server.exe": b"cached"})
+    calls: list[dict[str, str]] = []
+
+    def fake_prepare(selections, **kwargs):
+        calls.append(dict(selections))
+        return {MIDDLEWARE_IN_STANDALONE_ZIP["redis"]: redis_override}
+
+    monkeypatch.setattr(packager, "prepare_middleware_overrides", fake_prepare)
+
+    result = packager.build_product_package(
+        template_zip=template,
+        sql_template_dir=sql_dir,
+        output_root=output,
+        package_zip=package_zip,
+        web_zip=web_zip,
+        version=BuildVersion("build-mw", "M-001", "release_back", "release_front"),
+        config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
+        sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
+        middleware_versions={"nginx": "bundled", "redis": "8.2.7", "minio": "bundled"},
+    )
+
+    assert calls == [{"nginx": "bundled", "redis": "8.2.7", "minio": "bundled"}]
+    with zipfile.ZipFile(Path(result["standalone_zip"])) as outer:
+        assert outer.read(MIDDLEWARE_IN_STANDALONE_ZIP["redis"]) == redis_override.read_bytes()
 
 
 def test_build_product_package_fails_when_help_sql_is_missing(tmp_path):

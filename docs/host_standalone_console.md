@@ -17,6 +17,7 @@
 - `HV_HYPERV_VM_NAME`：允许页面启停的唯一虚拟机名称
 - `STANDALONE_OUTPUT_DIR`：产品交付输出目录
 - `STANDALONE_TEMPLATE_ZIP`：固定壳包模板
+- `STANDALONE_MIDDLEWARE_CACHE_DIR`：nginx、Redis、MinIO 非内置版本下载缓存目录，默认 `.standalone-template/middleware-cache`
 - `STANDALONE_SQL_TEMPLATE_DIR`：固定 SQL 模板目录
 - `STANDALONE_SQL_SVN_URL`：最终 SQL 资材 SVN 地址
 - `DATA_SYNC_GIT_URL`：数据连携 Git 仓库
@@ -117,6 +118,13 @@ NHO版不执行標準版 SQL、数据连携、help 或 `OneHrStandalone.zip` 处
 - 数据连携分支：`DATA_SYNC_BRANCH`，默认 `master`
 - 数据连携子目录：`DATA_SYNC_SUBDIR`，默认 `updsv7phr/PHR`
 - `package.zip` / `web.zip`：来自构建终端
+- nginx / Redis / MinIO：默认使用 `OneHrStandalone.zip` 模板中的内置包；页面选择其他版本时，从发布源下载并缓存到 `STANDALONE_MIDDLEWARE_CACHE_DIR`，重建 `OneHrStandalone.zip` 时替换 `OneHrStandalone/software/nginx.zip`、`redis.zip`、`minio.zip`
+
+中间件版本候选来源：
+
+- nginx：nginx 官方下载页的 Windows zip
+- Redis：Redis Windows GitHub Releases 中的 Windows x64 zip
+- MinIO：MinIO Windows archive 中的 `minio.RELEASE.*` 二进制包，打包器会整理为安装器期望的 `minio/minio.exe` 结构
 
 `data-synchronization.git` 使用 shallow clone/fetch，并设置超时，避免首次全量 clone 静默挂住。
 
