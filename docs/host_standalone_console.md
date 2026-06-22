@@ -122,7 +122,7 @@ NHO版不执行標準版 SQL、数据连携、help 或 `OneHrStandalone.zip` 处
 
 中间件版本候选来源：
 
-- nginx：nginx 官方下载页的 Windows zip
+- nginx：nginx 官方 download 目录索引的 Windows zip，包含同一版本线的历史补丁版本
 - Redis：Redis Windows GitHub Releases 中的 Windows x64 zip
 - MinIO：MinIO Windows archive 中的 `minio.RELEASE.*` 二进制包，打包器会整理为安装器期望的 `minio/minio.exe` 结构
 

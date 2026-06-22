@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.52`
+当前版本：`0.3.53`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -74,7 +74,7 @@
 - 构造历史按当前产品版本过滤展示，`標準版` 与 `NHO版` 不混在同一张历史列表里。
 - NHO版结果区只展示实际执行的进度步骤，保留 NHO 的 SQL 資材準備，隐藏標準版专用データ連携、`4.account.sql`、Help 相关步骤。
 - 可配置 Hyper-V 虚拟机名称后，在页面查看、启动、关闭构建终端。
-- 標準版中间件版本候选实时来自发布源：nginx 官方下载页、Redis Windows GitHub Releases、MinIO Windows archive。下载后的 zip 缓存在 `STANDALONE_MIDDLEWARE_CACHE_DIR`，后续构造复用缓存。
+- 標準版中间件版本候选实时来自发布源：nginx 官方 download 目录索引、Redis Windows GitHub Releases、MinIO Windows archive。下载后的 zip 缓存在 `STANDALONE_MIDDLEWARE_CACHE_DIR`，后续构造复用缓存。
 
 ## 缓存与性能
 

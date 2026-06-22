@@ -19,6 +19,7 @@ from standalone_packager import (
     build_product_package,
     complete_all_sql_scripts,
     default_organisation_dstart,
+    fetch_nginx_releases,
     patch_account_sql,
     render_ohr_import_sql,
     render_tenant_import_sql,
@@ -77,6 +78,28 @@ def zip_members(path: Path) -> set[str]:
 def zip_text(path: Path, name: str) -> str:
     with zipfile.ZipFile(path) as z:
         return z.read(name).decode("utf-8")
+
+
+def test_fetch_nginx_releases_uses_download_index_history(monkeypatch):
+    import standalone_packager as packager
+
+    html = """
+    <a href="nginx-1.30.3.zip">nginx-1.30.3.zip</a>
+    <a href="nginx-1.30.2.zip">nginx-1.30.2.zip</a>
+    <a href="nginx-1.31.2.zip">nginx-1.31.2.zip</a>
+    <a href="nginx-1.30.2.zip.asc">nginx-1.30.2.zip.asc</a>
+    """
+
+    def fake_urlopen_text(url: str, timeout: int = 20) -> str:
+        assert url == packager.NGINX_DOWNLOAD_INDEX
+        return html
+
+    monkeypatch.setattr(packager, "_urlopen_text", fake_urlopen_text)
+
+    releases = fetch_nginx_releases(limit=10)
+
+    assert [release.version for release in releases] == ["1.31.2", "1.30.3", "1.30.2"]
+    assert releases[-1].url == "https://nginx.org/download/nginx-1.30.2.zip"
 
 
 def test_build_nho_common_package_frontend_only(tmp_path):

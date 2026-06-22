@@ -315,7 +315,7 @@ nginx、Redis、MinIO 可在主控台页面选择版本：
 
 下载和标准化规则：
 
-- nginx 使用 nginx 官方下载页的 Windows zip，打包器会整理为 `nginx/` 根目录。
+- nginx 使用 nginx 官方 download 目录索引的 Windows zip，包含同一版本线的历史补丁版本；打包器会整理为 `nginx/` 根目录。
 - Redis 使用 Redis Windows GitHub Releases 的 Windows x64 zip，打包器会整理为 `redis/` 根目录。
 - MinIO 使用 MinIO Windows archive 的 `minio.RELEASE.*` 二进制包，打包器会生成 `minio/minio.exe`，并复用模板中的 `minio/start.bat`。
 

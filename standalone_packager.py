@@ -43,7 +43,7 @@ MIDDLEWARE_IN_STANDALONE_ZIP = {
     "minio": "OneHrStandalone/software/minio.zip",
 }
 DEFAULT_MIDDLEWARE_CACHE_DIR = DEFAULT_TEMPLATE_ROOT / "middleware-cache"
-NGINX_DOWNLOAD_PAGE = "https://nginx.org/en/download.html"
+NGINX_DOWNLOAD_INDEX = "https://nginx.org/download/"
 NGINX_DOWNLOAD_BASE = "https://nginx.org/download"
 REDIS_WINDOWS_RELEASES_API = "https://api.github.com/repos/redis-windows/redis-windows/releases"
 MINIO_WINDOWS_ARCHIVE_URL = "https://dl.min.io/server/minio/release/windows-amd64/archive/"
@@ -252,11 +252,13 @@ def _dedupe_releases(releases: list[MiddlewareRelease]) -> list[MiddlewareReleas
 
 
 def fetch_nginx_releases(timeout: int = 20, limit: int = 30) -> list[MiddlewareRelease]:
-    html = _urlopen_text(os.environ.get("MIDDLEWARE_NGINX_DOWNLOAD_PAGE", NGINX_DOWNLOAD_PAGE), timeout=timeout)
+    html = _urlopen_text(os.environ.get("MIDDLEWARE_NGINX_DOWNLOAD_INDEX", NGINX_DOWNLOAD_INDEX), timeout=timeout)
     releases: list[MiddlewareRelease] = []
     for version in re.findall(r"nginx-([0-9]+\.[0-9]+\.[0-9]+)\.zip", html):
         releases.append(MiddlewareRelease("nginx", version, f"{NGINX_DOWNLOAD_BASE}/nginx-{version}.zip"))
-    return _dedupe_releases(releases)[:limit]
+    releases = _dedupe_releases(releases)
+    releases.sort(key=lambda release: tuple(int(part) for part in release.version.split(".")), reverse=True)
+    return releases[:limit]
 
 
 def _redis_asset_score(name: str) -> tuple[int, str]:

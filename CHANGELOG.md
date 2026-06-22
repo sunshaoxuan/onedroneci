@@ -1,11 +1,17 @@
 # Changelog
 
+## 0.3.53 - 2026-06-22
+
+### Fixed
+
+- nginx 版本候选改为读取官方 `https://nginx.org/download/` 目录索引，补齐 `1.30.2` 这类历史 Windows zip 补丁版本。
+
 ## 0.3.52 - 2026-06-22
 
 ### Added
 
 - 標準版主控台新增 nginx、Redis、MinIO 中间件版本选择。默认使用模板内置包；选择其他版本时，构造时从发布源下载并缓存到宿主机，再替换 `OneHrStandalone.zip` 中 `OneHrStandalone/software/` 下的同名 zip。
-- 新增 `/api/middleware-versions`，实时读取 nginx 官方下载页、Redis Windows GitHub Releases、MinIO Windows archive 的版本候选。
+- 新增 `/api/middleware-versions`，实时读取 nginx 官方 download 目录索引、Redis Windows GitHub Releases、MinIO Windows archive 的版本候选。
 
 ## 0.3.51 - 2026-05-29
 
