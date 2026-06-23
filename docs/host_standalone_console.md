@@ -63,10 +63,10 @@
 
 ## 最终输出结构
 
-標準版完整构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/<构建终端构建ID>/`：
+標準版完整构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/`：
 
 ```text
-<构建终端构建ID>/
+<顧客機関名> <主控タスクID>/
   製品/
     1.tenant/
     2.ohr/
@@ -81,12 +81,12 @@
 - `前台分支：<frontend_release_branch>`
 - `后台分支：<backend_branch>`
 
-页面结果区只展示交付目录，避免用户误操作内部中间产物。
+页面结果区只展示交付目录，避免用户误操作内部中间产物。目录名使用 `顧客機関名 + 主控タスクID`，便于从大量结果中按客户查找。
 
-NHO版构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/<主控任务ID>/`：
+NHO版构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/`：
 
 ```text
-<主控任务ID>/
+<顧客機関名> <主控タスクID>/
   共通.zip
   version.txt
 ```
@@ -148,12 +148,15 @@ NHO版不执行標準版 SQL、数据连携、help 或 `OneHrStandalone.zip` 处
 已结束任务可以删除；`queued` / `running` 任务不能直接删除，必须先停止。删除动作会清理：
 
 - `HOST_STANDALONE_DATA_DIR/<job_id>/`
+- `STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/`
 - `STANDALONE_OUTPUT_DIR/<job_id>/`
 - `STANDALONE_OUTPUT_DIR/<remote_build_id>/`
 - 构建终端 `/api/builds/<remote_build_id>`
 - 构建终端对应的构建记录和产物目录
 
 这样即使二次打包失败、还没有写入 `outputs.product_dir`，也能清掉用构建终端编号提前创建的半成品目录。
+
+旧版本输出目录如果仍存在，主控台读取历史时会迁移为 `<顧客機関名> <主控タスクID>`，并同步 `metadata.json` 中的 `outputs.product_dir`、`standalone_zip`、`common_zip` 等路径。
 
 ## 启动
 

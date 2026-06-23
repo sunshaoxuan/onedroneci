@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.55"
+    assert console.APP_VERSION == "0.3.56"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -362,6 +362,45 @@ def test_delete_finished_job_removes_host_and_remote_artifacts(tmp_path, monkeyp
     assert remote_deleted == ["/api/builds/remote-1"]
     assert not job_dir.exists()
     assert not (output_root / job_id).exists()
+
+
+def test_delivery_folder_name_uses_customer_name_and_host_job_id():
+    assert console.delivery_folder_name({"organisation_name": "A/B:大学"}, "20260623000102") == "A_B_大学 20260623000102"
+    assert console.delivery_folder_name({"material_number": "20260625"}, "20260623000103") == "20260625 20260623000103"
+
+
+def test_list_jobs_migrates_existing_output_directory_to_customer_job_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path / "jobs")
+    monkeypatch.setattr(console, "JOBS", {})
+    output_root = tmp_path / "dist"
+    monkeypatch.setattr(console, "configured_output_dir", lambda: output_root)
+    job_id = "20260623000104"
+    old_root = output_root / "remote-build-1"
+    product_dir = old_root / "製品"
+    product_dir.mkdir(parents=True)
+    standalone_zip = product_dir / "OneHrStandalone.zip"
+    standalone_zip.write_text("zip", encoding="utf-8")
+    console.write_job(
+        {
+            "id": job_id,
+            "status": "success",
+            "created_at": 1,
+            "updated_at": 1,
+            "remote_build_id": "remote-build-1",
+            "request": {"organisation_name": "筑波大学"},
+            "outputs": {"product_dir": str(old_root), "standalone_zip": str(standalone_zip)},
+        }
+    )
+
+    jobs = console.list_jobs()
+
+    new_root = output_root / f"筑波大学 {job_id}"
+    assert jobs[0]["outputs"]["product_dir"] == str(new_root)
+    assert jobs[0]["outputs"]["standalone_zip"] == str(new_root / "製品" / "OneHrStandalone.zip")
+    assert new_root.exists()
+    assert not old_root.exists()
+    stored = console.read_job(job_id)
+    assert stored["outputs"]["product_dir"] == str(new_root)
 
 
 def test_delete_running_job_is_rejected(tmp_path, monkeypatch):

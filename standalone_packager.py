@@ -1238,6 +1238,7 @@ def build_product_package(
     template_zip: Path,
     sql_template_dir: Path,
     output_root: Path,
+    delivery_name: str | None = None,
     package_zip: Path,
     web_zip: Path,
     version: BuildVersion,
@@ -1272,7 +1273,7 @@ def build_product_package(
         if not (effective_sql_dir / "1.tenant").is_dir() or not (effective_sql_dir / "2.ohr").is_dir():
             raise FileNotFoundError(f"missing SQL templates under: {effective_sql_dir}")
 
-        delivery_root = output_root / version.build_id
+        delivery_root = output_root / (delivery_name or version.build_id)
         product_dir = delivery_root / "製品"
         data_sync_target = delivery_root / "データ連携"
         if delivery_root.exists():
@@ -1344,6 +1345,7 @@ def build_nho_common_package(
     *,
     output_root: Path,
     build_id: str,
+    delivery_name: str | None = None,
     package_zip: Path | None = None,
     web_zip: Path | None = None,
     database_assets_zip: Path | None = None,
@@ -1364,7 +1366,7 @@ def build_nho_common_package(
     if database_assets_zip is not None and not database_assets_zip.is_file():
         raise FileNotFoundError(f"missing NHO database assets zip: {database_assets_zip}")
 
-    delivery_root = output_root / build_id
+    delivery_root = output_root / (delivery_name or build_id)
     if delivery_root.exists():
         shutil.rmtree(delivery_root)
     delivery_root.mkdir(parents=True, exist_ok=True)

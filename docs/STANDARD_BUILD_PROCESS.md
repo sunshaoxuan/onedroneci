@@ -254,7 +254,7 @@ DELETE FROM ohr_help;
 最终复制到：
 
 ```text
-<交付根>/<remote_build_id>/データ連携/
+<交付根>/<顧客機関名> <主控タスクID>/データ連携/
 ```
 
 复制时只保留以下根目录：
@@ -326,7 +326,7 @@ nginx、Redis、MinIO 可在主控台页面选择版本：
 完整標準版输出目录：
 
 ```text
-STANDALONE_OUTPUT_DIR/<remote_build_id>/
+STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/
   製品/
     1.tenant/
     2.ohr/
@@ -337,6 +337,8 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 
 页面结果区只展示交付目录，避免用户误操作内部中间产物。
 
+交付目录名使用顧客機関名和主控任务 ID。读取旧历史时，如果旧目录仍存在，主控台会迁移目录并同步历史路径。
+
 页面成果物信息区会从已生成且未删除的 `製品/OneHrStandalone.zip` 中读取包内版本信息，包括后端 jar manifest、前端 `meta.json`、Help `meta.json` 与 nginx、Redis、MinIO 版本。该信息由包体调查得到，不依赖页面构造设置。
 
 ## 19. 与 NHO版的主要差异
@@ -346,4 +348,4 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 - 標準版前端包含 `conf_prod` 与 Help；NHO版不执行 `ohr-cicd`、Help、SVN 文档或客户配置。
 - 標準版需要客户环境、数据库、机构名称等页面参数；NHO版隐藏这些参数。
 - 標準版执行 SQL 资材、`4.account.sql`、Help SQL、数据连携、`all.sql` 补全和 `OneHrStandalone.zip` 重建；NHO版全部跳过。
-- 標準版最终目录以构建终端构建 ID 为根；NHO版最终目录以主控任务 ID 为根。
+- 標準版与 NHO版最终目录都以 `顧客機関名 + 主控タスクID` 为根。

@@ -237,6 +237,21 @@ def test_build_nho_common_package_backend_only_and_both(tmp_path):
     assert "共通/upgrade/実行環境資材/OneHrSuite/software/web.zip" in members
 
 
+def test_build_nho_common_package_can_use_custom_delivery_name(tmp_path):
+    web_zip = tmp_path / "web.zip"
+    web_zip.write_bytes(b"web")
+
+    result = build_nho_common_package(
+        output_root=tmp_path / "out",
+        build_id="job1",
+        delivery_name="NHO顧客 20260623000106",
+        web_zip=web_zip,
+    )
+
+    assert Path(result["product_dir"]) == tmp_path / "out" / "NHO顧客 20260623000106"
+    assert Path(result["common_zip"]) == tmp_path / "out" / "NHO顧客 20260623000106" / "共通.zip"
+
+
 def test_build_nho_common_package_includes_database_assets(tmp_path):
     web_zip = tmp_path / "web.zip"
     web_zip.write_bytes(b"web")
@@ -493,6 +508,34 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert '{"ja-JP": "テスト大学"}' in account_sql
     assert '{"ja-JP": "\\\\テスト大学"}' in account_sql
     assert "10.0.0.8" not in (product_dir / "1.tenant" / "url_info.sql").read_text(encoding="utf-8")
+
+
+def test_build_product_package_can_use_custom_delivery_name(tmp_path):
+    template = tmp_path / "OneHrStandalone.zip"
+    sql_dir = tmp_path / "sql"
+    package_zip = tmp_path / "package.zip"
+    web_zip = tmp_path / "web.zip"
+    output = tmp_path / "out"
+    make_template(template)
+    make_sql_templates(sql_dir)
+    package_zip.write_bytes(b"new-package")
+    make_web_package(web_zip)
+
+    result = build_product_package(
+        template_zip=template,
+        sql_template_dir=sql_dir,
+        output_root=output,
+        delivery_name="顧客A 20260623000105",
+        package_zip=package_zip,
+        web_zip=web_zip,
+        version=BuildVersion("remote-1", "M-001", "release_back", "release_front"),
+        config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
+        sql_config=ProductSqlConfig("顧客A", "2026-06-01"),
+        data_sync_git_url=None,
+    )
+
+    assert Path(result["product_dir"]) == output / "顧客A 20260623000105"
+    assert (output / "顧客A 20260623000105" / "製品" / "OneHrStandalone.zip").is_file()
 
 
 def test_rebuild_standalone_zip_can_replace_selected_middleware(tmp_path):

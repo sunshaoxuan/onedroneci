@@ -119,6 +119,7 @@
 
 - 主控任务目录
 - 主控中间产物
+- `STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>`
 - `STANDALONE_OUTPUT_DIR/<job_id>`
 - `STANDALONE_OUTPUT_DIR/<remote_build_id>`
 - 构建终端对应任务和产物
@@ -139,7 +140,7 @@
 ### 输出
 
 ```text
-STANDALONE_OUTPUT_DIR/<remote_build_id>/
+STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/
   製品/
     1.tenant/
     2.ohr/
@@ -147,6 +148,8 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
     version.txt
   データ連携/
 ```
+
+交付目录名由顧客機関名和主控任务 ID 组成。旧版本使用主控任务 ID 或构建终端构建 ID 的目录如果仍存在，读取历史时会迁移到新命名，并更新任务 metadata 中的成果物路径。
 
 ### SQL 修改
 

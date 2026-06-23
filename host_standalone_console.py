@@ -47,7 +47,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.55"
+APP_VERSION = "0.3.56"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -308,6 +308,72 @@ def config_history_label(request: dict[str, Any], job_id: str) -> str:
     return f"{organisation} / {job_id}"
 
 
+def output_customer_name(request: dict[str, Any]) -> str:
+    name = str(request.get("organisation_name") or "").strip()
+    if not name:
+        name = str(request.get("material_number") or "").strip()
+    return name or "共通"
+
+
+def safe_output_folder_component(value: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(value))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return (cleaned or "共通")[:80].strip(" .") or "共通"
+
+
+def delivery_folder_name(request: dict[str, Any], job_id: str) -> str:
+    return f"{safe_output_folder_component(output_customer_name(request))} {job_id}"
+
+
+def output_root_for_job(job_id: str, request: dict[str, Any]) -> Path:
+    return configured_output_dir() / delivery_folder_name(request, job_id)
+
+
+def migrate_finished_job_output_dir(job: dict[str, Any]) -> dict[str, Any]:
+    if job.get("status") in ("queued", "running"):
+        return job
+    outputs = dict(job.get("outputs") or {})
+    product_dir = str(outputs.get("product_dir") or "")
+    if not product_dir:
+        return job
+    output_root = configured_output_dir()
+    current = Path(product_dir)
+    current_root = current.parent if current.name == "製品" else current
+    desired_root = output_root_for_job(str(job.get("id") or ""), dict(job.get("request") or {}))
+    if current_root == desired_root:
+        return job
+    try:
+        if current_root.exists() and _is_relative_to(current_root.resolve(), output_root.resolve()):
+            if desired_root.exists():
+                return job
+            desired_root.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(current_root), str(desired_root))
+            outputs = rewrite_output_paths(outputs, current_root, desired_root)
+            outputs["product_dir"] = str(desired_root)
+            job = dict(job)
+            job["outputs"] = outputs
+            write_job(job)
+    except OSError:
+        return job
+    return job
+
+
+def rewrite_output_paths(outputs: dict[str, Any], old_root: Path, new_root: Path) -> dict[str, Any]:
+    updated = dict(outputs)
+    old_root_resolved = old_root.resolve()
+    for key, value in list(updated.items()):
+        if not isinstance(value, str) or not value:
+            continue
+        path = Path(value)
+        try:
+            resolved = path.resolve()
+            if _is_relative_to(resolved, old_root_resolved):
+                updated[key] = str(new_root / resolved.relative_to(old_root_resolved))
+        except OSError:
+            continue
+    return updated
+
+
 def save_config_history(job: dict[str, Any]) -> dict[str, Any]:
     request = dict(job.get("request") or {})
     config_id = str(job["id"])
@@ -358,11 +424,20 @@ def list_jobs() -> list[dict[str, Any]]:
             job = json.loads(mp.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        job = migrate_finished_job_output_dir(job)
         jobs[str(job["id"])] = job
     with LOCK:
         for job_id, job in JOBS.items():
             jobs[job_id] = dict(job)
     return sorted(jobs.values(), key=lambda item: item.get("created_at", 0), reverse=True)
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def remote_base_host() -> str:
@@ -547,6 +622,7 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def public_job(job: dict[str, Any], include_artifact_info: bool = False) -> dict[str, Any]:
+    job = migrate_finished_job_output_dir(job)
     result = dict(job)
     result["request"] = dict(job.get("request") or {})
     if include_artifact_info:
@@ -861,6 +937,7 @@ def delete_job(job_id: str) -> dict[str, Any]:
         product_path = Path(product_dir)
         candidate = product_path.parent if product_path.name == "製品" else product_path
         remove_path_inside(candidate, output_root)
+    remove_path_inside(output_root_for_job(job_id, dict(job.get("request") or {})), output_root)
     remove_path_inside(output_root / job_id, output_root)
     if remote_id:
         remove_path_inside(output_root / str(remote_id), output_root)
@@ -965,6 +1042,7 @@ def run_job(job_id: str) -> None:
             outputs = build_nho_common_package(
                 output_root=configured_output_dir(),
                 build_id=job_id,
+                delivery_name=delivery_folder_name(req, job_id),
                 package_zip=package_zip,
                 web_zip=web_zip,
                 database_assets_zip=database_assets_zip,
@@ -1003,6 +1081,7 @@ def run_job(job_id: str) -> None:
             template_zip=configured_template_zip(),
             sql_template_dir=configured_sql_template_dir(),
             output_root=configured_output_dir(),
+            delivery_name=delivery_folder_name(req, job_id),
             package_zip=package_zip,
             web_zip=web_zip,
             version=BuildVersion(
