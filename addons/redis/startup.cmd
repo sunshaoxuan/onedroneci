@@ -1,0 +1,1 @@
+redis-server.exe redis.windows.conf --port %REDIS_PORT% --requirepass %REDIS_PASSWORD%

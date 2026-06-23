@@ -318,6 +318,8 @@ nginx、Redis、MinIO 可在主控台页面选择版本：
 - nginx 使用 nginx 官方 download 目录索引的 Windows zip，包含同一版本线的历史补丁版本；打包器会整理为 `nginx/` 根目录。
 - Redis 使用 Redis Windows GitHub Releases 的 Windows x64 zip，打包器会整理为 `redis/` 根目录。
 - MinIO 使用 MinIO Windows archive 的 `minio.RELEASE.*` 二进制包，打包器会生成 `minio/minio.exe`，并复用模板中的 `minio/start.bat`。
+- 下载版中间件缓存 zip 生成时，打包器会把 `addons/<product>/` 下的补充文件合并到 `<product>/` 根目录。当前 nginx 补充 `startup.bat` / `stop.bat`，Redis 补充 `startup.cmd` / `redis.windows.conf`。
+- 已缓存的下载版中间件如果缺少这些补充文件，或包内文件内容与仓库 `addons/` 不一致，构造时会自动重建缓存包。
 
 ## 18. 最终输出
 

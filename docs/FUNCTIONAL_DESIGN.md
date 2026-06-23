@@ -174,6 +174,8 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 
 JDK、nssm 等固定中间件包保持模板内容。nginx、Redis、MinIO 默认使用模板内置包；主控台选择其他版本时，构造阶段从官方发布源下载到宿主机缓存，并替换 `OneHrStandalone/software/` 下对应 zip。
 
+下载版中间件缓存 zip 生成时，会额外合并 `addons/<product>/` 下的补充文件到包内 `<product>/` 根目录。当前用于补齐 nginx 的启动/停止脚本和 Redis 的启动脚本/配置文件。缓存包中缺少这些文件或文件内容与 `addons` 不一致时，构造器会重建该版本缓存包。
+
 ## 缓存设计
 
 - Git 仓库：已存在 `.git` 时 fetch/checkout/reset，不重复 clone。
@@ -183,6 +185,7 @@ JDK、nssm 等固定中间件包保持模板内容。nginx、Redis、MinIO 默�
 - help：以 Git revision、SVN revision、lock hash 作为发布包缓存 key。
 - 数据连携：使用 shallow clone/fetch 和超时。
 - 固定模板和中间件：保留在宿主机 `.standalone-template`，不提交 Git。nginx、Redis、MinIO 的非内置版本缓存到 `.standalone-template/middleware-cache`。
+- 中间件补充文件：保存在仓库 `addons/`。这些文件体积小且属于打包规则的一部分，参与版本管理。
 
 ## 成果物版本调查
 

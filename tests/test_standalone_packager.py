@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -128,6 +129,68 @@ def test_fetch_nginx_releases_uses_download_index_history(monkeypatch):
 
     assert [release.version for release in releases] == ["1.31.2", "1.30.3", "1.30.2"]
     assert releases[-1].url == "https://nginx.org/download/nginx-1.30.2.zip"
+
+
+def test_build_cached_middleware_zip_merges_addons(monkeypatch, tmp_path):
+    import standalone_packager as packager
+
+    addons = tmp_path / "addons"
+    (addons / "redis").mkdir(parents=True)
+    (addons / "redis" / "startup.cmd").write_text("addon startup", encoding="utf-8")
+    (addons / "redis" / "redis.windows.conf").write_text("addon conf", encoding="utf-8")
+    source = tmp_path / "redis-source.zip"
+    make_nested_zip(
+        source,
+        "Redis-x64",
+        {
+            "redis-server.exe": b"exe",
+            "startup.cmd": "source startup",
+        },
+    )
+    template = tmp_path / "template.zip"
+    make_template(template)
+    cache_zip = tmp_path / "cache" / "redis.zip"
+    monkeypatch.setenv("MIDDLEWARE_ADDONS_DIR", str(addons))
+    monkeypatch.setattr(packager, "_download_file", lambda url, destination: shutil.copy2(source, destination))
+
+    packager._build_cached_middleware_zip("redis", "8.8.0", "https://example.local/redis.zip", cache_zip, template)
+
+    with zipfile.ZipFile(cache_zip) as z:
+        names = z.namelist()
+        assert len(names) == len(set(names))
+        assert z.read("redis/startup.cmd").decode("utf-8") == "addon startup"
+        assert z.read("redis/redis.windows.conf").decode("utf-8") == "addon conf"
+        assert z.read("redis/redis-server.exe") == b"exe"
+        assert "redis/.ohr-builder-version.json" in names
+
+
+def test_prepare_middleware_overrides_rebuilds_cache_when_addons_are_missing(monkeypatch, tmp_path):
+    import standalone_packager as packager
+
+    addons = tmp_path / "addons"
+    (addons / "nginx").mkdir(parents=True)
+    (addons / "nginx" / "startup.bat").write_text("addon startup", encoding="utf-8")
+    old_cache = tmp_path / "cache" / "nginx" / "1.30.2" / "nginx.zip"
+    old_cache.parent.mkdir(parents=True)
+    make_nested_zip(old_cache, "nginx", {"nginx.exe": b"old"})
+    source = tmp_path / "nginx-source.zip"
+    make_nested_zip(source, "nginx-1.30.2", {"nginx.exe": b"new"})
+    template = tmp_path / "template.zip"
+    make_template(template)
+    monkeypatch.setenv("MIDDLEWARE_ADDONS_DIR", str(addons))
+    monkeypatch.setattr(packager, "_find_release", lambda product, version: packager.MiddlewareRelease(product, version, "https://example.local/nginx.zip"))
+    monkeypatch.setattr(packager, "_download_file", lambda url, destination: shutil.copy2(source, destination))
+
+    overrides = packager.prepare_middleware_overrides(
+        {"nginx": "1.30.2"},
+        template_zip=template,
+        cache_dir=tmp_path / "cache",
+    )
+
+    assert overrides[packager.MIDDLEWARE_IN_STANDALONE_ZIP["nginx"]] == old_cache
+    with zipfile.ZipFile(old_cache) as z:
+        assert z.read("nginx/startup.bat").decode("utf-8") == "addon startup"
+        assert z.read("nginx/nginx.exe") == b"new"
 
 
 def test_build_nho_common_package_frontend_only(tmp_path):

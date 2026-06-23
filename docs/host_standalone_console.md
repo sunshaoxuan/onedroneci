@@ -18,6 +18,7 @@
 - `STANDALONE_OUTPUT_DIR`：产品交付输出目录
 - `STANDALONE_TEMPLATE_ZIP`：固定壳包模板
 - `STANDALONE_MIDDLEWARE_CACHE_DIR`：nginx、Redis、MinIO 非内置版本下载缓存目录，默认 `.standalone-template/middleware-cache`
+- `MIDDLEWARE_ADDONS_DIR`：非内置下载版中间件补充文件目录，默认仓库内 `addons`
 - `STANDALONE_SQL_TEMPLATE_DIR`：固定 SQL 模板目录
 - `STANDALONE_SQL_SVN_URL`：最终 SQL 资材 SVN 地址
 - `DATA_SYNC_GIT_URL`：数据连携 Git 仓库
@@ -119,6 +120,8 @@ NHO版不执行標準版 SQL、数据连携、help 或 `OneHrStandalone.zip` 处
 - 数据连携子目录：`DATA_SYNC_SUBDIR`，默认 `updsv7phr/PHR`
 - `package.zip` / `web.zip`：来自构建终端
 - nginx / Redis / MinIO：默认使用 `OneHrStandalone.zip` 模板中的内置包；页面选择其他版本时，从发布源下载并缓存到 `STANDALONE_MIDDLEWARE_CACHE_DIR`，重建 `OneHrStandalone.zip` 时替换 `OneHrStandalone/software/nginx.zip`、`redis.zip`、`minio.zip`
+- 下载版中间件生成缓存 zip 时，会把 `MIDDLEWARE_ADDONS_DIR/<product>/` 下的文件合并到 `<product>/` 根目录。当前仓库提供 `addons/nginx/startup.bat`、`addons/nginx/stop.bat`、`addons/redis/startup.cmd`、`addons/redis/redis.windows.conf`。
+- 如果缓存 zip 中缺少 addon 文件，或包内文件内容与 `addons` 当前内容不一致，构造器会重新下载并生成该版本缓存包。
 
 中间件版本候选来源：
 

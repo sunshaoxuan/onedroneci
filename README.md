@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.54`
+当前版本：`0.3.55`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -31,7 +31,8 @@
 10. 勾选生成 Help 时，主控台把 Help 构建产物中的 `insert_ohr_help.sql` 写入 `製品/1.tenant/ohr_help.sql`，并在文件顶部追加清空 `ohr_help` 的 SQL；如果 Help SQL 缺失则终止打包。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
 11. 主控台把页面填写的资材编号与前后端分支写入 `version.txt`，重建 `OneHrStandalone.zip`。
 12. 標準版完整交付包可为 nginx、Redis、MinIO 选择中间件版本。默认使用模板内置包；选择其他版本时，主控台从官方发布源下载到宿主机缓存，并在重建 `OneHrStandalone.zip` 时替换 `OneHrStandalone/software/` 下的同名 zip。
-13. 最终输出到 `dist\standalone\<构建终端构建ID>\`：
+13. 非内置下载版中间件会在缓存 zip 生成阶段合并 `addons/<product>/` 下的补充文件到对应包根目录；当前包含 nginx 的启动/停止脚本和 Redis 的启动脚本/配置文件。
+14. 最终输出到 `dist\standalone\<构建终端构建ID>\`：
     - `製品\`
     - `データ連携\`
 
@@ -90,6 +91,7 @@
 - 数据连携仓库使用 shallow clone/fetch，并设置超时，避免首次 clone 静默挂住。
 - 固定中间件和壳包模板只保留在宿主机，不进入 Git。
 - nginx、Redis、MinIO 的非内置版本下载后保存在宿主机中间件缓存目录，避免重复下载。
+- `addons/` 保存下载版中间件需要补充到包内根目录的固定文件。缓存包缺少这些文件或内容不一致时，构造器会重新生成该中间件缓存包。
 
 ## 私密配置
 

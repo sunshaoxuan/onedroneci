@@ -44,6 +44,7 @@ MIDDLEWARE_IN_STANDALONE_ZIP = {
 }
 MIDDLEWARE_VERSION_METADATA = ".ohr-builder-version.json"
 DEFAULT_MIDDLEWARE_CACHE_DIR = DEFAULT_TEMPLATE_ROOT / "middleware-cache"
+DEFAULT_MIDDLEWARE_ADDONS_DIR = ROOT / "addons"
 NGINX_DOWNLOAD_INDEX = "https://nginx.org/download/"
 NGINX_DOWNLOAD_BASE = "https://nginx.org/download"
 REDIS_WINDOWS_RELEASES_API = "https://api.github.com/repos/redis-windows/redis-windows/releases"
@@ -130,6 +131,10 @@ def configured_template_zip() -> Path:
 
 def configured_middleware_cache_dir() -> Path:
     return Path(os.environ.get("STANDALONE_MIDDLEWARE_CACHE_DIR", str(DEFAULT_MIDDLEWARE_CACHE_DIR)))
+
+
+def configured_middleware_addons_dir() -> Path:
+    return Path(os.environ.get("MIDDLEWARE_ADDONS_DIR", str(DEFAULT_MIDDLEWARE_ADDONS_DIR)))
 
 
 def configured_sql_template_dir() -> Path:
@@ -504,7 +509,41 @@ def fetch_middleware_catalog(template_zip: Path | None = None, timeout: int = 20
     return catalog
 
 
-def _zip_with_normalized_root(source_zip: Path, target_zip: Path, root_name: str) -> None:
+def _middleware_addon_files(product: str) -> list[tuple[str, Path]]:
+    base = configured_middleware_addons_dir() / product
+    if not base.is_dir():
+        return []
+    result: list[tuple[str, Path]] = []
+    for path in sorted(base.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(base).as_posix()
+        result.append((f"{product}/{relative}", path))
+    return result
+
+
+def _zip_has_current_addons(zip_path: Path, product: str) -> bool:
+    addons = _middleware_addon_files(product)
+    if not addons:
+        return True
+    if not zip_path.is_file():
+        return False
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            names = set(zf.namelist())
+            for name, source in addons:
+                if name not in names:
+                    return False
+                if zf.read(name) != source.read_bytes():
+                    return False
+        return True
+    except Exception:
+        return False
+
+
+def _zip_with_normalized_root(source_zip: Path, target_zip: Path, root_name: str, addons: list[tuple[str, Path]] | None = None) -> None:
+    addons = addons or []
+    addon_names = {name for name, _ in addons}
     with zipfile.ZipFile(source_zip) as source, zipfile.ZipFile(target_zip, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as target:
         names = [name for name in source.namelist() if name and not name.endswith("/")]
         first_parts = {name.split("/", 1)[0] for name in names if "/" in name}
@@ -520,6 +559,8 @@ def _zip_with_normalized_root(source_zip: Path, target_zip: Path, root_name: str
             if not name:
                 continue
             target_name = f"{root_name}/{name}".rstrip("/")
+            if target_name in addon_names:
+                continue
             if item.is_dir():
                 directory = target_name + "/"
                 if directory not in written_dirs:
@@ -531,6 +572,12 @@ def _zip_with_normalized_root(source_zip: Path, target_zip: Path, root_name: str
                 target.writestr(directory, b"")
                 written_dirs.add(directory)
             target.writestr(target_name, source.read(item.filename))
+        for target_name, source_path in addons:
+            directory = target_name.rsplit("/", 1)[0] + "/"
+            if directory not in written_dirs:
+                target.writestr(directory, b"")
+                written_dirs.add(directory)
+            target.writestr(target_name, source_path.read_bytes())
 
 
 def _minio_start_bat_from_template(template_zip: Path) -> bytes:
@@ -585,14 +632,17 @@ def _build_cached_middleware_zip(product: str, version: str, url: str, cache_zip
         tmp = Path(tmp_dir)
         raw = tmp / "download"
         normalized = tmp / f"{product}.zip"
+        addons = _middleware_addon_files(product)
         _download_file(url, raw)
         if product in {"nginx", "redis"}:
-            _zip_with_normalized_root(raw, normalized, product)
+            _zip_with_normalized_root(raw, normalized, product, addons=addons)
         elif product == "minio":
             with zipfile.ZipFile(normalized, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
                 zf.writestr("minio/", b"")
                 zf.write(raw, "minio/minio.exe")
                 zf.writestr("minio/start.bat", _minio_start_bat_from_template(template_zip))
+                for target_name, source_path in addons:
+                    zf.writestr(target_name, source_path.read_bytes())
         else:
             raise ValueError(f"unsupported middleware: {product}")
         _write_middleware_version_metadata(normalized, product, version, url)
@@ -620,7 +670,7 @@ def prepare_middleware_overrides(
         if logger:
             logger("middleware_assets")
         cache_zip = cache_dir / product / version / f"{product}.zip"
-        if not cache_zip.is_file():
+        if not cache_zip.is_file() or not _zip_has_current_addons(cache_zip, product):
             release = _find_release(product, version)
             _build_cached_middleware_zip(product, version, release.url, cache_zip, template_zip)
         overrides[MIDDLEWARE_IN_STANDALONE_ZIP[product]] = cache_zip
