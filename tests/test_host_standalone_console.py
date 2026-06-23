@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.56"
+    assert console.APP_VERSION == "0.3.57"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -367,6 +367,7 @@ def test_delete_finished_job_removes_host_and_remote_artifacts(tmp_path, monkeyp
 def test_delivery_folder_name_uses_customer_name_and_host_job_id():
     assert console.delivery_folder_name({"organisation_name": "A/B:大学"}, "20260623000102") == "A_B_大学 20260623000102"
     assert console.delivery_folder_name({"material_number": "20260625"}, "20260623000103") == "20260625 20260623000103"
+    assert console.delivery_folder_name({"product_variant": "nho", "material_number": "20260625"}, "20260623000104") == "NHO 20260623000104"
 
 
 def test_list_jobs_migrates_existing_output_directory_to_customer_job_name(tmp_path, monkeypatch):

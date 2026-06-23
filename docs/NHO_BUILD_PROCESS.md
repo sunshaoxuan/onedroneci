@@ -248,11 +248,11 @@ GET /api/nho-material-database-assets?material_number=<资材编号>
 输出目录：
 
 ```text
-STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/
+STANDALONE_OUTPUT_DIR/NHO <主控タスクID>/
   共通.zip
 ```
 
-交付目录名由顧客機関名和主控任务 ID 组成。NHO 请求没有顧客機関名时，使用资材番号作为目录名前缀。
+NHO版交付目录名前缀固定为 `NHO`，后缀使用主控任务 ID。
 
 `共通.zip` 内固定结构：
 

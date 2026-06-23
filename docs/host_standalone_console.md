@@ -83,10 +83,10 @@
 
 页面结果区只展示交付目录，避免用户误操作内部中间产物。目录名使用 `顧客機関名 + 主控タスクID`，便于从大量结果中按客户查找。
 
-NHO版构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/`：
+NHO版构造成功后，默认输出在 `STANDALONE_OUTPUT_DIR/NHO <主控タスクID>/`：
 
 ```text
-<顧客機関名> <主控タスクID>/
+NHO <主控タスクID>/
   共通.zip
   version.txt
 ```

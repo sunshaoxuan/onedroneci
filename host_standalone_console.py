@@ -47,7 +47,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.56"
+APP_VERSION = "0.3.57"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -309,6 +309,8 @@ def config_history_label(request: dict[str, Any], job_id: str) -> str:
 
 
 def output_customer_name(request: dict[str, Any]) -> str:
+    if str(request.get("product_variant") or "").lower() == "nho":
+        return "NHO"
     name = str(request.get("organisation_name") or "").strip()
     if not name:
         name = str(request.get("material_number") or "").strip()

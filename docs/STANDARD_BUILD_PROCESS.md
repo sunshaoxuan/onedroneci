@@ -348,4 +348,4 @@ STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/
 - 標準版前端包含 `conf_prod` 与 Help；NHO版不执行 `ohr-cicd`、Help、SVN 文档或客户配置。
 - 標準版需要客户环境、数据库、机构名称等页面参数；NHO版隐藏这些参数。
 - 標準版执行 SQL 资材、`4.account.sql`、Help SQL、数据连携、`all.sql` 补全和 `OneHrStandalone.zip` 重建；NHO版全部跳过。
-- 標準版与 NHO版最终目录都以 `顧客機関名 + 主控タスクID` 为根。
+- 標準版最终目录以 `顧客機関名 + 主控タスクID` 为根；NHO版最终目录以 `NHO + 主控タスクID` 为根。
