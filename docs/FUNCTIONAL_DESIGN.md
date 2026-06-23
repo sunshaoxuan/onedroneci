@@ -184,6 +184,29 @@ JDK、nssm 等固定中间件包保持模板内容。nginx、Redis、MinIO 默�
 - 数据连携：使用 shallow clone/fetch 和超时。
 - 固定模板和中间件：保留在宿主机 `.standalone-template`，不提交 Git。nginx、Redis、MinIO 的非内置版本缓存到 `.standalone-template/middleware-cache`。
 
+## 成果物版本调查
+
+主控台返回历史任务和任务详情时，会对未删除的成果物包做独立调查，并把结果作为 `artifact_info` 返回给前端。该信息不从构造设置回填，避免设置值与最终包体不一致。
+
+標準版调查对象：
+
+- `製品/version.txt`
+- `製品/OneHrStandalone.zip`
+- `OneHrStandalone/software/package.zip` 内的 `standalone.jar` manifest
+- `OneHrStandalone/software/web.zip` 内的 `ohr-cicd/web_prod/meta.json`
+- `OneHrStandalone/software/web.zip` 内的 `ohr-cicd/web_prod/help/meta.json`
+- `OneHrStandalone/software/nginx.zip`
+- `OneHrStandalone/software/redis.zip`
+- `OneHrStandalone/software/minio.zip`
+
+NHO版调查对象：
+
+- `共通.zip` 内的 `共通/version.txt`
+- `共通/upgrade/実行環境資材/OneHrSuite/software/package.zip`
+- `共通/upgrade/実行環境資材/OneHrSuite/software/web.zip`
+
+通过构造器下载并植入的 nginx、Redis、MinIO 会在对应 zip 内写入 `.ohr-builder-version.json`，用于后续精确回读版本；模板内置包则尽量从官方文件结构中识别，无法识别时显示为不明。
+
 ## 安全设计
 
 - Git token、管理 token、SVN 密码等不提交 Git。

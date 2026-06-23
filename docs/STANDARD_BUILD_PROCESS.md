@@ -335,6 +335,8 @@ STANDALONE_OUTPUT_DIR/<remote_build_id>/
 
 页面结果区只展示交付目录，避免用户误操作内部中间产物。
 
+页面成果物信息区会从已生成且未删除的 `製品/OneHrStandalone.zip` 中读取包内版本信息，包括后端 jar manifest、前端 `meta.json`、Help `meta.json` 与 nginx、Redis、MinIO 版本。该信息由包体调查得到，不依赖页面构造设置。
+
 ## 19. 与 NHO版的主要差异
 
 - 標準版输出完整安装交付目录；NHO版只输出代码共通包 `共通.zip`。

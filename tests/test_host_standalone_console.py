@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.53"
+    assert console.APP_VERSION == "0.3.54"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -476,6 +476,11 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "outputs.web_zip" in console.APP_JS
     assert "function renderProgress(job)" in console.APP_JS
     assert "function renderResultIfChanged(job)" in console.APP_JS
+    assert "function renderArtifactInfo(job)" in console.APP_JS
+    assert "artifact_info: job && job.artifact_info" in console.APP_JS
+    assert "fetch(`/api/jobs/${selected}`)" in console.APP_JS
+    assert "artifactInfoTitle" in console.APP_JS
+    assert ".artifact-info" in console.STYLE_CSS
     assert "function fillFormFromJob(job)" in console.APP_JS
     assert "let mode = 'create'" in console.APP_JS
     assert "function enterCreateMode()" in console.APP_JS
@@ -526,6 +531,36 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert ".workbench { display: grid; grid-template-columns: 1fr;" in console.STYLE_CSS
     assert ".log-panel" in console.STYLE_CSS
     assert "min-height: 560px" in console.STYLE_CSS
+
+
+def test_public_job_attaches_artifact_info_from_existing_outputs(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path / "data")
+    console.JOBS.clear()
+    output_root = tmp_path / "out"
+    product_dir = output_root / "job1"
+    standalone_zip = product_dir / "製品" / "OneHrStandalone.zip"
+    standalone_zip.parent.mkdir(parents=True)
+    standalone_zip.write_bytes(b"zip")
+    calls = []
+
+    def fake_inspect_artifact_versions(**kwargs):
+        calls.append(kwargs)
+        return {"available": True, "middleware": {"nginx": {"version": "1.30.2"}}}
+
+    monkeypatch.setattr(console, "inspect_artifact_versions", fake_inspect_artifact_versions)
+    job = {
+        "id": "job1",
+        "status": "success",
+        "request": {},
+        "outputs": {"product_dir": str(product_dir), "standalone_zip": str(standalone_zip)},
+    }
+
+    assert "artifact_info" not in console.public_job(job)
+
+    result = console.public_job(job, include_artifact_info=True)
+
+    assert result["artifact_info"]["middleware"]["nginx"]["version"] == "1.30.2"
+    assert calls and calls[0]["standalone_zip"] == standalone_zip
 
 
 def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):

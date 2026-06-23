@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.54 - 2026-06-23
+
+### Added
+
+- 主控台成果物区域新增包体版本调查信息，直接读取未删除的交付包内容，显示 `version.txt`、后端 jar、前端 `meta.json`、Help `meta.json` 与 nginx、Redis、MinIO 版本。
+- 构造器下载并植入的 nginx、Redis、MinIO zip 内新增 `.ohr-builder-version.json`，用于后续从包内精确回读版本。
+
 ## 0.3.53 - 2026-06-22
 
 ### Fixed

@@ -42,6 +42,7 @@ MIDDLEWARE_IN_STANDALONE_ZIP = {
     "redis": "OneHrStandalone/software/redis.zip",
     "minio": "OneHrStandalone/software/minio.zip",
 }
+MIDDLEWARE_VERSION_METADATA = ".ohr-builder-version.json"
 DEFAULT_MIDDLEWARE_CACHE_DIR = DEFAULT_TEMPLATE_ROOT / "middleware-cache"
 NGINX_DOWNLOAD_INDEX = "https://nginx.org/download/"
 NGINX_DOWNLOAD_BASE = "https://nginx.org/download"
@@ -208,25 +209,197 @@ def detect_template_middleware_versions(template_zip: Path | None = None) -> dic
     versions = {name: MIDDLEWARE_BUNDLED_VERSION for name in MIDDLEWARE_IN_STANDALONE_ZIP}
     nginx_zip = _read_template_nested_zip(template_zip, "nginx")
     if nginx_zip:
-        try:
-            with zipfile.ZipFile(io.BytesIO(nginx_zip)) as nested:  # type: ignore[name-defined]
-                text = nested.read("nginx/docs/CHANGES").decode("utf-8", "replace")
-                match = re.search(r"Changes with nginx\s+([0-9.]+)", text)
-                if match:
-                    versions["nginx"] = match.group(1)
-        except Exception:
-            pass
+        versions["nginx"] = _inspect_middleware_zip_bytes("nginx", nginx_zip).get("version") or versions["nginx"]
     redis_zip = _read_template_nested_zip(template_zip, "redis")
     if redis_zip:
-        try:
-            with zipfile.ZipFile(io.BytesIO(redis_zip)) as nested:  # type: ignore[name-defined]
-                text = nested.read("redis/00-RELEASENOTES").decode("utf-8", "replace")
-                match = re.search(r"Redis\s+([0-9.]+)\s+Released", text)
-                if match:
-                    versions["redis"] = match.group(1)
-        except Exception:
-            pass
+        versions["redis"] = _inspect_middleware_zip_bytes("redis", redis_zip).get("version") or versions["redis"]
+    minio_zip = _read_template_nested_zip(template_zip, "minio")
+    if minio_zip:
+        versions["minio"] = _inspect_middleware_zip_bytes("minio", minio_zip).get("version") or versions["minio"]
     return versions
+
+
+def _zip_read_text(zf: zipfile.ZipFile, name: str, limit: int | None = None) -> str:
+    data = zf.read(name)
+    if limit is not None:
+        data = data[:limit]
+    return data.decode("utf-8", "replace")
+
+
+def _zip_read_json(zf: zipfile.ZipFile, name: str) -> dict[str, Any]:
+    return json.loads(_zip_read_text(zf, name))
+
+
+def _manifest_get(text: str, key: str) -> str:
+    match = re.search(rf"^{re.escape(key)}:\s*(.+)$", text, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def _inspect_middleware_zip_bytes(product: str, data: bytes) -> dict[str, Any]:
+    result: dict[str, Any] = {"product": product, "version": "", "source": ""}
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as nested:
+            names = set(nested.namelist())
+            metadata_name = f"{product}/{MIDDLEWARE_VERSION_METADATA}"
+            if metadata_name in names:
+                metadata = _zip_read_json(nested, metadata_name)
+                result["version"] = str(metadata.get("version") or "")
+                result["source"] = "builder_metadata"
+                result["url"] = str(metadata.get("url") or "")
+                return result
+            if product == "nginx" and "nginx/docs/CHANGES" in names:
+                text = _zip_read_text(nested, "nginx/docs/CHANGES", limit=4000)
+                match = re.search(r"Changes with nginx\s+([0-9.]+)", text)
+                if match:
+                    result["version"] = match.group(1)
+                    result["source"] = "nginx_changes"
+            elif product == "redis":
+                for member in ("redis/00-RELEASENOTES", "redis/README.md", "redis/README.zh_CN.md"):
+                    if member not in names:
+                        continue
+                    text = _zip_read_text(nested, member, limit=8000)
+                    match = re.search(r"Redis\s+([0-9]+\.[0-9]+\.[0-9]+)", text)
+                    if match:
+                        result["version"] = match.group(1)
+                        result["source"] = member
+                        break
+                if not result["version"] and "redis/redis-server.exe" in names:
+                    binary = nested.read("redis/redis-server.exe")
+                    for match in re.finditer(rb"(?<![0-9])([0-9]+\.[0-9]+\.[0-9]+)(?![0-9])", binary):
+                        version = match.group(1).decode("ascii", "ignore")
+                        if version not in {"0.0.0", "127.0.0"}:
+                            result["version"] = version
+                            result["source"] = "redis-server.exe"
+                            break
+            elif product == "minio":
+                for name in names:
+                    match = re.search(r"RELEASE\.[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z", name)
+                    if match:
+                        result["version"] = match.group(0)
+                        result["source"] = "filename"
+                        break
+                if not result["version"] and "minio/minio.exe" in names:
+                    binary = nested.read("minio/minio.exe")
+                    match = re.search(rb"RELEASE\.[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z", binary)
+                    if match:
+                        result["version"] = match.group(0).decode("ascii", "ignore")
+                        result["source"] = "minio.exe"
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
+def _inspect_package_zip_bytes(data: bytes) -> dict[str, Any]:
+    result: dict[str, Any] = {"version": "", "spring_boot_version": "", "build_jdk_spec": ""}
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as package_zip:
+            jar_name = next((name for name in package_zip.namelist() if name.endswith(".jar")), "")
+            if not jar_name:
+                return result
+            jar_data = package_zip.read(jar_name)
+        with zipfile.ZipFile(io.BytesIO(jar_data)) as jar:
+            names = set(jar.namelist())
+            if "META-INF/MANIFEST.MF" in names:
+                manifest = _zip_read_text(jar, "META-INF/MANIFEST.MF")
+                result["version"] = _manifest_get(manifest, "Implementation-Version")
+                result["spring_boot_version"] = _manifest_get(manifest, "Spring-Boot-Version")
+                result["build_jdk_spec"] = _manifest_get(manifest, "Build-Jdk-Spec")
+            pom_props = next((name for name in names if name.endswith("/pom.properties") and "/standalone/" in name), "")
+            if pom_props and not result["version"]:
+                text = _zip_read_text(jar, pom_props)
+                match = re.search(r"^version=(.+)$", text, re.MULTILINE)
+                if match:
+                    result["version"] = match.group(1).strip()
+            result["jar"] = jar_name
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
+def _inspect_web_zip_bytes(data: bytes) -> dict[str, Any]:
+    result: dict[str, Any] = {"release_timestamp": "", "repositories": [], "help": {}}
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as web_zip:
+            names = set(web_zip.namelist())
+            if "ohr-cicd/web_prod/meta.json" in names:
+                meta = _zip_read_json(web_zip, "ohr-cicd/web_prod/meta.json")
+                result["release_timestamp"] = str(meta.get("releaseTimestamp") or "")
+                git_info = meta.get("gitInfo") or {}
+                if isinstance(git_info, dict):
+                    repositories = []
+                    for repo, info in sorted(git_info.items()):
+                        if isinstance(info, dict):
+                            repositories.append({
+                                "name": str(repo),
+                                "branch": str(info.get("branch") or ""),
+                                "commit": str(info.get("latestCommit") or ""),
+                            })
+                    result["repositories"] = repositories
+            if "ohr-cicd/web_prod/help/meta.json" in names:
+                help_meta = _zip_read_json(web_zip, "ohr-cicd/web_prod/help/meta.json")
+                help_info = help_meta.get("gitInfo") or {}
+                result["help"] = {
+                    "release_timestamp": str(help_meta.get("releaseTimestamp") or ""),
+                    "branch": str(help_info.get("branch") or "") if isinstance(help_info, dict) else "",
+                    "commit": str(help_info.get("latestCommit") or "") if isinstance(help_info, dict) else "",
+                }
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
+def inspect_artifact_versions(product_dir: Path | None = None, standalone_zip: Path | None = None, common_zip: Path | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "available": False,
+        "type": "",
+        "version_txt": "",
+        "backend": {},
+        "frontend": {},
+        "help": {},
+        "middleware": {},
+    }
+    try:
+        if common_zip and common_zip.is_file():
+            result["type"] = "nho_common"
+            result["available"] = True
+            with zipfile.ZipFile(common_zip) as common:
+                names = set(common.namelist())
+                if "共通/version.txt" in names:
+                    result["version_txt"] = _zip_read_text(common, "共通/version.txt")
+                if "共通/upgrade/実行環境資材/OneHrSuite/software/package.zip" in names:
+                    result["backend"] = _inspect_package_zip_bytes(common.read("共通/upgrade/実行環境資材/OneHrSuite/software/package.zip"))
+                if "共通/upgrade/実行環境資材/OneHrSuite/software/web.zip" in names:
+                    web_info = _inspect_web_zip_bytes(common.read("共通/upgrade/実行環境資材/OneHrSuite/software/web.zip"))
+                    result["frontend"] = {key: value for key, value in web_info.items() if key != "help"}
+                    result["help"] = web_info.get("help") or {}
+            return result
+
+        if product_dir:
+            base = product_dir / "製品" if (product_dir / "製品").is_dir() else product_dir
+            standalone_zip = standalone_zip or base / "OneHrStandalone.zip"
+            version_txt = base / "version.txt"
+            if version_txt.is_file():
+                result["version_txt"] = version_txt.read_text(encoding="utf-8", errors="replace")
+        if not standalone_zip or not standalone_zip.is_file():
+            return result
+        result["type"] = "standard"
+        result["available"] = True
+        with zipfile.ZipFile(standalone_zip) as outer:
+            names = set(outer.namelist())
+            if PACKAGE_IN_STANDALONE_ZIP in names:
+                result["backend"] = _inspect_package_zip_bytes(outer.read(PACKAGE_IN_STANDALONE_ZIP))
+            if WEB_IN_STANDALONE_ZIP in names:
+                web_info = _inspect_web_zip_bytes(outer.read(WEB_IN_STANDALONE_ZIP))
+                result["frontend"] = {key: value for key, value in web_info.items() if key != "help"}
+                result["help"] = web_info.get("help") or {}
+            middleware: dict[str, Any] = {}
+            for product, member in MIDDLEWARE_IN_STANDALONE_ZIP.items():
+                if member in names:
+                    middleware[product] = _inspect_middleware_zip_bytes(product, outer.read(member))
+            result["middleware"] = middleware
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
 
 
 def _urlopen_text(url: str, timeout: int = 20) -> str:
@@ -377,6 +550,20 @@ def _download_file(url: str, destination: Path, timeout: int = 600) -> None:
         shutil.copyfileobj(response, output)
 
 
+def _write_middleware_version_metadata(zip_path: Path, product: str, version: str, url: str) -> None:
+    payload = json.dumps(
+        {
+            "product": product,
+            "version": version,
+            "url": url,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    with zipfile.ZipFile(zip_path, "a", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+        zf.writestr(f"{product}/{MIDDLEWARE_VERSION_METADATA}", payload)
+
+
 def _find_release(product: str, version: str) -> MiddlewareRelease:
     fetchers = {
         "nginx": fetch_nginx_releases,
@@ -408,6 +595,7 @@ def _build_cached_middleware_zip(product: str, version: str, url: str, cache_zip
                 zf.writestr("minio/start.bat", _minio_start_bat_from_template(template_zip))
         else:
             raise ValueError(f"unsupported middleware: {product}")
+        _write_middleware_version_metadata(normalized, product, version, url)
         temp_cache = cache_zip.with_suffix(cache_zip.suffix + ".tmp")
         shutil.copy2(normalized, temp_cache)
         temp_cache.replace(cache_zip)

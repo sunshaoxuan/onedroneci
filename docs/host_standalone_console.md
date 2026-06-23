@@ -128,6 +128,18 @@ NHO版不执行標準版 SQL、数据连携、help 或 `OneHrStandalone.zip` 处
 
 `data-synchronization.git` 使用 shallow clone/fetch，并设置超时，避免首次全量 clone 静默挂住。
 
+## 成果物信息
+
+任务结束后，主控台会根据仍存在的实际成果物包生成 `artifact_info`，并在成果物区域显示：
+
+- `version.txt` 中的资材、前台分支、后台分支
+- `package.zip` 内 `standalone.jar` 的版本、Spring Boot 版本、Build JDK
+- `web.zip` 内前端 `meta.json` 的 release timestamp、仓库分支和 commit
+- Help `meta.json` 的 release timestamp、分支和 commit
+- nginx、Redis、MinIO 包内可识别的版本
+
+该信息由包体调查得到，不依赖当次构造设置。删除成果物后，页面不会再显示旧的包内版本信息。
+
 ## 删除和清理
 
 已结束任务可以删除；`queued` / `running` 任务不能直接删除，必须先停止。删除动作会清理：

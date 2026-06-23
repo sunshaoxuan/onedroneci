@@ -41,12 +41,13 @@ from standalone_packager import (
     download_remote_artifact,
     download_remote_file,
     fetch_middleware_catalog,
+    inspect_artifact_versions,
     remote_json,
     repo_subdir_from_input,
 )
 
 
-APP_VERSION = "0.3.53"
+APP_VERSION = "0.3.54"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -545,10 +546,70 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
     return public_job(job)
 
 
-def public_job(job: dict[str, Any]) -> dict[str, Any]:
+def public_job(job: dict[str, Any], include_artifact_info: bool = False) -> dict[str, Any]:
     result = dict(job)
     result["request"] = dict(job.get("request") or {})
+    if include_artifact_info:
+        result["artifact_info"] = artifact_info_for_job(job)
+    else:
+        result.pop("artifact_info", None)
+        result.pop("artifact_info_signature", None)
     return result
+
+
+def _artifact_file_candidates(job: dict[str, Any]) -> list[Path]:
+    outputs = job.get("outputs") or {}
+    candidates: list[Path] = []
+    common_zip = str(outputs.get("common_zip") or "")
+    standalone_zip = str(outputs.get("standalone_zip") or "")
+    product_dir = str(outputs.get("product_dir") or "")
+    if common_zip:
+        candidates.append(Path(common_zip))
+    if standalone_zip:
+        candidates.append(Path(standalone_zip))
+    if product_dir:
+        product_path = Path(product_dir)
+        candidates.append(product_path / "製品" / "OneHrStandalone.zip")
+        candidates.append(product_path / "OneHrStandalone.zip")
+        candidates.append(product_path / "製品" / "version.txt")
+        candidates.append(product_path / "version.txt")
+    return candidates
+
+
+def _artifact_signature(job: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for path in _artifact_file_candidates(job):
+        if not path.is_file():
+            continue
+        try:
+            stat = path.stat()
+            parts.append(f"{path}:{stat.st_size}:{stat.st_mtime_ns}")
+        except OSError:
+            continue
+    return "|".join(parts)
+
+
+def artifact_info_for_job(job: dict[str, Any]) -> dict[str, Any]:
+    if job.get("status") not in ("success", "failed", "cancelled"):
+        return {}
+    outputs = job.get("outputs") or {}
+    if not outputs:
+        return {}
+    signature = _artifact_signature(job)
+    cached_signature = str(job.get("artifact_info_signature") or "")
+    cached_info = job.get("artifact_info")
+    if signature and cached_signature == signature and isinstance(cached_info, dict):
+        return cached_info
+    product_dir = Path(str(outputs["product_dir"])) if outputs.get("product_dir") else None
+    standalone_zip = Path(str(outputs["standalone_zip"])) if outputs.get("standalone_zip") else None
+    common_zip = Path(str(outputs["common_zip"])) if outputs.get("common_zip") else None
+    info = inspect_artifact_versions(product_dir=product_dir, standalone_zip=standalone_zip, common_zip=common_zip)
+    if signature:
+        try:
+            update_job(str(job["id"]), artifact_info=info, artifact_info_signature=signature)
+        except Exception:
+            pass
+    return info
 
 
 def truthy(value: Any, default: bool = False) -> bool:
@@ -1348,6 +1409,20 @@ const I18N = {
     historyTitle: '構造履歴',
     resultKicker: '結果',
     resultTitle: '成果物',
+    artifactInfoTitle: '成果物情報',
+    artifactUnavailable: '成果物から読み取れるバージョン情報がありません。',
+    materialVersions: '資材バージョン',
+    backendArtifact: 'バックエンド',
+    frontendArtifact: 'フロントエンド',
+    helpArtifact: 'Help',
+    middlewareArtifact: 'ミドルウェア',
+    releaseTimestamp: 'リリース',
+    version: 'バージョン',
+    springBoot: 'Spring Boot',
+    buildJdk: 'Build JDK',
+    branch: 'ブランチ',
+    commit: 'Commit',
+    unknown: '不明',
     logKicker: 'ログ',
     logTitle: '実行ログ',
     terminalConsole: 'ビルド端末コンソール',
@@ -1505,6 +1580,20 @@ const I18N = {
     historyTitle: '构造历史',
     resultKicker: '结果',
     resultTitle: '成果物',
+    artifactInfoTitle: '成果物信息',
+    artifactUnavailable: '成果物中没有可读取的版本信息。',
+    materialVersions: '资材版本',
+    backendArtifact: '后端',
+    frontendArtifact: '前端',
+    helpArtifact: 'Help',
+    middlewareArtifact: '中间件',
+    releaseTimestamp: '发布',
+    version: '版本',
+    springBoot: 'Spring Boot',
+    buildJdk: 'Build JDK',
+    branch: '分支',
+    commit: 'Commit',
+    unknown: '未知',
     logKicker: '日志',
     logTitle: '执行日志',
     terminalConsole: '构建终端控制台',
@@ -1662,6 +1751,20 @@ const I18N = {
     historyTitle: 'Build history',
     resultKicker: 'Result',
     resultTitle: 'Artifacts',
+    artifactInfoTitle: 'Artifact Information',
+    artifactUnavailable: 'No readable version information was found in the artifacts.',
+    materialVersions: 'Material Versions',
+    backendArtifact: 'Backend',
+    frontendArtifact: 'Frontend',
+    helpArtifact: 'Help',
+    middlewareArtifact: 'Middleware',
+    releaseTimestamp: 'Release',
+    version: 'Version',
+    springBoot: 'Spring Boot',
+    buildJdk: 'Build JDK',
+    branch: 'Branch',
+    commit: 'Commit',
+    unknown: 'Unknown',
     logKicker: 'Log',
     logTitle: 'Execution log',
     terminalConsole: 'Build terminal console',
@@ -2776,8 +2879,23 @@ async function refresh() {
         deleteSelectedJob(job.id);
       };
     }
-    if (mode !== 'create' && job.id === selected) render(job);
+    if (mode !== 'create' && job.id === selected) {
+      selectedJob = job;
+      render(job);
+    }
   });
+  if (mode !== 'create' && selected) {
+    try {
+      const detailRes = await fetch(`/api/jobs/${selected}`);
+      const detail = await detailRes.json();
+      if (!detail.error) {
+        selectedJob = detail;
+        render(detail);
+      }
+    } catch (error) {
+      console.warn('failed to load selected job detail', error);
+    }
+  }
   if (mode === 'create' && !activeJob) {
     if (!lastRenderedResultSignature) {
       document.getElementById('result').innerHTML = `<div class="empty-state">${t('newBuildReady')}</div>`;
@@ -2896,6 +3014,65 @@ function renderProgress(job) {
   </section>`;
 }
 
+function shortCommit(value) {
+  const text = String(value || '');
+  return text.length > 12 ? text.slice(0, 12) : text;
+}
+
+function infoLine(label, value) {
+  const text = value === undefined || value === null || value === '' ? t('unknown') : String(value);
+  return `<div class="artifact-line"><span>${escapeHtml(label)}</span><strong>${escapeHtml(text)}</strong></div>`;
+}
+
+function renderArtifactInfo(job) {
+  const info = job.artifact_info || {};
+  if (!info.available) {
+    return `<section class="artifact-info"><h3>${t('artifactInfoTitle')}</h3><p class="artifact-empty">${t('artifactUnavailable')}</p></section>`;
+  }
+  const versionLines = String(info.version_txt || '').split(/\r?\n/).filter(Boolean).map(line => `<li>${escapeHtml(line)}</li>`).join('');
+  const backend = info.backend || {};
+  const frontend = info.frontend || {};
+  const help = info.help || {};
+  const repos = (frontend.repositories || []).map(repo => `
+    <li><strong>${escapeHtml(repo.name || '-')}</strong><span>${escapeHtml(repo.branch || t('unknown'))}</span><code>${escapeHtml(shortCommit(repo.commit))}</code></li>
+  `).join('');
+  const middleware = info.middleware || {};
+  const middlewareRows = ['nginx', 'redis', 'minio'].map(name => {
+    const item = middleware[name] || {};
+    return infoLine(name, item.version || t('unknown'));
+  }).join('');
+  return `<section class="artifact-info">
+    <h3>${t('artifactInfoTitle')}</h3>
+    <div class="artifact-grid">
+      <div class="artifact-card">
+        <h4>${t('materialVersions')}</h4>
+        ${versionLines ? `<ul class="artifact-version-lines">${versionLines}</ul>` : `<p class="artifact-empty">${t('unknown')}</p>`}
+      </div>
+      <div class="artifact-card">
+        <h4>${t('backendArtifact')}</h4>
+        ${infoLine(t('version'), backend.version)}
+        ${infoLine(t('springBoot'), backend.spring_boot_version)}
+        ${infoLine(t('buildJdk'), backend.build_jdk_spec)}
+      </div>
+      <div class="artifact-card">
+        <h4>${t('frontendArtifact')}</h4>
+        ${infoLine(t('releaseTimestamp'), frontend.release_timestamp)}
+        ${repos ? `<ul class="artifact-repos">${repos}</ul>` : ''}
+      </div>
+      <div class="artifact-card">
+        <h4>${t('helpArtifact')}</h4>
+        ${infoLine(t('releaseTimestamp'), help.release_timestamp)}
+        ${infoLine(t('branch'), help.branch)}
+        ${infoLine(t('commit'), shortCommit(help.commit))}
+      </div>
+      <div class="artifact-card">
+        <h4>${t('middlewareArtifact')}</h4>
+        ${middlewareRows}
+      </div>
+    </div>
+  </section>`;
+}
+
 async function copyText(text) {
   if (navigator.clipboard && window.isSecureContext) {
     await navigator.clipboard.writeText(text);
@@ -2939,6 +3116,7 @@ function renderResult(job) {
     <div class="path-list">
       ${pathList}
     </div>
+    ${renderArtifactInfo(job)}
     ${['queued', 'running'].includes(job.status) ? '' : `<div class="result-actions"><button type="button" class="danger-lite" id="deleteSelectedJob">${t('deleteJob')}</button></div>`}
   `;
   const deleteButton = box.querySelector('#deleteSelectedJob');
@@ -2964,6 +3142,7 @@ function resultSignature(job) {
     remote_build_id: job && job.remote_build_id,
     error: job && job.error,
     outputs: job && job.outputs,
+    artifact_info: job && job.artifact_info,
     progress: job && job.progress
   });
 }
@@ -3609,6 +3788,22 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .result-summary div { padding: 10px; background: #fff; border: 1.5px solid var(--container-line); border-radius: 8px; }
 .result-summary span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
 .result-summary strong { word-break: break-all; }
+.artifact-info { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.artifact-info h3 { margin: 0 0 12px; font-size: 15px; }
+.artifact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.artifact-card { border: 1.5px solid var(--container-line); border-radius: 8px; padding: 12px; background: var(--panel-muted); }
+.artifact-card h4 { margin: 0 0 10px; font-size: 14px; }
+.artifact-line { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line); }
+.artifact-line:first-of-type { border-top: 0; }
+.artifact-line span { color: var(--muted); font-size: 12px; }
+.artifact-line strong { font-size: 13px; word-break: break-all; }
+.artifact-version-lines, .artifact-repos { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.artifact-version-lines li { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; word-break: break-all; }
+.artifact-repos li { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); }
+.artifact-repos li:first-child { border-top: 0; }
+.artifact-repos strong, .artifact-repos span, .artifact-repos code { font-size: 12px; min-width: 0; word-break: break-all; }
+.artifact-repos code { font-family: Consolas, "Cascadia Mono", monospace; color: var(--muted); }
+.artifact-empty { margin: 0; color: var(--muted); font-size: 13px; }
 .path-list { display: grid; gap: 10px; }
 .path-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .path-label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 800; }
@@ -3664,7 +3859,7 @@ pre {
 @media (max-width: 980px) {
   .hero, .terminal-panel, .panel-heading { align-items: stretch; flex-direction: column; }
   h1 { font-size: 36px; }
-  .workbench, .form-panel .grid, .standard-tab-panel, .form-section, .option-matrix, .tag-tree, .result-summary, .path-row { grid-template-columns: 1fr; }
+  .workbench, .form-panel .grid, .standard-tab-panel, .form-section, .option-matrix, .tag-tree, .result-summary, .artifact-grid, .path-row { grid-template-columns: 1fr; }
   .overall-progress ol { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .terminal-actions, .run-actions { justify-content: flex-start; }
 }
@@ -3735,7 +3930,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/jobs/"):
             job_id = parsed.path.split("/")[3]
             try:
-                return self.send_json(public_job(read_job(job_id)))
+                return self.send_json(public_job(read_job(job_id), include_artifact_info=True))
             except FileNotFoundError:
                 return self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
         if parsed.path == "/api/build-terminal/status":

@@ -20,6 +20,7 @@ from standalone_packager import (
     complete_all_sql_scripts,
     default_organisation_dstart,
     fetch_nginx_releases,
+    inspect_artifact_versions,
     patch_account_sql,
     render_ohr_import_sql,
     render_tenant_import_sql,
@@ -68,6 +69,33 @@ def make_template(path: Path) -> None:
         z.write(redis, MIDDLEWARE_IN_STANDALONE_ZIP["redis"])
         z.write(minio, MIDDLEWARE_IN_STANDALONE_ZIP["minio"])
         z.writestr("OneHrStandalone/bin/kernel/start.ps1", "start")
+
+
+def make_backend_package(path: Path) -> None:
+    jar_path = path.parent / "standalone.jar"
+    with zipfile.ZipFile(jar_path, "w", compression=zipfile.ZIP_DEFLATED) as jar:
+        jar.writestr(
+            "META-INF/MANIFEST.MF",
+            "Manifest-Version: 1.0\n"
+            "Implementation-Version: 1.0.0\n"
+            "Spring-Boot-Version: 3.5.0\n"
+            "Build-Jdk-Spec: 24\n",
+        )
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as package:
+        package.write(jar_path, "package/standalone.jar")
+
+
+def make_web_package(path: Path, help_sql: str = "new help sql") -> None:
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as web:
+        web.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", help_sql)
+        web.writestr(
+            "ohr-cicd/web_prod/meta.json",
+            '{"releaseTimestamp":"release_2026_01_01_00_00_00","gitInfo":{"ohr-feelin":{"branch":"release_front","latestCommit":"abcdef1234567890"}}}',
+        )
+        web.writestr(
+            "ohr-cicd/web_prod/help/meta.json",
+            '{"releaseTimestamp":"ohr_help_docs_release_2026_01_01","gitInfo":{"branch":"release_ci","latestCommit":"1234567890abcdef"}}',
+        )
 
 
 def zip_members(path: Path) -> set[str]:
@@ -475,6 +503,42 @@ def test_build_product_package_prepares_middleware_versions(monkeypatch, tmp_pat
     assert calls == [{"nginx": "bundled", "redis": "8.2.7", "minio": "bundled"}]
     with zipfile.ZipFile(Path(result["standalone_zip"])) as outer:
         assert outer.read(MIDDLEWARE_IN_STANDALONE_ZIP["redis"]) == redis_override.read_bytes()
+
+
+def test_inspect_artifact_versions_reads_generated_package(tmp_path):
+    template = tmp_path / "OneHrStandalone.zip"
+    sql_dir = tmp_path / "sql"
+    package_zip = tmp_path / "package.zip"
+    web_zip = tmp_path / "web.zip"
+    make_template(template)
+    make_sql_templates(sql_dir)
+    make_backend_package(package_zip)
+    make_web_package(web_zip)
+
+    result = build_product_package(
+        template_zip=template,
+        sql_template_dir=sql_dir,
+        output_root=tmp_path / "out",
+        package_zip=package_zip,
+        web_zip=web_zip,
+        version=BuildVersion("build-1", "M-001", "release_back", "release_front"),
+        config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
+        sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
+    )
+
+    info = inspect_artifact_versions(product_dir=Path(result["product_dir"]))
+
+    assert info["available"] is True
+    assert info["type"] == "standard"
+    assert "資材:M-001" in info["version_txt"]
+    assert info["backend"]["version"] == "1.0.0"
+    assert info["backend"]["spring_boot_version"] == "3.5.0"
+    assert info["backend"]["build_jdk_spec"] == "24"
+    assert info["frontend"]["release_timestamp"] == "release_2026_01_01_00_00_00"
+    assert info["frontend"]["repositories"][0]["branch"] == "release_front"
+    assert info["help"]["release_timestamp"] == "ohr_help_docs_release_2026_01_01"
+    assert info["middleware"]["nginx"]["version"] == "1.26.2"
+    assert info["middleware"]["redis"]["version"] == "5.0.9"
 
 
 def test_build_product_package_fails_when_help_sql_is_missing(tmp_path):
