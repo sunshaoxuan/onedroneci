@@ -47,7 +47,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.57"
+APP_VERSION = "0.3.58"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1242,7 +1242,7 @@ INDEX_HTML = """<!doctype html>
             <label><span>Nginx</span><select name="middleware_nginx_version" id="middleware-nginx-version" data-middleware-product="nginx"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
             <label><span>Redis</span><select name="middleware_redis_version" id="middleware-redis-version" data-middleware-product="redis"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
             <label><span>MinIO</span><select name="middleware_minio_version" id="middleware-minio-version" data-middleware-product="minio"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
-            <p class="section-note section-wide" id="middleware-version-note" data-i18n="middlewareVersionNote">同梱版以外を選択した場合、構造時に公式配布元から取得して宿主機キャッシュに保存し、OneHrStandalone.zip 内の同名パッケージを差し替えます。</p>
+            <p class="section-note section-wide" id="middleware-version-note" data-i18n="middlewareVersionNote">同梱版以外は公式配布元から取得し、宿主機キャッシュ経由で差し替えます。</p>
           </fieldset>
           <fieldset class="form-section env-config">
             <legend data-i18n="apHostInfo">AP 主機情報</legend>
@@ -1419,7 +1419,7 @@ const I18N = {
     buildConfProd: '顧客環境設定 conf_prod を生成',
     middlewareVersions: 'ミドルウェアバージョン',
     middlewareBundled: '同梱版',
-    middlewareVersionNote: '同梱版以外を選択した場合、構造時に公式配布元から取得して宿主機キャッシュに保存し、OneHrStandalone.zip 内の同名パッケージを差し替えます。',
+    middlewareVersionNote: '同梱版以外は公式配布元から取得し、宿主機キャッシュ経由で差し替えます。',
     middlewareLoadFailed: '候補を取得できません。同梱版を使用します。',
     customerHost: '顧客アクセスアドレス',
     webPort: 'Web ポート',
@@ -1590,7 +1590,7 @@ const I18N = {
     buildConfProd: '生成客户环境配置 conf_prod',
     middlewareVersions: '中间件版本',
     middlewareBundled: '内置版本',
-    middlewareVersionNote: '选择内置版本以外的版本时，构造时会从官方发布源下载并缓存到宿主机，再替换 OneHrStandalone.zip 内的同名包。',
+    middlewareVersionNote: '非内置版本会从官方发布源取得，并通过宿主机缓存替换。',
     middlewareLoadFailed: '候选取得失败，将使用内置版本。',
     customerHost: '客户访问地址',
     webPort: 'Web 端口',
@@ -1761,7 +1761,7 @@ const I18N = {
     buildConfProd: 'Generate customer environment conf_prod',
     middlewareVersions: 'Middleware versions',
     middlewareBundled: 'Bundled version',
-    middlewareVersionNote: 'When a non-bundled version is selected, the builder downloads it from the official release source during packaging, caches it on the host, and replaces the package with the same name in OneHrStandalone.zip.',
+    middlewareVersionNote: 'Non-bundled versions are downloaded from official sources and replaced from host cache.',
     middlewareLoadFailed: 'Could not load candidates; bundled versions will be used.',
     customerHost: 'Customer access address',
     webPort: 'Web port',
@@ -3452,6 +3452,20 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   font-weight: 760;
 }
 .form-section .section-wide { grid-column: 1 / -1; }
+.section-note {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafafa;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+#middleware-version-note {
+  max-width: 100%;
+}
 .option-matrix {
   grid-column: 1 / -1;
   display: grid;

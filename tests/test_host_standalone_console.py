@@ -20,9 +20,15 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.57"
+    assert console.APP_VERSION == "0.3.58"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
+
+
+def test_middleware_version_note_is_compact():
+    assert "同梱版以外は公式配布元から取得し" in console.INDEX_HTML
+    assert "Non-bundled versions are downloaded from official sources" in console.APP_JS
+    assert "#middleware-version-note" in console.STYLE_CSS
 
 
 def test_start_script_stops_process_occupying_fixed_port():
