@@ -47,7 +47,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.58"
+APP_VERSION = "0.3.59"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -2961,8 +2961,7 @@ async function refresh() {
       };
     }
     if (mode !== 'create' && job.id === selected) {
-      selectedJob = job;
-      render(job);
+      selectedJob = selectedJob && selectedJob.id === job.id ? {...selectedJob, ...job} : job;
     }
   });
   if (mode !== 'create' && selected) {

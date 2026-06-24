@@ -20,9 +20,15 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.58"
+    assert console.APP_VERSION == "0.3.59"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
+
+
+def test_selected_job_result_is_rendered_from_detail_api_only():
+    assert "render(detail);" in console.APP_JS
+    assert "selectedJob = selectedJob && selectedJob.id === job.id ? {...selectedJob, ...job} : job;" in console.APP_JS
+    assert "selectedJob = job;\n      render(job);" not in console.APP_JS
 
 
 def test_middleware_version_note_is_compact():
