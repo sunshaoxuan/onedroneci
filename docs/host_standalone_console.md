@@ -38,7 +38,7 @@
 
 历史列表会跟随页面顶部的产品版本切换：`標準版` 只显示標準版任务，`NHO版` 只显示 NHO 任务。切换版本会回到新建模式，避免把另一个版本的历史参数带入当前表单。
 
-標準版构造类型为 `标准发版` 时，只显示前后端分支选择，成功后输出 `package.zip` 与 `web.zip` 到 `dist\standalone\標準発版 <主控タスクID>\`。该模式不要求资材编号、客户环境、SQL、Help、数据连携或中间件封包参数。
+標準版构造类型为 `标准发版` 时，只显示资材番号、前后端分支选择，成功后输出 `package.zip` 与 `web.zip` 到 `dist\standalone\標準発版 <主控タスクID>\`。该模式不要求客户环境、SQL、Help、数据连携或中间件封包参数。
 
 標準版构造类型为 `机构封包` 时，資材番号候选由构建终端从 `STANDARD_MATERIAL_SVN_URL` 读取，目录名 `資材-YYYYMMDD` 或 `資材_YYYYMMDD` 会显示为 `YYYYMMDD`。选择后主控台通过构建终端读取该目录 `version.txt`，自动回填后台分支、前台分支和 Help SVN revision。
 

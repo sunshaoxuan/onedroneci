@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.60"
+    assert console.APP_VERSION == "0.3.61"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -340,7 +340,7 @@ def test_material_number_is_required_for_standard_and_nho_jobs():
         assert payload["product_variant"] == product_variant
 
 
-def test_standard_release_requires_only_backend_and_frontend_branches():
+def test_standard_release_requires_material_number_backend_and_frontend_branches():
     payload, error = console.validate_job_payload(
         {
             "product_variant": "standard",
@@ -348,6 +348,17 @@ def test_standard_release_requires_only_backend_and_frontend_branches():
             "backend_branch": "release_back",
             "frontend_release_branch": "release_front",
             "material_number": "",
+        }
+    )
+    assert error == "missing material_number"
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "standard_build_mode": "standard_release",
+            "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+            "material_number": "20260626",
         }
     )
     assert error is None
@@ -360,6 +371,7 @@ def test_standard_release_requires_only_backend_and_frontend_branches():
             "standard_build_mode": "standard_release",
             "backend_branch": "release_back",
             "frontend_release_branch": "",
+            "material_number": "20260626",
         }
     )
     assert error == "missing build target"
@@ -716,6 +728,7 @@ def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, mon
         "request": {
             "product_variant": "standard",
             "standard_build_mode": "standard_release",
+            "material_number": "20260626",
             "backend_branch": "release_back",
             "frontend_release_branch": "release_front",
         },

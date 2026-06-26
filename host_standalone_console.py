@@ -47,7 +47,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.60"
+APP_VERSION = "0.3.61"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -484,7 +484,7 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     if not build_conf_prod:
         payload["organisation_name"] = "共通"
 
-    if not standard_release and not str(payload.get("material_number") or "").strip():
+    if not str(payload.get("material_number") or "").strip():
         return payload, "missing material_number"
 
     build_backend = bool(str(payload.get("backend_branch") or "").strip())
@@ -1287,7 +1287,7 @@ INDEX_HTML = """<!doctype html>
           <button class="standard-tab active" type="button" data-standard-tab="prep" data-i18n="tabPreparation">事前準備</button>
           <button class="standard-tab" type="button" data-standard-tab="import" data-i18n="tabImportPlan">導入計画</button>
         </div>
-        <label class="required-field material-field standard-package-only"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle" type="button" aria-label="material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
+        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle" type="button" aria-label="material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
         <section class="standard-only standard-package-only standard-tab-panel" data-standard-tab-panel="prep">
