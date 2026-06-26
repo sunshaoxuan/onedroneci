@@ -47,7 +47,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.59"
+APP_VERSION = "0.3.60"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -311,6 +311,8 @@ def config_history_label(request: dict[str, Any], job_id: str) -> str:
 def output_customer_name(request: dict[str, Any]) -> str:
     if str(request.get("product_variant") or "").lower() == "nho":
         return "NHO"
+    if str(request.get("standard_build_mode") or "").lower() == "standard_release":
+        return "標準発版"
     name = str(request.get("organisation_name") or "").strip()
     if not name:
         name = str(request.get("material_number") or "").strip()
@@ -466,16 +468,29 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     if product_variant not in {"standard", "nho"}:
         return payload, "invalid product_variant"
     payload["product_variant"] = product_variant
+    standard_build_mode = str(payload.get("standard_build_mode") or "institution_package").strip().lower()
+    if product_variant == "standard":
+        if standard_build_mode not in {"standard_release", "institution_package"}:
+            return payload, "invalid standard_build_mode"
+    else:
+        standard_build_mode = "nho_common"
+    payload["standard_build_mode"] = standard_build_mode
+    standard_release = product_variant == "standard" and standard_build_mode == "standard_release"
     build_conf_prod = request_bool(payload, "build_conf_prod", True)
+    if standard_release:
+        build_conf_prod = False
+        payload["build_help"] = False
     payload["build_conf_prod"] = build_conf_prod
     if not build_conf_prod:
         payload["organisation_name"] = "共通"
 
-    if not str(payload.get("material_number") or "").strip():
+    if not standard_release and not str(payload.get("material_number") or "").strip():
         return payload, "missing material_number"
 
     build_backend = bool(str(payload.get("backend_branch") or "").strip())
     build_frontend = bool(str(payload.get("frontend_release_branch") or "").strip())
+    if standard_release and not (build_backend and build_frontend):
+        return payload, "missing build target"
     if not build_backend and not build_frontend:
         return payload, "missing build target"
 
@@ -590,6 +605,33 @@ def validate_help_docs_svn_revision(value: str) -> dict[str, Any]:
         REMOTE_BUILD_CONSOLE_URL,
         f"/api/help-docs-svn-revision/validate?value={urllib.parse.quote(raw, safe='')}",
     )
+
+
+def build_standard_release_artifacts(
+    *,
+    output_root: Path,
+    build_id: str,
+    delivery_name: str | None,
+    package_zip: Path | None,
+    web_zip: Path | None,
+) -> dict[str, Any]:
+    if not package_zip or not package_zip.is_file():
+        raise FileNotFoundError(f"missing package.zip: {package_zip}")
+    if not web_zip or not web_zip.is_file():
+        raise FileNotFoundError(f"missing web.zip: {web_zip}")
+    delivery_root = output_root / (delivery_name or build_id)
+    if delivery_root.exists():
+        shutil.rmtree(delivery_root)
+    delivery_root.mkdir(parents=True, exist_ok=True)
+    target_package = delivery_root / "package.zip"
+    target_web = delivery_root / "web.zip"
+    shutil.copy2(package_zip, target_package)
+    shutil.copy2(web_zip, target_web)
+    return {
+        "product_dir": str(delivery_root),
+        "package_zip": str(target_package),
+        "web_zip": str(target_web),
+    }
 
 
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -957,6 +999,8 @@ def run_job(job_id: str) -> None:
         req = dict(job["request"])
         remote_id = job.get("remote_build_id")
     product_variant = str(req.get("product_variant") or "standard").lower()
+    standard_build_mode = str(req.get("standard_build_mode") or "institution_package").lower()
+    standard_release = product_variant == "standard" and standard_build_mode == "standard_release"
     material_number = str(req.get("material_number") or "").strip()
     build_backend = bool(str(req.get("backend_branch") or "").strip())
     build_frontend = bool(str(req.get("frontend_release_branch") or "").strip())
@@ -981,8 +1025,8 @@ def run_job(job_id: str) -> None:
                 "product_variant": product_variant,
                 "build_backend": build_backend,
                 "build_frontend": build_frontend,
-                "build_help": truthy(req.get("build_help"), True),
-                "build_conf_prod": truthy(req.get("build_conf_prod"), True),
+                "build_help": False if standard_release else truthy(req.get("build_help"), True),
+                "build_conf_prod": False if standard_release else truthy(req.get("build_conf_prod"), True),
                 "backend_branch": req.get("backend_branch") or "",
                 "frontend_release_branch": req.get("frontend_release_branch") or "",
                 "help_docs_svn_revision": req.get("help_docs_svn_revision") or "",
@@ -1024,6 +1068,20 @@ def run_job(job_id: str) -> None:
             "web_zip": str(web_zip) if web_zip else "",
         }
         update_progress(job_id, "download_artifacts", "success")
+        if standard_release:
+            for step_id in ("sql_assets", "data_sync_assets", "account_sql", "help_sql", "standalone_zip"):
+                update_progress(job_id, step_id, "skipped")
+            outputs = build_standard_release_artifacts(
+                output_root=configured_output_dir(),
+                build_id=job_id,
+                delivery_name=delivery_folder_name(req, job_id),
+                package_zip=package_zip,
+                web_zip=web_zip,
+            )
+            update_progress(job_id, "complete", "success")
+            update_job(job_id, status="success", outputs=outputs)
+            append_log(job_id, "selected_artifacts_done")
+            return
         if product_variant == "nho":
             check_cancelled(job_id)
             update_progress(job_id, "sql_assets", "running")
@@ -1220,14 +1278,19 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="product_variant" type="radio" value="standard" checked><span data-i18n="variantStandard">標準版</span></label>
           <label class="radio-pill"><input name="product_variant" type="radio" value="nho"><span data-i18n="variantNho">NHO版</span></label>
         </fieldset>
-        <div class="standard-only standard-tabs" role="tablist" aria-label="standard settings tabs">
+        <fieldset class="variant-field standard-only">
+          <legend data-i18n="standardBuildMode">標準版構造種別</legend>
+          <label class="radio-pill"><input name="standard_build_mode" type="radio" value="institution_package" checked><span data-i18n="modeInstitutionPackage">機関封包</span></label>
+          <label class="radio-pill"><input name="standard_build_mode" type="radio" value="standard_release"><span data-i18n="modeStandardRelease">標準発版</span></label>
+        </fieldset>
+        <div class="standard-only standard-package-only standard-tabs" role="tablist" aria-label="standard settings tabs">
           <button class="standard-tab active" type="button" data-standard-tab="prep" data-i18n="tabPreparation">事前準備</button>
           <button class="standard-tab" type="button" data-standard-tab="import" data-i18n="tabImportPlan">導入計画</button>
         </div>
-        <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle" type="button" aria-label="material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
+        <label class="required-field material-field standard-package-only"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle" type="button" aria-label="material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
-        <section class="standard-tab-panel" data-standard-tab-panel="prep">
+        <section class="standard-only standard-package-only standard-tab-panel" data-standard-tab-panel="prep">
           <fieldset class="form-section">
             <legend data-i18n="basicBuildInfo">構築パラメータ</legend>
             <label class="standard-only"><span data-i18n="helpSvnRevision">Help SVN Revision</span><input name="help_docs_svn_revision" data-i18n-placeholder="helpSvnRevisionPlaceholder"></label>
@@ -1293,7 +1356,7 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only section-wide"><span data-i18n="ekispertUrl">駅すぱあと URL</span><input name="ekispert_url" placeholder="https://"></label>
           </fieldset>
         </section>
-        <section class="standard-only standard-tab-panel" data-standard-tab-panel="import" hidden>
+        <section class="standard-only standard-package-only standard-tab-panel" data-standard-tab-panel="import" hidden>
           <fieldset class="form-section env-config">
             <legend data-i18n="customerSituation">お客様の実績状況収集</legend>
             <div class="option-matrix">
@@ -1399,6 +1462,9 @@ const I18N = {
     productVariant: '製品バージョン',
     variantStandard: '標準版',
     variantNho: 'NHO版',
+    standardBuildMode: '標準版構造種別',
+    modeStandardRelease: '標準発版',
+    modeInstitutionPackage: '機関封包',
     materialNumber: '資材番号',
     materialNumberPlaceholder: '例：2026-05-20-001',
     materialNumberSelect: '候補から選択',
@@ -1570,6 +1636,9 @@ const I18N = {
     productVariant: '产品版本',
     variantStandard: '标准版',
     variantNho: 'NHO版',
+    standardBuildMode: '标准版构造类型',
+    modeStandardRelease: '标准发版',
+    modeInstitutionPackage: '机构封包',
     materialNumber: '资材编号',
     materialNumberPlaceholder: '例如：2026-05-20-001',
     materialNumberSelect: '从候选中选择',
@@ -1741,6 +1810,9 @@ const I18N = {
     productVariant: 'Product version',
     variantStandard: 'Standard',
     variantNho: 'NHO',
+    standardBuildMode: 'Standard build type',
+    modeStandardRelease: 'Standard release',
+    modeInstitutionPackage: 'Institution package',
     materialNumber: 'Material number',
     materialNumberPlaceholder: 'Example: 2026-05-20-001',
     materialNumberSelect: 'Select candidate',
@@ -2026,9 +2098,16 @@ function getProductVariant() {
   const checked = document.querySelector('input[name="product_variant"]:checked');
   return checked ? checked.value : 'standard';
 }
+function getStandardBuildMode() {
+  const checked = document.querySelector('input[name="standard_build_mode"]:checked');
+  return checked ? checked.value : 'institution_package';
+}
+function isStandardReleaseMode() {
+  return getProductVariant() === 'standard' && getStandardBuildMode() === 'standard_release';
+}
 function getBuildConfProd() {
   const input = document.querySelector('input[name="build_conf_prod"]');
-  return input ? input.checked : true;
+  return isStandardReleaseMode() ? false : (input ? input.checked : true);
 }
 function applyEnvironmentVisibility() {
   const buildConfProd = getBuildConfProd();
@@ -2038,15 +2117,23 @@ function applyEnvironmentVisibility() {
 }
 function applyVariantVisibility() {
   const isNho = getProductVariant() === 'nho';
+  const standardRelease = isStandardReleaseMode();
   document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho && !el.closest('.env-config'); });
   document.querySelectorAll('.nho-only').forEach(el => { el.hidden = !isNho; });
+  document.querySelectorAll('.standard-package-only').forEach(el => { el.hidden = standardRelease || (isNho && el.classList.contains('standard-only')); });
   applyEnvironmentVisibility();
-  if (!isNho) {
+  if (!isNho && !standardRelease) {
     const active = document.querySelector('.standard-tab.active');
     switchStandardTab(active ? active.dataset.standardTab : 'prep');
+  } else {
+    document.querySelectorAll('[data-standard-tab-panel]').forEach(panel => { panel.hidden = true; });
   }
 }
 function switchStandardTab(tabName) {
+  if (isStandardReleaseMode()) {
+    document.querySelectorAll('[data-standard-tab-panel]').forEach(panel => { panel.hidden = true; });
+    return;
+  }
   document.querySelectorAll('.standard-tab').forEach(button => {
     const active = button.dataset.standardTab === tabName;
     button.classList.toggle('active', active);
@@ -2474,10 +2561,15 @@ function setFormLocked(locked) {
   const terminalLocked = lastTerminalStatus !== 'running';
   const modeLocked = mode !== 'create';
   const isNho = getProductVariant() === 'nho';
+  const standardRelease = isStandardReleaseMode();
   const buildConfProd = getBuildConfProd();
   document.querySelectorAll('#form input, #form select, #form button.material-toggle, #startJob').forEach(el => {
-    if (el.name === 'product_variant') {
+    if (el.name === 'product_variant' || el.name === 'standard_build_mode') {
       el.disabled = false;
+      return;
+    }
+    if (standardRelease && el.closest('.standard-package-only')) {
+      el.disabled = true;
       return;
     }
     if (el.classList && el.classList.contains('publish-menu-toggle')) {
@@ -2767,6 +2859,13 @@ document.querySelectorAll('input[name="product_variant"]').forEach(el => {
     refresh();
   });
 });
+document.querySelectorAll('input[name="standard_build_mode"]').forEach(el => {
+  el.addEventListener('change', () => {
+    applyVariantVisibility();
+    setFormLocked(false);
+    renderConfigHistory();
+  });
+});
 document.querySelectorAll('.standard-tab').forEach(button => {
   button.addEventListener('click', () => switchStandardTab(button.dataset.standardTab || 'prep'));
 });
@@ -2862,18 +2961,19 @@ async function deleteConfigHistory(configId) {
 
 document.getElementById('form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!validateConditionalRequiredFields(event.target)) return;
+  const standardRelease = isStandardReleaseMode();
+  if (!standardRelease && !validateConditionalRequiredFields(event.target)) return;
   const buildConfProdInput = event.target.elements.build_conf_prod;
-  const buildConfProd = buildConfProdInput ? buildConfProdInput.checked : true;
+  const buildConfProd = standardRelease ? false : (buildConfProdInput ? buildConfProdInput.checked : true);
   const dataSyncCustomInput = event.target.elements.data_sync_custom_subdir;
-  if (buildConfProd && dataSyncCustomInput && !(await validateDataSyncCustomSource(dataSyncCustomInput))) {
+  if (!standardRelease && buildConfProd && dataSyncCustomInput && !(await validateDataSyncCustomSource(dataSyncCustomInput))) {
     dataSyncCustomInput.focus();
     return;
   }
   const helpSvnRevisionInput = event.target.elements.help_docs_svn_revision;
   const buildHelpInput = event.target.elements.build_help;
-  const buildHelp = buildHelpInput ? buildHelpInput.checked : true;
-  if (buildHelp && helpSvnRevisionInput && !(await validateHelpSvnRevision(helpSvnRevisionInput))) {
+  const buildHelp = standardRelease ? false : (buildHelpInput ? buildHelpInput.checked : true);
+  if (!standardRelease && buildHelp && helpSvnRevisionInput && !(await validateHelpSvnRevision(helpSvnRevisionInput))) {
     helpSvnRevisionInput.focus();
     return;
   }

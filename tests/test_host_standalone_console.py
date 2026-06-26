@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.59"
+    assert console.APP_VERSION == "0.3.60"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -340,6 +340,31 @@ def test_material_number_is_required_for_standard_and_nho_jobs():
         assert payload["product_variant"] == product_variant
 
 
+def test_standard_release_requires_only_backend_and_frontend_branches():
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "standard_build_mode": "standard_release",
+            "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+            "material_number": "",
+        }
+    )
+    assert error is None
+    assert payload["build_conf_prod"] is False
+    assert payload["build_help"] is False
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "standard_build_mode": "standard_release",
+            "backend_branch": "release_back",
+            "frontend_release_branch": "",
+        }
+    )
+    assert error == "missing build target"
+
+
 def test_delete_finished_job_removes_host_and_remote_artifacts(tmp_path, monkeypatch):
     monkeypatch.setattr(console, "DATA_DIR", tmp_path / "jobs")
     monkeypatch.setattr(console, "JOBS", {})
@@ -380,6 +405,7 @@ def test_delivery_folder_name_uses_customer_name_and_host_job_id():
     assert console.delivery_folder_name({"organisation_name": "A/B:大学"}, "20260623000102") == "A_B_大学 20260623000102"
     assert console.delivery_folder_name({"material_number": "20260625"}, "20260623000103") == "20260625 20260623000103"
     assert console.delivery_folder_name({"product_variant": "nho", "material_number": "20260625"}, "20260623000104") == "NHO 20260623000104"
+    assert console.delivery_folder_name({"product_variant": "standard", "standard_build_mode": "standard_release"}, "20260623000105") == "標準発版 20260623000105"
 
 
 def test_list_jobs_migrates_existing_output_directory_to_customer_job_name(tmp_path, monkeypatch):
@@ -675,6 +701,67 @@ def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
     assert payloads[0]["build_help"] is False
 
 
+def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(console, "configured_output_dir", lambda: tmp_path / "out")
+    console.JOBS.clear()
+    job_id = "20260626000103"
+    job = {
+        "id": job_id,
+        "status": "queued",
+        "created_at": 1,
+        "updated_at": 1,
+        "remote_build_id": None,
+        "remote_log_offset": 0,
+        "request": {
+            "product_variant": "standard",
+            "standard_build_mode": "standard_release",
+            "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+        },
+        "log": [],
+        "outputs": {},
+        "progress": console.make_progress(),
+    }
+    console.job_dir(job_id).mkdir(parents=True)
+    console.job_log_path(job_id).write_text("", encoding="utf-8")
+    console.write_job(job)
+    console.JOBS[job_id] = job
+    payloads: list[dict] = []
+
+    def fake_remote_json(base, path, payload=None):
+        if path == "/api/builds":
+            payloads.append(payload)
+            return {"id": "remote-standard-release"}
+        if path == "/api/builds/remote-standard-release":
+            return {"status": "success"}
+        if path.endswith("/log?offset=0"):
+            return {"text": "", "offset": 0}
+        return {"text": "", "offset": 0}
+
+    def fake_download(base, build_id, name, destination):
+        destination.write_bytes(name.encode("utf-8"))
+        return destination
+
+    monkeypatch.setattr(console, "build_terminal_status", lambda: {"status": "running"})
+    monkeypatch.setattr(console, "remote_json", fake_remote_json)
+    monkeypatch.setattr(console, "download_remote_artifact", fake_download)
+    monkeypatch.setattr(console, "build_product_package", lambda **kwargs: (_ for _ in ()).throw(AssertionError("should not package")))
+
+    console.run_job(job_id)
+
+    stored = console.read_job(job_id)
+    assert stored["status"] == "success"
+    output_dir = tmp_path / "out" / f"標準発版 {job_id}"
+    assert stored["outputs"]["product_dir"] == str(output_dir)
+    assert (output_dir / "package.zip").read_bytes() == b"package.zip"
+    assert (output_dir / "web.zip").read_bytes() == b"web.zip"
+    assert payloads[0]["build_backend"] is True
+    assert payloads[0]["build_frontend"] is True
+    assert payloads[0]["build_help"] is False
+    assert payloads[0]["build_conf_prod"] is False
+
+
 def test_tenant_import_config_is_derived_from_standard_request():
     config = console.tenant_import_config_from_request(
         {
@@ -836,7 +923,7 @@ def test_embedded_build_terminal_unlocks_only_after_remote_build_starts():
 def test_form_is_locked_unless_build_terminal_is_running():
     assert "const terminalLocked = lastTerminalStatus !== 'running'" in console.APP_JS
     assert "const modeLocked = mode !== 'create'" in console.APP_JS
-    assert "if (el.name === 'product_variant')" in console.APP_JS
+    assert "if (el.name === 'product_variant' || el.name === 'standard_build_mode')" in console.APP_JS
     assert "el.disabled = false;" in console.APP_JS
     assert "standardHidden" in console.APP_JS
     assert "nhoHidden" in console.APP_JS
@@ -848,6 +935,11 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "name=\"product_variant\"" in console.INDEX_HTML
     assert "value=\"standard\"" in console.INDEX_HTML
     assert "value=\"nho\"" in console.INDEX_HTML
+    assert 'name="standard_build_mode"' in console.INDEX_HTML
+    assert 'value="standard_release"' in console.INDEX_HTML
+    assert 'value="institution_package"' in console.INDEX_HTML
+    assert "function isStandardReleaseMode()" in console.APP_JS
+    assert "document.querySelectorAll('.standard-package-only')" in console.APP_JS
     assert 'name="material_number"' in console.INDEX_HTML
     assert 'list="material-numbers"' not in console.INDEX_HTML
     assert "<datalist" not in console.INDEX_HTML

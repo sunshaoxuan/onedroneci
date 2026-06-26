@@ -1,13 +1,14 @@
 # 标准版构造过程
 
-本文说明“庶务事务 標準版”的完整 Direct 构造与二次打包过程。標準版目标是生成完整交付目录，包含 `製品/` 与 `データ連携/`，其中 `製品/` 内有 SQL 资材、`OneHrStandalone.zip` 和 `version.txt`。
+本文说明“庶务事务 標準版”的 Direct 构造过程。標準版支持两种构造类型：`标准发版` 只输出后端 `package.zip` 与前端 `web.zip`；`机构封包` 生成完整交付目录，包含 `製品/` 与 `データ連携/`，其中 `製品/` 内有 SQL 资材、`OneHrStandalone.zip` 和 `version.txt`。
 
 ## 1. 输入参数
 
 主控台页面收集以下参数：
 
 - 产品版本：`標準版`
-- 资材编号：写入最终 `version.txt` 第一行 `資材:<资材编号>`。候选值来自构建终端读取的 `お客様環境` SVN，目录名 `資材-YYYYMMDD` 或 `資材_YYYYMMDD` 会被识别为候选。
+- 构造类型：`标准发版` 或 `机构封包`
+- 资材编号：机构封包必填，写入最终 `version.txt` 第一行 `資材:<资材编号>`。候选值来自构建终端读取的 `お客様環境` SVN，目录名 `資材-YYYYMMDD` 或 `資材_YYYYMMDD` 会被识别为候选。
 - 后端分支：不为空时构建 `package.zip`
 - 前端分支：不为空时构建 `web.zip`
 - 生成 Help 包及相关资源：默认勾选。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
@@ -19,9 +20,11 @@
 - 应用服务主机名、OHR 服务端口
 - 客户机构名、机构开始日
 
-如果只选后端或只选前端，標準版只下载对应中间产物，不执行完整二次交付包流程。完整交付包需要同时选择后端和前端。
+标准发版必须同时选择后端分支和前端分支，成功后只输出两枚代码 zip。
 
-选择標準版资材编号后，构建终端读取：
+机构封包如果只选后端或只选前端，標準版只下载对应中间产物，不执行完整二次交付包流程。完整交付包需要同时选择后端和前端。
+
+机构封包选择標準版资材编号后，构建终端读取：
 
 ```text
 <STANDARD_MATERIAL_SVN_URL>/資材-YYYYMMDD/version.txt
@@ -35,10 +38,11 @@
 
 1. 检查构建终端状态。
 2. 创建主控任务并落盘 `metadata.json` / `job.log`。
-3. 将产品版本、前后端分支、是否生成 Help、是否生成 `conf_prod`、Help SVN revision 和客户配置传给构建终端。
-4. 轮询构建终端状态与日志。
-5. 下载构建终端产物。
-6. 执行 SQL、数据连携、`all.sql` 补全、`version.txt`、`OneHrStandalone.zip` 二次打包。
+3. 标准发版传给构建终端的 `build_help` 与 `build_conf_prod` 固定为 `false`。
+4. 机构封包将产品版本、前后端分支、是否生成 Help、是否生成 `conf_prod`、Help SVN revision 和客户配置传给构建终端。
+5. 轮询构建终端状态与日志。
+6. 下载构建终端产物。
+7. 标准发版把 `package.zip` 与 `web.zip` 放入输出目录；机构封包执行 SQL、数据连携、`all.sql` 补全、`version.txt`、`OneHrStandalone.zip` 二次打包。
 
 主控台进度为十个步骤：
 
@@ -298,7 +302,19 @@ DELETE FROM ohr_help;
 
 资材编号由页面输入，用于和前后端分支形成可人工核验的版本体系。
 
-## 17. OneHrStandalone.zip
+## 17. 标准发版输出
+
+标准发版完成构建终端任务后，主控台只下载并保存：
+
+```text
+STANDALONE_OUTPUT_DIR/標準発版 <主控タスクID>/
+  package.zip
+  web.zip
+```
+
+该类型不执行 SQL 资材、数据连携、Help SQL、`4.account.sql`、`version.txt` 或 `OneHrStandalone.zip` 重建。
+
+## 18. OneHrStandalone.zip
 
 二次打包器以宿主机固定模板 `OneHrStandalone.zip` 为基础重建 zip，固定替换：
 
@@ -321,9 +337,9 @@ nginx、Redis、MinIO 可在主控台页面选择版本：
 - 下载版中间件缓存 zip 生成时，打包器会把 `addons/<product>/` 下的补充文件合并到 `<product>/` 根目录。当前 nginx 补充 `startup.bat` / `stop.bat`，Redis 补充 `startup.cmd` / `redis.windows.conf`。
 - 已缓存的下载版中间件如果缺少这些补充文件，或包内文件内容与仓库 `addons/` 不一致，构造时会自动重建缓存包。
 
-## 18. 最终输出
+## 19. 最终输出
 
-完整標準版输出目录：
+机构封包输出目录：
 
 ```text
 STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/
@@ -341,11 +357,11 @@ STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/
 
 页面成果物信息区会从已生成且未删除的 `製品/OneHrStandalone.zip` 中读取包内版本信息，包括后端 jar manifest、前端 `meta.json`、Help `meta.json` 与 nginx、Redis、MinIO 版本。该信息由包体调查得到，不依赖页面构造设置。
 
-## 19. 与 NHO版的主要差异
+## 20. 与 NHO版的主要差异
 
-- 標準版输出完整安装交付目录；NHO版只输出代码共通包 `共通.zip`。
+- 標準版标准发版只输出代码 zip；標準版机构封包输出完整安装交付目录；NHO版只输出代码共通包 `共通.zip`。
 - 標準版使用 `ohr/*` 仓库；NHO版使用 `nhophr/*` 仓库。
 - 標準版前端包含 `conf_prod` 与 Help；NHO版不执行 `ohr-cicd`、Help、SVN 文档或客户配置。
 - 標準版需要客户环境、数据库、机构名称等页面参数；NHO版隐藏这些参数。
-- 標準版执行 SQL 资材、`4.account.sql`、Help SQL、数据连携、`all.sql` 补全和 `OneHrStandalone.zip` 重建；NHO版全部跳过。
-- 標準版最终目录以 `顧客機関名 + 主控タスクID` 为根；NHO版最终目录以 `NHO + 主控タスクID` 为根。
+- 標準版机构封包执行 SQL 资材、`4.account.sql`、Help SQL、数据连携、`all.sql` 补全和 `OneHrStandalone.zip` 重建；标准发版与 NHO版跳过这些步骤。
+- 標準版机构封包最终目录以 `顧客機関名 + 主控タスクID` 为根；標準版标准发版以 `標準発版 + 主控タスクID` 为根；NHO版最终目录以 `NHO + 主控タスクID` 为根。
