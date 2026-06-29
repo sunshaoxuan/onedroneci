@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.62"
+    assert console.APP_VERSION == "0.3.63"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -384,6 +384,20 @@ def test_standard_release_requires_material_number_backend_and_frontend_branches
             "product_variant": "standard",
             "standard_build_mode": "standard_release",
             "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+            "material_number": "20260626",
+            "help_docs_svn_revision": "12345",
+            "build_help": False,
+        }
+    )
+    assert error is None
+    assert payload["build_help"] is True
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "standard_build_mode": "standard_release",
+            "backend_branch": "release_back",
             "frontend_release_branch": "",
             "material_number": "20260626",
         }
@@ -724,7 +738,7 @@ def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
     assert payloads[0]["build_frontend"] is True
     assert payloads[0]["conf_enable_https"] is True
     assert payloads[0]["help_docs_svn_revision"] == "12345"
-    assert payloads[0]["build_help"] is False
+    assert payloads[0]["build_help"] is True
 
 
 def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, monkeypatch):
@@ -977,6 +991,8 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert 'class="standard-only help-option"' in console.INDEX_HTML
     assert "const buildHelp = buildHelpInput ? buildHelpInput.checked : true;" in console.APP_JS
     assert "standardRelease ? false : (buildHelpInput" not in console.APP_JS
+    assert "function syncHelpBuildFromRevision()" in console.APP_JS
+    assert "if (String(revisionInput.value || '').trim()) buildHelpInput.checked = true;" in console.APP_JS
     assert "materialNumber" in console.APP_JS
     assert "/build-terminal/api/nho-material-numbers" in console.APP_JS
     assert "/build-terminal/api/standard-material-numbers" in console.APP_JS

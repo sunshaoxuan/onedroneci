@@ -47,7 +47,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.62"
+APP_VERSION = "0.3.63"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -476,7 +476,10 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
         standard_build_mode = "nho_common"
     payload["standard_build_mode"] = standard_build_mode
     standard_release = product_variant == "standard" and standard_build_mode == "standard_release"
-    payload["build_help"] = request_bool(payload, "build_help", True) if product_variant == "standard" else False
+    help_docs_svn_revision = str(payload.get("help_docs_svn_revision") or "").strip()
+    payload["build_help"] = (
+        True if help_docs_svn_revision else request_bool(payload, "build_help", True)
+    ) if product_variant == "standard" else False
     build_conf_prod = request_bool(payload, "build_conf_prod", True)
     if standard_release:
         build_conf_prod = False
@@ -1004,6 +1007,10 @@ def run_job(job_id: str) -> None:
     material_number = str(req.get("material_number") or "").strip()
     build_backend = bool(str(req.get("backend_branch") or "").strip())
     build_frontend = bool(str(req.get("frontend_release_branch") or "").strip())
+    help_docs_svn_revision = str(req.get("help_docs_svn_revision") or "").strip()
+    effective_build_help = (
+        truthy(req.get("build_help"), True) or bool(help_docs_svn_revision)
+    ) if product_variant == "standard" else False
     work_dir = job_dir(job_id)
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -1025,11 +1032,11 @@ def run_job(job_id: str) -> None:
                 "product_variant": product_variant,
                 "build_backend": build_backend,
                 "build_frontend": build_frontend,
-                "build_help": truthy(req.get("build_help"), True) if product_variant == "standard" else False,
+                "build_help": effective_build_help,
                 "build_conf_prod": False if standard_release else truthy(req.get("build_conf_prod"), True),
                 "backend_branch": req.get("backend_branch") or "",
                 "frontend_release_branch": req.get("frontend_release_branch") or "",
-                "help_docs_svn_revision": req.get("help_docs_svn_revision") or "",
+                "help_docs_svn_revision": help_docs_svn_revision,
                 "conf_server_host": req.get("conf_server_host") or "common.local",
                 "conf_web_port": int(req.get("conf_web_port") or 80),
                 "conf_enable_https": bool(req.get("conf_enable_https")),
@@ -1170,7 +1177,7 @@ def run_job(job_id: str) -> None:
             data_sync_dir=configured_data_sync_dir(),
             data_sync_subdir=configured_data_sync_subdir(),
             data_sync_custom_subdir=req.get("data_sync_custom_subdir") or configured_data_sync_custom_subdir(),
-            include_help_sql=truthy(req.get("build_help"), True),
+            include_help_sql=effective_build_help,
             middleware_versions={
                 "nginx": req.get("middleware_nginx_version") or "bundled",
                 "redis": req.get("middleware_redis_version") or "bundled",
@@ -1179,10 +1186,10 @@ def run_job(job_id: str) -> None:
             logger=package_log,
         )
         outputs.update(partial_outputs)
-        if not truthy(req.get("build_help"), True):
+        if not effective_build_help:
             update_progress(job_id, "help_sql", "skipped")
         packaging_steps = ("sql_assets", "data_sync_assets", "account_sql", "standalone_zip")
-        if truthy(req.get("build_help"), True):
+        if effective_build_help:
             packaging_steps = ("sql_assets", "data_sync_assets", "account_sql", "help_sql", "standalone_zip")
         for step_id in packaging_steps:
             current = next((step for step in (read_job(job_id).get("progress") or []) if step.get("id") == step_id), {})
@@ -2109,6 +2116,12 @@ function getBuildConfProd() {
   const input = document.querySelector('input[name="build_conf_prod"]');
   return isStandardReleaseMode() ? false : (input ? input.checked : true);
 }
+function syncHelpBuildFromRevision() {
+  const revisionInput = document.querySelector('input[name="help_docs_svn_revision"]');
+  const buildHelpInput = document.querySelector('input[name="build_help"]');
+  if (!revisionInput || !buildHelpInput || getProductVariant() !== 'standard') return;
+  if (String(revisionInput.value || '').trim()) buildHelpInput.checked = true;
+}
 function applyEnvironmentVisibility() {
   const buildConfProd = getBuildConfProd();
   document.querySelectorAll('.env-config').forEach(el => { el.hidden = !buildConfProd; });
@@ -2388,7 +2401,11 @@ async function loadMaterialReleaseBranches(materialNumber) {
     document.getElementById('backend-branches').value = data.backend_branch || '';
     document.getElementById('frontend-branches').value = data.frontend_branch || '';
     const helpRevision = document.querySelector('input[name="help_docs_svn_revision"]');
-    if (helpRevision && variant === 'standard') helpRevision.value = data.help_docs_svn_revision || '';
+    if (helpRevision && variant === 'standard') {
+      helpRevision.value = data.help_docs_svn_revision || '';
+      syncHelpBuildFromRevision();
+      setFormLocked(false);
+    }
   } catch (error) {
     console.warn('failed to load material release branches', error);
   }
@@ -2607,6 +2624,7 @@ function setFormLocked(locked) {
   });
   const buildHelpInput = document.querySelector('input[name="build_help"]');
   const helpRevisionInput = document.querySelector('input[name="help_docs_svn_revision"]');
+  syncHelpBuildFromRevision();
   if (helpRevisionInput && buildHelpInput) {
     helpRevisionInput.disabled = helpRevisionInput.disabled || !buildHelpInput.checked;
   }
@@ -2829,8 +2847,14 @@ if (dataSyncCustomInput) {
 }
 const helpSvnRevisionInput = document.querySelector('input[name="help_docs_svn_revision"]');
 if (helpSvnRevisionInput) {
-  helpSvnRevisionInput.addEventListener('blur', () => validateHelpSvnRevision(helpSvnRevisionInput));
-  helpSvnRevisionInput.addEventListener('input', () => setDataSyncCustomSourceState(helpSvnRevisionInput, 'pending'));
+  helpSvnRevisionInput.addEventListener('blur', () => {
+    syncHelpBuildFromRevision();
+    validateHelpSvnRevision(helpSvnRevisionInput);
+  });
+  helpSvnRevisionInput.addEventListener('input', () => {
+    syncHelpBuildFromRevision();
+    setDataSyncCustomSourceState(helpSvnRevisionInput, 'pending');
+  });
 }
 const buildHelpInput = document.querySelector('input[name="build_help"]');
 if (buildHelpInput) {
@@ -2972,6 +2996,7 @@ document.getElementById('form').addEventListener('submit', async (event) => {
   }
   const helpSvnRevisionInput = event.target.elements.help_docs_svn_revision;
   const buildHelpInput = event.target.elements.build_help;
+  syncHelpBuildFromRevision();
   const buildHelp = buildHelpInput ? buildHelpInput.checked : true;
   if (buildHelp && helpSvnRevisionInput && !(await validateHelpSvnRevision(helpSvnRevisionInput))) {
     helpSvnRevisionInput.focus();

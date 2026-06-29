@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.62`
+当前版本：`0.3.63`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -23,7 +23,7 @@
    - `机构封包`：沿用完整交付包流程，输出客户交付目录。
 5. `標準版` 前端 Direct 构建中：
    - `conf_prod` 来自 `ohr-cicd generateConf.js`
-   - help 构建脚手架来自 `ohr-help-docs`，文档内容来自 SVN；页面可指定是否生成 Help 包及相关资源，也可指定 Help SVN revision，留空时使用最新 revision
+   - help 构建脚手架来自 `ohr-help-docs`，文档内容来自 SVN；页面可指定是否生成 Help 包及相关资源，也可指定 Help SVN revision，留空时使用最新 revision。Help SVN revision 有值时会自动启用 Help 构造。
    - 前端版本分支来自四个前端子项目共同存在的 `release_*` 分支
    - `ohr-workspace` 固定使用配置分支，默认 `master`
 6. 主控台下载中间产物。

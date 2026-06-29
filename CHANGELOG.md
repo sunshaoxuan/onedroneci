@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.63 - 2026-06-29
+
+### Fixed
+
+- 標準版中 Help SVN Revision 有值时自动启用 Help 构造，防止选择资材番号回填 Revision 后遗漏 Help 包生成。
+
 ## 0.3.62 - 2026-06-29
 
 ### Fixed
