@@ -1,6 +1,6 @@
 # 标准版构造过程
 
-本文说明“庶务事务 標準版”的 Direct 构造过程。標準版支持两种构造类型：`标准发版` 收集资材番号、后端分支和前端分支，只输出后端 `package.zip` 与前端 `web.zip`；`机构封包` 生成完整交付目录，包含 `製品/` 与 `データ連携/`，其中 `製品/` 内有 SQL 资材、`OneHrStandalone.zip` 和 `version.txt`。
+本文说明“庶务事务 標準版”的 Direct 构造过程。標準版支持两种构造类型：`标准发版` 收集资材番号、后端分支、前端分支和 Help 构造选项，只输出后端 `package.zip` 与前端 `web.zip`；`机构封包` 生成完整交付目录，包含 `製品/` 与 `データ連携/`，其中 `製品/` 内有 SQL 资材、`OneHrStandalone.zip` 和 `version.txt`。
 
 ## 1. 输入参数
 
@@ -38,7 +38,7 @@
 
 1. 检查构建终端状态。
 2. 创建主控任务并落盘 `metadata.json` / `job.log`。
-3. 标准发版传给构建终端的 `build_help` 与 `build_conf_prod` 固定为 `false`。
+3. 标准发版传给构建终端的 `build_help` 来自画面勾选，`build_conf_prod` 固定为 `false`。
 4. 机构封包将产品版本、前后端分支、是否生成 Help、是否生成 `conf_prod`、Help SVN revision 和客户配置传给构建终端。
 5. 轮询构建终端状态与日志。
 6. 下载构建终端产物。
@@ -312,7 +312,7 @@ STANDALONE_OUTPUT_DIR/標準発版 <主控タスクID>/
   web.zip
 ```
 
-该类型不执行 SQL 资材、数据连携、Help SQL、`4.account.sql`、`version.txt` 或 `OneHrStandalone.zip` 重建。
+该类型不执行 SQL 资材、数据连携、Help SQL、`4.account.sql`、`version.txt` 或 `OneHrStandalone.zip` 重建。勾选生成 Help 时，构建终端仍会在前端 `web.zip` 构造过程中执行 Help 构造并写入 `web.zip`。
 
 ## 18. OneHrStandalone.zip
 
@@ -363,5 +363,5 @@ STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/
 - 標準版使用 `ohr/*` 仓库；NHO版使用 `nhophr/*` 仓库。
 - 標準版前端包含 `conf_prod` 与 Help；NHO版不执行 `ohr-cicd`、Help、SVN 文档或客户配置。
 - 標準版需要客户环境、数据库、机构名称等页面参数；NHO版隐藏这些参数。
-- 標準版机构封包执行 SQL 资材、`4.account.sql`、Help SQL、数据连携、`all.sql` 补全和 `OneHrStandalone.zip` 重建；标准发版与 NHO版跳过这些步骤。
+- 標準版机构封包执行 SQL 资材、`4.account.sql`、Help SQL、数据连携、`all.sql` 补全和 `OneHrStandalone.zip` 重建；标准发版与 NHO版跳过这些最终封包步骤。标准发版的 Help 构造仍按画面勾选传给构建终端。
 - 標準版机构封包最终目录以 `顧客機関名 + 主控タスクID` 为根；標準版标准发版以 `標準発版 + 主控タスクID` 为根；NHO版最终目录以 `NHO + 主控タスクID` 为根。

@@ -47,7 +47,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.61"
+APP_VERSION = "0.3.62"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -476,10 +476,10 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
         standard_build_mode = "nho_common"
     payload["standard_build_mode"] = standard_build_mode
     standard_release = product_variant == "standard" and standard_build_mode == "standard_release"
+    payload["build_help"] = request_bool(payload, "build_help", True) if product_variant == "standard" else False
     build_conf_prod = request_bool(payload, "build_conf_prod", True)
     if standard_release:
         build_conf_prod = False
-        payload["build_help"] = False
     payload["build_conf_prod"] = build_conf_prod
     if not build_conf_prod:
         payload["organisation_name"] = "共通"
@@ -1025,7 +1025,7 @@ def run_job(job_id: str) -> None:
                 "product_variant": product_variant,
                 "build_backend": build_backend,
                 "build_frontend": build_frontend,
-                "build_help": False if standard_release else truthy(req.get("build_help"), True),
+                "build_help": truthy(req.get("build_help"), True) if product_variant == "standard" else False,
                 "build_conf_prod": False if standard_release else truthy(req.get("build_conf_prod"), True),
                 "backend_branch": req.get("backend_branch") or "",
                 "frontend_release_branch": req.get("frontend_release_branch") or "",
@@ -1290,11 +1290,11 @@ INDEX_HTML = """<!doctype html>
         <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle" type="button" aria-label="material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
         <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
+        <label class="standard-only help-option"><span data-i18n="helpSvnRevision">Help SVN Revision</span><input name="help_docs_svn_revision" data-i18n-placeholder="helpSvnRevisionPlaceholder"></label>
+        <label class="check-row standard-only help-option"><input name="build_help" type="checkbox" checked><span data-i18n="buildHelp">Help パッケージと関連資材を生成</span></label>
         <section class="standard-only standard-package-only standard-tab-panel" data-standard-tab-panel="prep">
           <fieldset class="form-section">
             <legend data-i18n="basicBuildInfo">構築パラメータ</legend>
-            <label class="standard-only"><span data-i18n="helpSvnRevision">Help SVN Revision</span><input name="help_docs_svn_revision" data-i18n-placeholder="helpSvnRevisionPlaceholder"></label>
-            <label class="check-row standard-only"><input name="build_help" type="checkbox" checked><span data-i18n="buildHelp">Help パッケージと関連資材を生成</span></label>
             <label class="check-row"><input name="build_conf_prod" type="checkbox" checked><span data-i18n="buildConfProd">顧客環境設定 conf_prod を生成</span></label>
             <label class="standard-only env-config"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
             <label class="standard-only env-config"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
@@ -2972,8 +2972,8 @@ document.getElementById('form').addEventListener('submit', async (event) => {
   }
   const helpSvnRevisionInput = event.target.elements.help_docs_svn_revision;
   const buildHelpInput = event.target.elements.build_help;
-  const buildHelp = standardRelease ? false : (buildHelpInput ? buildHelpInput.checked : true);
-  if (!standardRelease && buildHelp && helpSvnRevisionInput && !(await validateHelpSvnRevision(helpSvnRevisionInput))) {
+  const buildHelp = buildHelpInput ? buildHelpInput.checked : true;
+  if (buildHelp && helpSvnRevisionInput && !(await validateHelpSvnRevision(helpSvnRevisionInput))) {
     helpSvnRevisionInput.focus();
     return;
   }

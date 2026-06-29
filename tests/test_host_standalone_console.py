@@ -20,7 +20,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.61"
+    assert console.APP_VERSION == "0.3.62"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -359,6 +359,20 @@ def test_standard_release_requires_material_number_backend_and_frontend_branches
             "backend_branch": "release_back",
             "frontend_release_branch": "release_front",
             "material_number": "20260626",
+        }
+    )
+    assert error is None
+    assert payload["build_conf_prod"] is False
+    assert payload["build_help"] is True
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "standard_build_mode": "standard_release",
+            "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+            "material_number": "20260626",
+            "build_help": False,
         }
     )
     assert error is None
@@ -731,6 +745,7 @@ def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, mon
             "material_number": "20260626",
             "backend_branch": "release_back",
             "frontend_release_branch": "release_front",
+            "build_help": True,
         },
         "log": [],
         "outputs": {},
@@ -771,7 +786,7 @@ def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, mon
     assert (output_dir / "web.zip").read_bytes() == b"web.zip"
     assert payloads[0]["build_backend"] is True
     assert payloads[0]["build_frontend"] is True
-    assert payloads[0]["build_help"] is False
+    assert payloads[0]["build_help"] is True
     assert payloads[0]["build_conf_prod"] is False
 
 
@@ -959,6 +974,9 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert 'id="material-number-toggle"' in console.INDEX_HTML
     assert 'id="material-number-menu"' in console.INDEX_HTML
     assert "required-field material-field" in console.INDEX_HTML
+    assert 'class="standard-only help-option"' in console.INDEX_HTML
+    assert "const buildHelp = buildHelpInput ? buildHelpInput.checked : true;" in console.APP_JS
+    assert "standardRelease ? false : (buildHelpInput" not in console.APP_JS
     assert "materialNumber" in console.APP_JS
     assert "/build-terminal/api/nho-material-numbers" in console.APP_JS
     assert "/build-terminal/api/standard-material-numbers" in console.APP_JS
