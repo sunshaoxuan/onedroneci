@@ -230,6 +230,8 @@ DELETE FROM ohr_help;
 - `system_config.enableTransportSetting`
 - `system_config.enableLecture`
 
+邮件服务信息区的认证项对应产品 `MAIL_CONFIG.authConfirmation`。该字段是布尔开关，产品后端在发送邮件时将它写入 JavaMail `mail.smtp.auth`，并在开关为 true 时使用 `username` / `password`。产品没有 plain/login 等认证方式类型字段，构造器页面也只提供“送信サーバーには、認証が必要です”开关。
+
 ## 13. Ohr 导入设置 SQL
 
 主控台根据 `画面公開計画` 生成：

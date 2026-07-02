@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.67 - 2026-07-02
+
+### Fixed
+
+- 標準版メールサービス情報の認証項目を、製品後端の `MAIL_CONFIG.authConfirmation` に合わせた boolean スイッチへ変更した。
+- 暗号化方式の候補を製品後端 `MailEncryptionEnum` の `NONE` / `SSL` / `STARTTLS` に合わせた。
+- 旧 `mail_auth_method` の履歴値は互換処理し、`none` は認証不要、それ以外は認証必要として扱う。
+
 ## 0.3.66 - 2026-07-02
 
 ### Fixed

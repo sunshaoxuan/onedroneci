@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.66"
+    assert console.APP_VERSION == "0.3.67"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -1154,6 +1154,11 @@ def test_usage_options_are_in_preparation_service_sections():
     import_option_matrix = html.split('<div class="option-matrix">', 1)[1].split("</div>", 1)[0]
 
     assert 'name="mail_usage"' in mail_section
+    assert 'name="mail_auth_required"' in mail_section
+    assert 'name="mail_auth_method"' not in mail_section
+    assert '<option>TLS</option>' not in mail_section
+    assert '<option value="STARTTLS">STARTTLS</option>' in mail_section
+    assert "mailAuthRequired" in console.APP_JS
     assert 'name="workflow_upds_usage"' in upds_section
     assert 'name="data_sync_custom_subdir"' in upds_section
     assert 'name="ekispert_usage"' in ekispert_section
@@ -1243,6 +1248,69 @@ def test_service_usage_requires_related_fields_when_enabled():
         }
     )
     assert error == "missing ekispert_url"
+
+
+def test_mail_usage_uses_boolean_auth_confirmation():
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260525",
+            "backend_branch": "release_20260525",
+            "mail_usage": "use",
+            "mail_host_ip": "192.168.20.38",
+            "mail_port": "25",
+            "mail_user": "phrky",
+            "mail_auth_required": "on",
+        }
+    )
+    assert error == "missing mail_encryption"
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260525",
+            "backend_branch": "release_20260525",
+            "mail_usage": "use",
+            "mail_host_ip": "192.168.20.38",
+            "mail_port": "25",
+            "mail_encryption": "NONE",
+            "mail_user": "phrky",
+            "mail_auth_required": "on",
+        }
+    )
+    assert error == "missing mail_password"
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260525",
+            "backend_branch": "release_20260525",
+            "mail_usage": "use",
+            "mail_host_ip": "192.168.20.38",
+            "mail_port": "25",
+            "mail_encryption": "NONE",
+            "mail_user": "phrky",
+            "mail_auth_required": "false",
+        }
+    )
+    assert error is None
+    assert payload["mail_auth_required"] is False
+
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260525",
+            "backend_branch": "release_20260525",
+            "mail_usage": "use",
+            "mail_host_ip": "192.168.20.38",
+            "mail_port": "25",
+            "mail_encryption": "NONE",
+            "mail_user": "phrky",
+            "mail_auth_method": "none",
+        }
+    )
+    assert error is None
+    assert payload["mail_auth_required"] is False
     assert "function validateConditionalRequiredFields(form)" in console.APP_JS
     assert "markConditionalRequiredFields();" in console.APP_JS
     assert ".conditional-required > span::after" in console.STYLE_CSS

@@ -48,7 +48,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.66"
+APP_VERSION = "0.3.67"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -507,7 +507,10 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     if product_variant == "standard" and build_conf_prod and build_backend and build_frontend:
         required.extend(["postgresql_host", "organisation_name"])
     if product_variant == "standard" and build_conf_prod and str(payload.get("mail_usage") or "none") == "use":
-        required.extend(["mail_host_ip", "mail_port", "mail_user", "mail_password"])
+        payload["mail_auth_required"] = mail_auth_required_from_request(payload)
+        required.extend(["mail_host_ip", "mail_port", "mail_encryption", "mail_user"])
+        if payload["mail_auth_required"]:
+            required.append("mail_password")
     if product_variant == "standard" and build_conf_prod and str(payload.get("workflow_upds_usage") or "none") == "use":
         required.extend(["upds_host_name", "upds_user", "upds_password", "upds_port", "upds_db_name"])
     if product_variant == "standard" and build_conf_prod and str(payload.get("ekispert_usage") or "none") == "use":
@@ -525,6 +528,15 @@ def request_bool(payload: dict[str, Any], key: str, default: bool = False) -> bo
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "on", "yes", "use"}
+
+
+def mail_auth_required_from_request(payload: dict[str, Any]) -> bool:
+    if payload.get("mail_auth_required") is not None:
+        return request_bool(payload, "mail_auth_required", True)
+    legacy_method = str(payload.get("mail_auth_method") or "").strip().lower()
+    if legacy_method:
+        return legacy_method not in {"0", "false", "no", "none", "off"}
+    return True
 
 
 def tenant_import_config_from_request(payload: dict[str, Any]) -> TenantImportConfig:
@@ -1463,8 +1475,8 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only"><span data-i18n="mailUsage">メール利用</span><select name="mail_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only"><span data-i18n="mailHostIp">メール主機 IP</span><input name="mail_host_ip"></label>
             <label class="standard-only"><span data-i18n="mailPort">メールポート</span><input name="mail_port" type="number" min="1" max="65535"></label>
-            <label class="standard-only"><span data-i18n="mailEncryption">暗号化方式</span><select name="mail_encryption"><option value=""></option><option>none</option><option>SSL</option><option>TLS</option><option>STARTTLS</option></select></label>
-            <label class="standard-only"><span data-i18n="mailAuthMethod">認証方式</span><select name="mail_auth_method"><option value=""></option><option>none</option><option>plain</option><option>login</option></select></label>
+            <label class="standard-only"><span data-i18n="mailEncryption">暗号化方式</span><select name="mail_encryption"><option value=""></option><option value="NONE">none</option><option value="SSL">SSL</option><option value="STARTTLS">STARTTLS</option></select></label>
+            <label class="check-row standard-only"><input name="mail_auth_required" type="checkbox" checked><span data-i18n="mailAuthRequired">送信サーバーには、認証が必要です</span></label>
             <label class="standard-only"><span data-i18n="mailUser">メールユーザー</span><input name="mail_user"></label>
             <label class="standard-only"><span data-i18n="mailPassword">メールパスワード</span><input name="mail_password"></label>
             <label class="standard-only section-wide"><span data-i18n="mailNote">メール備考</span><input name="mail_note"></label>
@@ -1636,7 +1648,7 @@ const I18N = {
     mailHostIp: 'メール主機 IP',
     mailPort: 'メールポート',
     mailEncryption: '暗号化方式',
-    mailAuthMethod: '認証方式',
+    mailAuthRequired: '送信サーバーには、認証が必要です',
     mailUser: 'メールユーザー',
     mailPassword: 'メールパスワード',
     mailNote: 'メール備考',
@@ -1820,7 +1832,7 @@ const I18N = {
     mailHostIp: '邮件主机 IP',
     mailPort: '邮件端口',
     mailEncryption: '加密方式',
-    mailAuthMethod: '认证方式',
+    mailAuthRequired: '发送服务器需要认证',
     mailUser: '邮件用户名',
     mailPassword: '邮件密码',
     mailNote: '邮件备注',
@@ -2004,7 +2016,7 @@ const I18N = {
     mailHostIp: 'Mail host IP',
     mailPort: 'Mail port',
     mailEncryption: 'Encryption',
-    mailAuthMethod: 'Authentication',
+    mailAuthRequired: 'Authentication is required for the outgoing server',
     mailUser: 'Mail user',
     mailPassword: 'Mail password',
     mailNote: 'Mail notes',
@@ -2378,7 +2390,7 @@ function enforcePublishMenuGroups() {
   document.querySelectorAll('.tag-tree > details').forEach(applyPublishMenuGroupState);
 }
 const CONDITIONAL_REQUIRED_GROUPS = [
-  {toggle: 'mail_usage', fields: ['mail_host_ip', 'mail_port', 'mail_user', 'mail_password']},
+  {toggle: 'mail_usage', fields: ['mail_host_ip', 'mail_port', 'mail_encryption', 'mail_user']},
   {toggle: 'workflow_upds_usage', fields: ['upds_host_name', 'upds_user', 'upds_password', 'upds_port', 'upds_db_name']},
   {toggle: 'ekispert_usage', fields: ['ekispert_url']}
 ];
@@ -2390,6 +2402,9 @@ function markConditionalRequiredFields() {
       if (label) label.classList.add('conditional-required');
     });
   });
+  const mailPassword = document.querySelector('[name="mail_password"]');
+  const mailPasswordLabel = mailPassword && mailPassword.closest('label');
+  if (mailPasswordLabel) mailPasswordLabel.classList.add('conditional-required');
 }
 function validateConditionalRequiredFields(form) {
   if (!getBuildConfProd()) return true;
@@ -2402,6 +2417,15 @@ function validateConditionalRequiredFields(form) {
         alert(t('requiredWhenUsed'));
         return false;
       }
+    }
+  }
+  if (form.elements.mail_usage && form.elements.mail_usage.value === 'use') {
+    const authRequired = form.elements.mail_auth_required ? form.elements.mail_auth_required.checked : true;
+    const passwordField = form.elements.mail_password;
+    if (authRequired && passwordField && !String(passwordField.value || '').trim()) {
+      passwordField.focus();
+      alert(t('requiredWhenUsed'));
+      return false;
     }
   }
   return true;
