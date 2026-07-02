@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -47,13 +48,14 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.64"
+APP_VERSION = "0.3.65"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
 DATA_DIR = Path(os.environ.get("HOST_STANDALONE_DATA_DIR", "dist/standalone-builds"))
 CONFIG_HISTORY_DIR = DATA_DIR / "config-history"
 TOKEN_FILE = Path(os.environ.get("HOST_STANDALONE_TOKEN_FILE", DATA_DIR / "management.token"))
+DELIVERY_DOWNLOAD_TTL_SECONDS = int(os.environ.get("HOST_DELIVERY_DOWNLOAD_TTL_SECONDS", str(7 * 24 * 60 * 60)))
 TERMINAL_LABELS = {
     "ja-JP": "ビルド端末",
     "zh-CN": "构建终端",
@@ -266,6 +268,10 @@ def job_metadata_path(job_id: str) -> Path:
 
 def job_log_path(job_id: str) -> Path:
     return job_dir(job_id) / "job.log"
+
+
+def job_download_dir(job_id: str) -> Path:
+    return job_dir(job_id) / "download"
 
 
 def config_history_path(config_id: str) -> Path:
@@ -672,6 +678,7 @@ def public_job(job: dict[str, Any], include_artifact_info: bool = False) -> dict
     job = migrate_finished_job_output_dir(job)
     result = dict(job)
     result["request"] = dict(job.get("request") or {})
+    result["download_package"] = delivery_download_info(job)
     if include_artifact_info:
         result["artifact_info"] = artifact_info_for_job(job)
     else:
@@ -733,6 +740,121 @@ def artifact_info_for_job(job: dict[str, Any]) -> dict[str, Any]:
         except Exception:
             pass
     return info
+
+
+def product_root_for_download(job: dict[str, Any]) -> Path | None:
+    outputs = job.get("outputs") or {}
+    product_dir = str(outputs.get("product_dir") or "").strip()
+    if not product_dir:
+        return None
+    path = Path(product_dir)
+    root = path.parent if path.name == "製品" else path
+    return root if root.is_dir() else None
+
+
+def delivery_download_filename(job: dict[str, Any]) -> str:
+    job_id = str(job.get("id") or "delivery")
+    request = dict(job.get("request") or {})
+    return f"{delivery_folder_name(request, job_id)}.zip"
+
+
+def delivery_download_path(job: dict[str, Any]) -> Path:
+    return job_download_dir(str(job.get("id") or "")) / delivery_download_filename(job)
+
+
+def zip_directory_for_download(source_dir: Path, destination: Path) -> None:
+    tmp = destination.with_suffix(destination.suffix + ".tmp")
+    if tmp.exists():
+        tmp.unlink()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+        root_name = source_dir.name
+        wrote_entry = False
+        for path in sorted(source_dir.rglob("*")):
+            rel = Path(root_name) / path.relative_to(source_dir)
+            if path.is_dir():
+                if not any(path.iterdir()):
+                    archive.writestr(str(rel).replace("\\", "/") + "/", b"")
+                    wrote_entry = True
+                continue
+            archive.write(path, str(rel).replace("\\", "/"))
+            wrote_entry = True
+        if not wrote_entry:
+            archive.writestr(f"{root_name}/", b"")
+    tmp.replace(destination)
+
+
+def delivery_download_info(job: dict[str, Any], persist: bool = True) -> dict[str, Any]:
+    job_id = str(job.get("id") or "")
+    outputs = dict(job.get("outputs") or {})
+    stored = dict(outputs.get("delivery_download") or {})
+    path = Path(str(stored.get("path") or delivery_download_path(job)))
+    created_at = int(stored.get("created_at") or 0)
+    expired = False
+    available = False
+    size = 0
+    if path.is_file():
+        try:
+            stat = path.stat()
+            if not created_at:
+                created_at = int(stat.st_mtime)
+            expired = now() >= created_at + DELIVERY_DOWNLOAD_TTL_SECONDS
+            if expired:
+                path.unlink(missing_ok=True)
+            else:
+                available = True
+                size = stat.st_size
+        except OSError:
+            available = False
+    elif created_at:
+        expired = now() >= created_at + DELIVERY_DOWNLOAD_TTL_SECONDS
+
+    expires_at = created_at + DELIVERY_DOWNLOAD_TTL_SECONDS if created_at else 0
+    can_package = job.get("status") == "success" and product_root_for_download(job) is not None
+    info = {
+        "available": available,
+        "expired": expired and not available,
+        "can_package": can_package,
+        "filename": delivery_download_filename(job),
+        "created_at": created_at if available else 0,
+        "expires_at": expires_at if available else 0,
+        "size": size,
+        "url": f"/api/jobs/{urllib.parse.quote(job_id)}/download-package/file" if available else "",
+    }
+
+    stored_available = bool(stored.get("path")) and not info["available"]
+    if persist and stored_available:
+        outputs.pop("delivery_download", None)
+        try:
+            update_job(job_id, outputs=outputs)
+        except Exception:
+            pass
+    return info
+
+
+def create_delivery_download_package(job_id: str) -> dict[str, Any]:
+    job = read_job(job_id)
+    if job.get("status") != "success":
+        raise ValueError("job_not_success")
+    source = product_root_for_download(job)
+    if source is None:
+        raise FileNotFoundError("product_dir")
+    download_dir = job_download_dir(job_id)
+    if download_dir.exists():
+        shutil.rmtree(download_dir)
+    target = delivery_download_path(job)
+    zip_directory_for_download(source, target)
+    stat = target.stat()
+    outputs = dict(job.get("outputs") or {})
+    outputs["delivery_download"] = {
+        "path": str(target),
+        "filename": target.name,
+        "created_at": int(stat.st_mtime),
+        "expires_at": int(stat.st_mtime) + DELIVERY_DOWNLOAD_TTL_SECONDS,
+        "size": stat.st_size,
+    }
+    update_job(job_id, outputs=outputs)
+    return public_job(read_job(job_id), include_artifact_info=True)
 
 
 def truthy(value: Any, default: bool = False) -> bool:
@@ -1607,6 +1729,16 @@ const I18N = {
     productDirHint: 'このパスは Web サイトを動かしている宿主機上の場所です。閲覧している端末のローカルパスではありません。',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
+    deliveryDownloadTitle: 'ダウンロード',
+    deliveryPackageReady: 'ダウンロード用パッケージを利用できます。',
+    deliveryPackageExpired: 'ダウンロード用パッケージは期限切れです。再生成してください。',
+    deliveryPackageUnavailable: 'ダウンロード用パッケージはまだ生成されていません。',
+    deliveryPackageValidUntil: '有効期限',
+    packageAndDownload: '生成してダウンロード',
+    repackAndDownload: '再生成してダウンロード',
+    downloadPackage: 'ダウンロード',
+    packageInProgress: '生成中...',
+    packageFailed: '生成またはダウンロードに失敗しました。',
     copy: 'コピー',
     copied: 'コピーしました',
     copyFailed: 'コピー失敗',
@@ -1781,6 +1913,16 @@ const I18N = {
     productDirHint: '这个路径是在网站宿主机上的位置，不是当前浏览器所在电脑的本地路径。',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
+    deliveryDownloadTitle: '下载',
+    deliveryPackageReady: '下载用整包可以使用。',
+    deliveryPackageExpired: '下载用整包已经过期，请重新打包。',
+    deliveryPackageUnavailable: '下载用整包尚未生成。',
+    deliveryPackageValidUntil: '有效期',
+    packageAndDownload: '生成并下载',
+    repackAndDownload: '再打包并下载',
+    downloadPackage: '下载',
+    packageInProgress: '生成中...',
+    packageFailed: '生成或下载失败。',
     copy: '复制',
     copied: '已复制',
     copyFailed: '复制失败',
@@ -1955,6 +2097,16 @@ const I18N = {
     productDirHint: 'This path is on the web host machine, not on the local computer running this browser.',
     standaloneZip: 'OneHrStandalone.zip',
     versionTxt: 'version.txt',
+    deliveryDownloadTitle: 'Download',
+    deliveryPackageReady: 'Download package is available.',
+    deliveryPackageExpired: 'Download package has expired. Repackage it.',
+    deliveryPackageUnavailable: 'Download package has not been generated.',
+    deliveryPackageValidUntil: 'Valid until',
+    packageAndDownload: 'Package and download',
+    repackAndDownload: 'Repackage and download',
+    downloadPackage: 'Download',
+    packageInProgress: 'Packaging...',
+    packageFailed: 'Packaging or download failed.',
     copy: 'Copy',
     copied: 'Copied',
     copyFailed: 'Copy failed',
@@ -3188,6 +3340,72 @@ function pathRow(label, value) {
   return `<div class="path-row"><span class="path-label">${label}${hint}</span><code>${safe}</code><button type="button" class="copy-path" data-path="${safe}">${t('copy')}</button></div>`;
 }
 
+function formatEpoch(seconds) {
+  if (!seconds) return '-';
+  return new Date(seconds * 1000).toLocaleString();
+}
+
+function filenameFromDisposition(value) {
+  if (!value) return '';
+  const utf8 = value.match(/filename\\*=UTF-8''([^;]+)/i);
+  if (utf8) return decodeURIComponent(utf8[1]);
+  const plain = value.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1] : '';
+}
+
+function renderDownloadPackage(job) {
+  const pack = job.download_package || {};
+  if (!pack.available && !pack.can_package) return '';
+  const status = pack.available
+    ? `${t('deliveryPackageReady')} ${t('deliveryPackageValidUntil')}: ${escapeHtml(formatEpoch(pack.expires_at))}`
+    : (pack.expired ? t('deliveryPackageExpired') : t('deliveryPackageUnavailable'));
+  const action = pack.available ? 'download' : 'package';
+  const label = pack.available ? t('downloadPackage') : (pack.expired ? t('repackAndDownload') : t('packageAndDownload'));
+  return `
+    <div class="download-package">
+      <div>
+        <span>${t('deliveryDownloadTitle')}</span>
+        <strong>${escapeHtml(status)}</strong>
+      </div>
+      <button type="button" class="secondary download-package-action" data-action="${action}" data-job-id="${escapeHtml(job.id)}">${label}</button>
+    </div>
+  `;
+}
+
+async function downloadDeliveryPackage(jobId, fallbackFilename) {
+  const res = await fetch(`/api/jobs/${jobId}/download-package/file`, {headers: authHeaders()});
+  if (!res.ok) throw new Error(`download failed: ${res.status}`);
+  const blob = await res.blob();
+  const filename = filenameFromDisposition(res.headers.get('Content-Disposition')) || fallbackFilename || `${jobId}.zip`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function packageAndDownload(jobId, button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = t('packageInProgress');
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/download-package`, {method: 'POST', headers: authHeaders({'Content-Type': 'application/json'}), body: '{}'});
+    const job = await res.json();
+    if (!res.ok || job.error) throw new Error(job.error || `package failed: ${res.status}`);
+    selectedJob = job;
+    renderResult(job);
+    await downloadDeliveryPackage(jobId, job.download_package && job.download_package.filename);
+  } catch (error) {
+    console.warn('delivery package failed', error);
+    alert(t('packageFailed'));
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 function progressLabel(id) {
   const labels = t('progressSteps');
   return (labels && labels[id]) || id;
@@ -3321,11 +3539,28 @@ function renderResult(job) {
     <div class="path-list">
       ${pathList}
     </div>
+    ${renderDownloadPackage(job)}
     ${renderArtifactInfo(job)}
     ${['queued', 'running'].includes(job.status) ? '' : `<div class="result-actions"><button type="button" class="danger-lite" id="deleteSelectedJob">${t('deleteJob')}</button></div>`}
   `;
   const deleteButton = box.querySelector('#deleteSelectedJob');
   if (deleteButton) deleteButton.addEventListener('click', () => deleteSelectedJob(job.id));
+  box.querySelectorAll('.download-package-action').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.action || 'package';
+      const jobId = btn.dataset.jobId || job.id;
+      if (action === 'download') {
+        try {
+          await downloadDeliveryPackage(jobId, job.download_package && job.download_package.filename);
+        } catch (error) {
+          console.warn('download failed', error);
+          await packageAndDownload(jobId, btn);
+        }
+        return;
+      }
+      await packageAndDownload(jobId, btn);
+    });
+  });
   box.querySelectorAll('.copy-path').forEach(btn => {
     btn.addEventListener('click', async () => {
       try {
@@ -3347,6 +3582,7 @@ function resultSignature(job) {
     remote_build_id: job && job.remote_build_id,
     error: job && job.error,
     outputs: job && job.outputs,
+    download_package: job && job.download_package,
     artifact_info: job && job.artifact_info,
     progress: job && job.progress
   });
@@ -4085,6 +4321,20 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   white-space: nowrap;
 }
 .copy-path { min-height: 34px; padding: 7px 10px; }
+.download-package {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #f7f7f7;
+}
+.download-package div { display: grid; gap: 4px; min-width: 0; }
+.download-package span { color: var(--muted); font-size: 12px; font-weight: 800; }
+.download-package strong { font-size: 13px; color: #111; word-break: break-word; }
+.download-package button { white-space: nowrap; }
 .terminal-frame-panel details { overflow: hidden; }
 .terminal-frame-panel summary { cursor: pointer; font-weight: 900; }
 .terminal-frame-panel details.disabled summary { color: var(--muted); cursor: not-allowed; }
@@ -4114,6 +4364,7 @@ pre {
   .hero, .terminal-panel, .panel-heading { align-items: stretch; flex-direction: column; }
   h1 { font-size: 36px; }
   .workbench, .form-panel .grid, .standard-tab-panel, .form-section, .option-matrix, .tag-tree, .result-summary, .artifact-grid, .path-row { grid-template-columns: 1fr; }
+  .download-package { align-items: stretch; flex-direction: column; }
   .overall-progress ol { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .terminal-actions, .run-actions { justify-content: flex-start; }
 }
@@ -4181,6 +4432,11 @@ class Handler(BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             offset = int((query.get("offset") or ["0"])[0])
             return self.send_job_log(job_id, offset)
+        if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/download-package/file"):
+            if not self.authorized():
+                return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
+            job_id = parsed.path.split("/")[3]
+            return self.send_delivery_download_file(job_id)
         if parsed.path.startswith("/api/jobs/"):
             job_id = parsed.path.split("/")[3]
             try:
@@ -4204,6 +4460,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
             job_id = parsed.path.split("/")[3]
             return self.send_json(cancel_job(job_id))
+        if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/download-package"):
+            if not self.authorized():
+                return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
+            job_id = parsed.path.split("/")[3]
+            try:
+                return self.send_json(create_delivery_download_package(job_id))
+            except FileNotFoundError:
+                return self.send_json({"error": "product_dir_not_found"}, HTTPStatus.NOT_FOUND)
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, HTTPStatus.CONFLICT)
         if parsed.path in ("/api/build-terminal/start", "/api/build-terminal/stop"):
             if not self.authorized():
                 return self.send_json({"error": "forbidden"}, HTTPStatus.FORBIDDEN)
@@ -4287,6 +4553,31 @@ class Handler(BaseHTTPRequestHandler):
         if chunk:
             chunk += "\n"
         self.send_json({"text": chunk, "next_offset": len(raw), "offset": len(raw)})
+
+    def send_delivery_download_file(self, job_id: str) -> None:
+        try:
+            job = read_job(job_id)
+        except FileNotFoundError:
+            return self.send_json({"error": "not_found"}, HTTPStatus.NOT_FOUND)
+        info = delivery_download_info(job)
+        if not info.get("available"):
+            status = HTTPStatus.GONE if info.get("expired") else HTTPStatus.NOT_FOUND
+            return self.send_json({"error": "download_package_unavailable", "download_package": info}, status)
+        path = delivery_download_path(job)
+        try:
+            stat = path.stat()
+            filename = str(info.get("filename") or path.name)
+            quoted = urllib.parse.quote(filename)
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quoted}")
+            self.send_header("Cache-Control", "no-store, max-age=0, must-revalidate")
+            self.send_header("Content-Length", str(stat.st_size))
+            self.end_headers()
+            with path.open("rb") as f:
+                shutil.copyfileobj(f, self.wfile)
+        except OSError:
+            self.send_json({"error": "download_package_unavailable"}, HTTPStatus.NOT_FOUND)
 
     def proxy_build_terminal(self, method: str, parsed: urllib.parse.ParseResult) -> None:
         suffix = parsed.path[len("/build-terminal") :]

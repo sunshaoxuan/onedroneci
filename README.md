@@ -82,6 +82,7 @@
 - 可配置 Hyper-V 虚拟机名称后，在页面查看、启动、关闭构建终端。
 - 標準版中间件版本候选实时来自发布源：nginx 官方 download 目录索引、Redis Windows GitHub Releases、MinIO Windows archive。下载后的 zip 缓存在 `STANDALONE_MIDDLEWARE_CACHE_DIR`，后续构造复用缓存。
 - 构造完成后，成果物信息区会直接调查未删除的交付包内容，显示 `version.txt`、后端 jar、前端 `meta.json`、Help `meta.json` 与 nginx、Redis、MinIO 的版本信息。该调查基于包体文件，不依赖当次页面设置。
+- 成果物区提供整包下载能力。主控台会把交付目录临时归档为一个 zip，保存在 `HOST_STANDALONE_DATA_DIR/<主控タスクID>/download/`，下载包有效期默认 7 天。过期后文件会被删除，页面按钮变为重新打包，重新生成后进入新的 7 天周期。
 
 ## 缓存与性能
 

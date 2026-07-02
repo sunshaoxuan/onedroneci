@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.64"
+    assert console.APP_VERSION == "0.3.65"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -441,6 +442,68 @@ def test_delete_finished_job_removes_host_and_remote_artifacts(tmp_path, monkeyp
     assert not (output_root / job_id).exists()
 
 
+def test_create_delivery_download_package_zips_product_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path / "jobs")
+    monkeypatch.setattr(console, "JOBS", {})
+    monkeypatch.setattr(console, "DELIVERY_DOWNLOAD_TTL_SECONDS", 7 * 24 * 60 * 60)
+    job_id = "20260702010101"
+    product_root = tmp_path / "dist" / "顧客A 20260702010101"
+    product_dir = product_root / "製品"
+    product_dir.mkdir(parents=True)
+    (product_dir / "version.txt").write_text("資材:20260702", encoding="utf-8")
+    console.write_job(
+        {
+            "id": job_id,
+            "status": "success",
+            "created_at": 1,
+            "updated_at": 1,
+            "request": {"organisation_name": "顧客A"},
+            "outputs": {"product_dir": str(product_root)},
+        }
+    )
+
+    result = console.create_delivery_download_package(job_id)
+
+    package = Path(result["outputs"]["delivery_download"]["path"])
+    assert package.is_file()
+    assert result["download_package"]["available"] is True
+    assert result["download_package"]["can_package"] is True
+    with zipfile.ZipFile(package) as archive:
+        assert "顧客A 20260702010101/製品/version.txt" in archive.namelist()
+
+
+def test_delivery_download_package_expires_and_is_removed(tmp_path, monkeypatch):
+    monkeypatch.setattr(console, "DATA_DIR", tmp_path / "jobs")
+    monkeypatch.setattr(console, "JOBS", {})
+    monkeypatch.setattr(console, "DELIVERY_DOWNLOAD_TTL_SECONDS", 10)
+    job_id = "20260702010102"
+    product_root = tmp_path / "dist" / "顧客B 20260702010102"
+    product_root.mkdir(parents=True)
+    (product_root / "file.txt").write_text("x", encoding="utf-8")
+    console.write_job(
+        {
+            "id": job_id,
+            "status": "success",
+            "created_at": 1,
+            "updated_at": 1,
+            "request": {"organisation_name": "顧客B"},
+            "outputs": {"product_dir": str(product_root)},
+        }
+    )
+    result = console.create_delivery_download_package(job_id)
+    package = Path(result["outputs"]["delivery_download"]["path"])
+    created_at = int(result["outputs"]["delivery_download"]["created_at"])
+
+    monkeypatch.setattr(console, "now", lambda: created_at + 11)
+    info = console.delivery_download_info(console.read_job(job_id))
+
+    assert info["available"] is False
+    assert info["expired"] is True
+    assert info["can_package"] is True
+    assert not package.exists()
+    assert "delivery_download" not in console.read_job(job_id)["outputs"]
+
+
 def test_delivery_folder_name_uses_customer_name_and_host_job_id():
     assert console.delivery_folder_name({"organisation_name": "A/B:大学"}, "20260623000102") == "A_B_大学 20260623000102"
     assert console.delivery_folder_name({"material_number": "20260625"}, "20260623000103") == "20260625 20260623000103"
@@ -592,10 +655,14 @@ def test_host_console_renders_outputs_and_bottom_log_layout():
     assert "product_dir" in console.APP_JS
     assert "outputs.package_zip" in console.APP_JS
     assert "outputs.web_zip" in console.APP_JS
+    assert "function renderDownloadPackage(job)" in console.APP_JS
+    assert "download-package/file" in console.APP_JS
+    assert "download-package" in console.APP_JS
     assert "function renderProgress(job)" in console.APP_JS
     assert "function renderResultIfChanged(job)" in console.APP_JS
     assert "function renderArtifactInfo(job)" in console.APP_JS
     assert "artifact_info: job && job.artifact_info" in console.APP_JS
+    assert "download_package: job && job.download_package" in console.APP_JS
     assert "fetch(`/api/jobs/${selected}`)" in console.APP_JS
     assert "artifactInfoTitle" in console.APP_JS
     assert ".artifact-info" in console.STYLE_CSS
