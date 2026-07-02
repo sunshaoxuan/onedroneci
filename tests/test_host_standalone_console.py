@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.65"
+    assert console.APP_VERSION == "0.3.66"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -926,6 +926,7 @@ def test_ohr_import_config_is_derived_from_publish_plan():
             "publish_shomu_source_tax": "",
             "publish_shomu_issue_info": "on",
             "publish_nencho_tax": "",
+            "publish_nencho_admin_tax": "",
             "publish_nencho_tax_admin": "on",
             "publish_apps_status": "on",
             "publish_apps_agent": "",
@@ -939,6 +940,7 @@ def test_ohr_import_config_is_derived_from_publish_plan():
     enabled_task_codes = {item.code for item in config.disabled_scheduled_tasks if item.enabled}
     assert ("personal-portal", "EM_PR_MBR") in menu_codes
     assert ("personal-portal", "EM_PR_TXW") in menu_codes
+    assert ("personal-portal", "PP_PR_MTA") in menu_codes
     assert ("taxadjustment", "EMA_PR_PRT") in menu_codes
     assert ("taxadjustment", "EMA_HR_PRT") in enabled_menu_codes
     assert "mdm-data-synchronization-tax-data" in task_codes
@@ -975,6 +977,20 @@ def test_ohr_import_config_keeps_shared_menu_when_any_control_is_enabled():
 
     menu_states = {(item.application_name, item.menu_code): item.enabled for item in config.disabled_menus}
     assert menu_states[("personal-portal", "BP_PR_ASS")] is True
+
+
+def test_nencho_tax_items_can_be_controlled_separately():
+    config = console.ohr_import_config_from_request(
+        {
+            "publish_group_yearEndAdjustment": "on",
+            "publish_nencho_tax": "",
+            "publish_nencho_admin_tax": "on",
+        }
+    )
+
+    menu_states = {(item.application_name, item.menu_code): item.enabled for item in config.disabled_menus}
+    assert menu_states[("personal-portal", "PP_PR_MTA")] is False
+    assert menu_states[("taxadjustment", "EMA_PR_PRT")] is True
 
 
 def test_ohr_import_config_records_enabled_items_too():
@@ -1263,6 +1279,12 @@ def test_standard_publish_plan_has_three_level_tree():
     assert '<summary>共通設定</summary>' in console.INDEX_HTML
     assert 'name="publish_shomu_free_search"' in console.INDEX_HTML
     assert 'name="publish_apps_category_limit"' in console.INDEX_HTML
+    assert 'name="publish_nencho_year_end"' in console.INDEX_HTML
+    assert 'name="publish_nencho_admin_year_end"' in console.INDEX_HTML
+    assert 'name="publish_nencho_admin_tax"' in console.INDEX_HTML
+    assert "住所の印字設定" in console.INDEX_HTML
+    assert "顔写真管理" in console.INDEX_HTML
+    assert "住宅利用申請" not in console.INDEX_HTML
     assert ".tag-tree details.publish-category" in console.STYLE_CSS
 
 
