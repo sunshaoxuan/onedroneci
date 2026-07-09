@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.69 - 2026-07-09
+
+### Fixed
+
+- 標準版の標準発版でも、Help 構築が有効な場合は `web.zip` 内の `insert_ohr_help.sql` から外置き `ohr_help.sql` を出力するようにした。
+- 標準発版の成果物表示に `ohr_help.sql` を追加し、`package.zip` / `web.zip` と同じ出力目录で确认できるようにした。
+- 筑波大学向け修復 SQL を `20260626` 標準発版の `web.zip` から再生成した。Help SVN revision `2125` 对应の SQL と実ファイル路径の一致を确认済み。
+
 ## 0.3.68 - 2026-07-09
 
 ### Fixed

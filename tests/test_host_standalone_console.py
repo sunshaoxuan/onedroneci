@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.68"
+    assert console.APP_VERSION == "0.3.69"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -849,7 +849,17 @@ def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, mon
         return {"text": "", "offset": 0}
 
     def fake_download(base, build_id, name, destination):
-        destination.write_bytes(name.encode("utf-8"))
+        if name == "web.zip":
+            guid = "11111111-1111-1111-1111-111111111111"
+            sql = (
+                'INSERT INTO ohr_help ("path", "url_uuid") '
+                f"VALUES ('docs/{guid}/portal/sample/', '{guid}');"
+            )
+            with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as z:
+                z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", sql)
+                z.writestr(f"ohr-cicd/web_prod/help/docs/{guid}/portal/sample/index.html", "ok")
+        else:
+            destination.write_bytes(name.encode("utf-8"))
         return destination
 
     monkeypatch.setattr(console, "build_terminal_status", lambda: {"status": "running"})
@@ -864,7 +874,9 @@ def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, mon
     output_dir = tmp_path / "out" / f"標準発版 {job_id}"
     assert stored["outputs"]["product_dir"] == str(output_dir)
     assert (output_dir / "package.zip").read_bytes() == b"package.zip"
-    assert (output_dir / "web.zip").read_bytes() == b"web.zip"
+    assert (output_dir / "web.zip").is_file()
+    assert (output_dir / "ohr_help.sql").read_text(encoding="utf-8").startswith("DELETE FROM ohr_help;")
+    assert stored["outputs"]["help_sql"] == str(output_dir / "ohr_help.sql")
     assert payloads[0]["build_backend"] is True
     assert payloads[0]["build_frontend"] is True
     assert payloads[0]["build_help"] is True

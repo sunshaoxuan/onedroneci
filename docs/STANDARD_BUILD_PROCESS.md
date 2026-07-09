@@ -1,6 +1,6 @@
 # 标准版构造过程
 
-本文说明“庶务事务 標準版”的 Direct 构造过程。標準版支持两种构造类型：`标准发版` 收集资材番号、后端分支、前端分支和 Help 构造选项，只输出后端 `package.zip` 与前端 `web.zip`；`机构封包` 生成完整交付目录，包含 `製品/` 与 `データ連携/`，其中 `製品/` 内有 SQL 资材、`OneHrStandalone.zip` 和 `version.txt`。
+本文说明“庶务事务 標準版”的 Direct 构造过程。標準版支持两种构造类型：`标准发版` 收集资材番号、后端分支、前端分支和 Help 构造选项，输出后端 `package.zip`、前端 `web.zip`，并在 Help 启用时输出外置 `ohr_help.sql`；`机构封包` 生成完整交付目录，包含 `製品/` 与 `データ連携/`，其中 `製品/` 内有 SQL 资材、`OneHrStandalone.zip` 和 `version.txt`。
 
 ## 1. 输入参数
 
@@ -20,7 +20,7 @@
 - 应用服务主机名、OHR 服务端口
 - 客户机构名、机构开始日
 
-标准发版必须填写资材编号，并同时选择后端分支和前端分支，成功后只输出两枚代码 zip。
+标准发版必须填写资材编号，并同时选择后端分支和前端分支。成功后输出两枚代码 zip；Help 启用时还会输出本次 Help 流对应的全量 `ohr_help.sql`，用于生产库升级后执行。
 
 机构封包如果只选后端或只选前端，標準版只下载对应中间产物，不执行完整二次交付包流程。完整交付包需要同时选择后端和前端。
 
@@ -42,7 +42,7 @@
 4. 机构封包将产品版本、前后端分支、是否生成 Help、是否生成 `conf_prod`、Help SVN revision 和客户配置传给构建终端。
 5. 轮询构建终端状态与日志。
 6. 下载构建终端产物。
-7. 标准发版把 `package.zip` 与 `web.zip` 放入输出目录；机构封包执行 SQL、数据连携、`all.sql` 补全、`version.txt`、`OneHrStandalone.zip` 二次打包。
+7. 标准发版把 `package.zip` 与 `web.zip` 放入输出目录；Help 启用时，从 `web.zip` 生成同级 `ohr_help.sql`。机构封包执行 SQL、数据连携、`all.sql` 补全、`version.txt`、`OneHrStandalone.zip` 二次打包。
 
 主控台进度为十个步骤：
 
@@ -194,10 +194,16 @@ HOST_STANDALONE_DATA_DIR/<job_id>/
 ohr-cicd/web_prod/help/insert_ohr_help.sql
 ```
 
-最终打包器会将该文件写入：
+最终打包器会将该文件写入机构封包目录：
 
 ```text
 製品/1.tenant/ohr_help.sql
+```
+
+标准发版没有 `製品/1.tenant` 目录，因此会写入标准发版输出目录：
+
+```text
+ohr_help.sql
 ```
 
 写入时会在顶部追加：
@@ -206,7 +212,7 @@ ohr-cicd/web_prod/help/insert_ohr_help.sql
 DELETE FROM ohr_help;
 ```
 
-这样 Help 菜单 SQL 与本次构建出的 Help 内容保持一致，并保证重复执行时先清空旧帮助信息。该文件缺失时最终打包失败。
+这样 Help 菜单 SQL 与本次构建出的 Help 内容保持一致，并保证重复执行时先清空旧帮助信息。该文件缺失时最终打包失败。标准发版场景下，该外置 SQL 是生产升级后刷新 `ohr_help` 表的正式资材。
 
 构建终端在 `help.zip` 解入 `web_prod/help` 后会检查 `insert_ohr_help.sql` 中所有 `docs/<uuid>/...` 路径是否存在对应的 `docs/<uuid>/.../index.html`。最终打包器也会再次执行同样的检查。发现 SQL 路径和实际 Help 文件不一致时，打包失败，避免交付后点击 Help 标记跳转到 404。
 

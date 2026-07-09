@@ -42,13 +42,14 @@ from standalone_packager import (
     download_remote_artifact,
     download_remote_file,
     fetch_middleware_catalog,
+    help_sql_from_web_zip,
     inspect_artifact_versions,
     remote_json,
     repo_subdir_from_input,
 )
 
 
-APP_VERSION = "0.3.68"
+APP_VERSION = "0.3.69"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -635,6 +636,7 @@ def build_standard_release_artifacts(
     delivery_name: str | None,
     package_zip: Path | None,
     web_zip: Path | None,
+    include_help_sql: bool = False,
 ) -> dict[str, Any]:
     if not package_zip or not package_zip.is_file():
         raise FileNotFoundError(f"missing package.zip: {package_zip}")
@@ -648,11 +650,16 @@ def build_standard_release_artifacts(
     target_web = delivery_root / "web.zip"
     shutil.copy2(package_zip, target_package)
     shutil.copy2(web_zip, target_web)
-    return {
+    outputs = {
         "product_dir": str(delivery_root),
         "package_zip": str(target_package),
         "web_zip": str(target_web),
     }
+    if include_help_sql:
+        help_sql = delivery_root / "ohr_help.sql"
+        help_sql.write_text(help_sql_from_web_zip(target_web), encoding="utf-8")
+        outputs["help_sql"] = str(help_sql)
+    return outputs
 
 
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1210,15 +1217,23 @@ def run_job(job_id: str) -> None:
         }
         update_progress(job_id, "download_artifacts", "success")
         if standard_release:
-            for step_id in ("sql_assets", "data_sync_assets", "account_sql", "help_sql", "standalone_zip"):
+            for step_id in ("sql_assets", "data_sync_assets", "account_sql", "standalone_zip"):
                 update_progress(job_id, step_id, "skipped")
+            if effective_build_help:
+                update_progress(job_id, "help_sql", "running")
+                append_log(job_id, "help_sql_replace")
+            else:
+                update_progress(job_id, "help_sql", "skipped")
             outputs = build_standard_release_artifacts(
                 output_root=configured_output_dir(),
                 build_id=job_id,
                 delivery_name=delivery_folder_name(req, job_id),
                 package_zip=package_zip,
                 web_zip=web_zip,
+                include_help_sql=effective_build_help,
             )
+            if effective_build_help:
+                update_progress(job_id, "help_sql", "success")
             update_progress(job_id, "complete", "success")
             update_job(job_id, status="success", outputs=outputs)
             append_log(job_id, "selected_artifacts_done")
@@ -3545,9 +3560,15 @@ async function copyText(text) {
 function renderResult(job) {
   const outputs = job.outputs || {};
   const box = document.getElementById('result');
+  const isStandardReleaseOutput = outputs.package_zip && outputs.web_zip && !outputs.standalone_zip && !outputs.common_zip;
   const pathList = outputs.common_zip ? `
       ${pathRow(t('productDir'), outputs.product_dir)}
       ${pathRow(t('commonZip'), outputs.common_zip)}
+  ` : isStandardReleaseOutput ? `
+      ${pathRow(t('productDir'), outputs.product_dir)}
+      ${pathRow('package.zip', outputs.package_zip)}
+      ${pathRow('web.zip', outputs.web_zip)}
+      ${outputs.help_sql ? pathRow('ohr_help.sql', outputs.help_sql) : ''}
   ` : outputs.product_dir ? pathRow(t('productDir'), outputs.product_dir) : `
       ${pathRow('package.zip', outputs.package_zip)}
       ${pathRow('web.zip', outputs.web_zip)}

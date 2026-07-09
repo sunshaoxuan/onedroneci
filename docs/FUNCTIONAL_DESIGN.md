@@ -105,7 +105,7 @@
 9. 最终 ZIP
 10. 完成
 
-Help SQL 步骤在勾选生成 Help 时执行两次一致性检查：构建终端在 `help.zip` 解包后检查 `insert_ohr_help.sql` 与 `web_prod/help/docs` 是否一一对应；主控台最终打包时再次检查 `web.zip` 内同一组路径。检查失败时任务失败，不生成可交付包。主控台提供 `scripts/generate_help_sql_repair.py`，可从既存交付目录重新生成 `ohr_help` 全量删除和创建脚本。
+Help SQL 步骤在勾选生成 Help 时执行两次一致性检查：构建终端在 `help.zip` 解包后检查 `insert_ohr_help.sql` 与 `web_prod/help/docs` 是否一一对应；主控台最终打包时再次检查 `web.zip` 内同一组路径。检查失败时任务失败，不生成可交付包。机构封包把全量 SQL 写入 `製品/1.tenant/ohr_help.sql`，标准发版把全量 SQL 写入输出目录同级 `ohr_help.sql`。主控台提供 `scripts/generate_help_sql_repair.py`，可从既存交付目录重新生成 `ohr_help` 全量删除和创建脚本。
 
 进度节点一整行展示。完成为绿色对勾，等待为灰色小钟表，运行中为蓝色大圆内白色偏心小圆 orbit 动画，失败为红色叹号。日志刷新不重绘结果区，避免动画重启。
 

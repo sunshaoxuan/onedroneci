@@ -40,7 +40,7 @@
 
 历史列表会跟随页面顶部的产品版本切换：`標準版` 只显示標準版任务，`NHO版` 只显示 NHO 任务。切换版本会回到新建模式，避免把另一个版本的历史参数带入当前表单。
 
-標準版构造类型为 `标准发版` 时，显示资材番号、前后端分支选择和 Help 构造选项，成功后输出 `package.zip` 与 `web.zip` 到 `dist\standalone\標準発版 <主控タスクID>\`。该模式不要求客户环境、SQL、数据连携或中间件封包参数；Help 是否构造由画面勾选决定。Help SVN Revision 有值时，主控台会自动勾选并启用 Help 构造。
+標準版构造类型为 `标准发版` 时，显示资材番号、前后端分支选择和 Help 构造选项，成功后输出 `package.zip` 与 `web.zip` 到 `dist\standalone\標準発版 <主控タスクID>\`。Help 启用时，同目录还会输出 `ohr_help.sql`，用于生产库升级后刷新 Help 注册数据。该模式不要求客户环境、SQL、数据连携或中间件封包参数；Help 是否构造由画面勾选决定。Help SVN Revision 有值时，主控台会自动勾选并启用 Help 构造。
 
 標準版构造类型为 `机构封包` 时，資材番号候选由构建终端从 `STANDARD_MATERIAL_SVN_URL` 读取，目录名 `資材-YYYYMMDD` 或 `資材_YYYYMMDD` 会显示为 `YYYYMMDD`。选择后主控台通过构建终端读取该目录 `version.txt`，自动回填后台分支、前台分支和 Help SVN revision。
 
@@ -61,7 +61,7 @@
 5. `sql_assets`：获取并配置 `1.tenant` / `2.ohr` SQL 资材。
 6. `data_sync_assets`：获取并配置 `データ連携`。
 7. `account_sql`：按页面参数修改 `2.ohr/4.account.sql`。
-8. `help_sql`：勾选生成 Help 时，从 `web.zip` 中读取 `insert_ohr_help.sql`，校验 SQL 登记路径与 `web_prod/help/docs` 实文件一致，在顶部追加 `DELETE FROM ohr_help;` 后替换 `1.tenant/ohr_help.sql`；缺失或不一致时打包失败。取消勾选时该步骤跳过。
+8. `help_sql`：勾选生成 Help 时，从 `web.zip` 中读取 `insert_ohr_help.sql`，校验 SQL 登记路径与 `web_prod/help/docs` 实文件一致，在顶部追加 `DELETE FROM ohr_help;`。机构封包替换 `1.tenant/ohr_help.sql`，标准发版输出同级 `ohr_help.sql`；缺失或不一致时打包失败。取消勾选时该步骤跳过。
 9. `standalone_zip`：重建 `OneHrStandalone.zip`。
 10. `complete`：完整交付目录生成完成。
 
