@@ -34,6 +34,8 @@ DEFAULT_DATA_SYNC_GIT_TIMEOUT = int(os.environ.get("DATA_SYNC_GIT_TIMEOUT", "300
 DATA_SYNC_ALLOWED_DIRS = ("ForeignTable", "Function", "Procedure", "Sequence", "Table", "View")
 HELP_SQL_IN_WEB_ZIP = "ohr-cicd/web_prod/help/insert_ohr_help.sql"
 HELP_SQL_RESET_PREFIX = "DELETE FROM ohr_help;\n"
+HELP_DOC_PATH_RE = re.compile(r"docs/[0-9a-fA-F-]{36}/[^'\"\s]*")
+HELP_DOC_UUID_RE = re.compile(r"docs/([0-9a-fA-F-]{36})/")
 CONFIG_IN_STANDALONE_ZIP = "OneHrStandalone/bin/kernel/config.ini"
 PACKAGE_IN_STANDALONE_ZIP = "OneHrStandalone/software/package.zip"
 WEB_IN_STANDALONE_ZIP = "OneHrStandalone/software/web.zip"
@@ -1421,16 +1423,63 @@ def build_nho_common_package(
     }
 
 
-def _replace_help_sql_if_present(web_zip: Path, target: Path) -> None:
+def help_sql_from_web_zip(web_zip: Path) -> str:
     with zipfile.ZipFile(web_zip) as zf:
         try:
             data = zf.read(HELP_SQL_IN_WEB_ZIP)
         except KeyError:
             raise FileNotFoundError(f"missing Help SQL in web.zip: {HELP_SQL_IN_WEB_ZIP}") from None
     text = data.decode("utf-8-sig")
+    _validate_help_sql_matches_web_zip(web_zip, text)
     if not text.lstrip().lower().startswith("delete from ohr_help"):
         text = HELP_SQL_RESET_PREFIX + text
+    return text
+
+
+def _replace_help_sql_if_present(web_zip: Path, target: Path) -> None:
+    text = help_sql_from_web_zip(web_zip)
     target.write_text(text, encoding="utf-8")
+
+
+def _extract_help_sql_doc_paths(sql_text: str) -> set[str]:
+    paths: set[str] = set()
+    for match in HELP_DOC_PATH_RE.finditer(sql_text):
+        path = match.group(0).rstrip("/") + "/"
+        paths.add(path)
+    return paths
+
+
+def _extract_help_doc_index_paths(zf: zipfile.ZipFile) -> set[str]:
+    prefix = "ohr-cicd/web_prod/help/"
+    paths: set[str] = set()
+    for name in zf.namelist():
+        if not name.startswith(prefix) or not name.endswith("/index.html"):
+            continue
+        rel = name[len(prefix) :]
+        if HELP_DOC_UUID_RE.search(rel):
+            paths.add(rel.rsplit("/", 1)[0].rstrip("/") + "/")
+    return paths
+
+
+def _validate_help_sql_matches_web_zip(web_zip: Path, sql_text: str) -> None:
+    sql_paths = _extract_help_sql_doc_paths(sql_text)
+    with zipfile.ZipFile(web_zip) as zf:
+        doc_paths = _extract_help_doc_index_paths(zf)
+    if not sql_paths and not doc_paths:
+        return
+    if not sql_paths:
+        raise ValueError("Help SQL does not contain docs paths")
+    if not doc_paths:
+        raise ValueError("web.zip does not contain Help docs index files")
+    missing_docs = sorted(sql_paths - doc_paths)
+    missing_sql = sorted(doc_paths - sql_paths)
+    if missing_docs or missing_sql:
+        details = []
+        if missing_docs:
+            details.append("missing docs for SQL paths: " + ", ".join(missing_docs[:5]))
+        if missing_sql:
+            details.append("missing SQL rows for docs paths: " + ", ".join(missing_sql[:5]))
+        raise ValueError("Help SQL and Help docs are inconsistent; " + "; ".join(details))
 
 
 def _rebuild_standalone_zip(

@@ -1811,6 +1811,38 @@ unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
 if [ -n "$help_zip" ]; then
   mkdir -p "$publish_root/ohr-cicd/web_prod/help"
   unzip -q "$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
+  python3 - "$publish_root/ohr-cicd/web_prod/help" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+help_root = Path(sys.argv[1])
+sql_path = help_root / "insert_ohr_help.sql"
+if not sql_path.is_file():
+    print("Help SQL が生成されていません: insert_ohr_help.sql")
+    sys.exit(6)
+sql_text = sql_path.read_text(encoding="utf-8-sig")
+path_re = re.compile(r"docs/[0-9a-fA-F-]{36}/[^'\"\s]*")
+sql_paths = {m.group(0).rstrip("/") + "/" for m in path_re.finditer(sql_text)}
+doc_paths = {
+    str(path.relative_to(help_root)).replace("\\", "/").rsplit("/", 1)[0].rstrip("/") + "/"
+    for path in (help_root / "docs").glob("**/index.html")
+    if re.search(r"docs/[0-9a-fA-F-]{36}/", str(path.relative_to(help_root)).replace("\\", "/"))
+}
+if not sql_paths:
+    print("Help SQL に docs パスがありません")
+    sys.exit(6)
+missing_docs = sorted(sql_paths - doc_paths)
+missing_sql = sorted(doc_paths - sql_paths)
+if missing_docs or missing_sql:
+    print("Help SQL と Help docs が一致していません")
+    if missing_docs:
+        print("SQL のみ: " + ", ".join(missing_docs[:10]))
+    if missing_sql:
+        print("docs のみ: " + ", ".join(missing_sql[:10]))
+    sys.exit(6)
+print(f"Help SQL/doc validation passed: {len(sql_paths)} rows")
+PY
 fi
 if [ "${BUILD_CONF_PROD:-true}" = "true" ]; then
   conf_dir="$publish_root/ohr-cicd/conf_prod"

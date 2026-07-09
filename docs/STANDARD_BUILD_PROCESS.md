@@ -208,6 +208,14 @@ DELETE FROM ohr_help;
 
 这样 Help 菜单 SQL 与本次构建出的 Help 内容保持一致，并保证重复执行时先清空旧帮助信息。该文件缺失时最终打包失败。
 
+构建终端在 `help.zip` 解入 `web_prod/help` 后会检查 `insert_ohr_help.sql` 中所有 `docs/<uuid>/...` 路径是否存在对应的 `docs/<uuid>/.../index.html`。最终打包器也会再次执行同样的检查。发现 SQL 路径和实际 Help 文件不一致时，打包失败，避免交付后点击 Help 标记跳转到 404。
+
+既存交付包如需重新生成 `ohr_help` 全量修复 SQL，可执行：
+
+```powershell
+python scripts\generate_help_sql_repair.py "dist\standalone\<顧客機関名> <主控タスクID>" -o "dist\standalone\<顧客機関名> <主控タスクID>\repair\ohr_help_full_rebuild.sql"
+```
+
 取消勾选生成 Help 时，最终打包器保留 SQL 模板中的 `製品/1.tenant/ohr_help.sql`，不执行覆盖。
 
 ## 12. tenant 导入设置 SQL

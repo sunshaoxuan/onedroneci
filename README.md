@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.67`
+当前版本：`0.3.68`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -32,7 +32,7 @@
 9. 机构封包时，主控台根据 `導入計画` 和服务利用设定生成 `導入/tenant/import_plan.sql` 与 `導入/ohr/import_plan.sql`，用于数据库脚本执行后显式更新 tenant 导入设置、菜单公开状态和定时任务状态，启用项与停用项都会输出更新语句。
    - 邮件服务的“送信サーバーには、認証が必要です”对应产品后端 `MAIL_CONFIG.authConfirmation` 布尔字段，发送时写入 JavaMail `mail.smtp.auth`；构造器不提供 plain/login 类型选择。
 10. 机构封包时，主控台从 `data-synchronization.git` 的 `updsv7phr/PHR` 复制 `データ連携` 白名单目录；如填写补充脚本代码源，可粘贴完整 GitLab tree URL 或仓库内目录路径，构建终端校验有效后追加复制该路径下的白名单目录，同名脚本以补充源为准。
-11. 勾选生成 Help 时，主控台把 Help 构建产物中的 `insert_ohr_help.sql` 写入 `製品/1.tenant/ohr_help.sql`，并在文件顶部追加清空 `ohr_help` 的 SQL；如果 Help SQL 缺失则终止打包。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
+11. 勾选生成 Help 时，构建终端会校验 Help SQL 中登记的 `docs/<uuid>/...` 路径和实际 `web_prod/help/docs` 目录一致；主控台把校验后的 `insert_ohr_help.sql` 写入 `製品/1.tenant/ohr_help.sql`，并在文件顶部追加清空 `ohr_help` 的 SQL。如果 Help SQL 缺失或路径不一致则终止打包。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
 12. 机构封包时，主控台把页面填写的资材编号与前后端分支写入 `version.txt`，重建 `OneHrStandalone.zip`。
 13. 標準版完整交付包可为 nginx、Redis、MinIO 选择中间件版本。默认使用模板内置包；选择其他版本时，主控台从官方发布源下载到宿主机缓存，并在重建 `OneHrStandalone.zip` 时替换 `OneHrStandalone/software/` 下的同名 zip。
 14. 非内置下载版中间件会在缓存 zip 生成阶段合并 `addons/<product>/` 下的补充文件到对应包根目录；当前包含 nginx 的启动/停止脚本和 Redis 的启动脚本/配置文件。
@@ -148,6 +148,12 @@ powershell -ExecutionPolicy Bypass -File scripts\restart_host_standalone_console
 
 ```powershell
 python scripts\remote_deploy_build_console.py
+```
+
+从已有交付目录重新生成 Help 全量修复 SQL：
+
+```powershell
+python scripts\generate_help_sql_repair.py "dist\standalone\<顧客機関名> <主控タスクID>" -o "dist\standalone\<顧客機関名> <主控タスクID>\repair\ohr_help_full_rebuild.sql"
 ```
 
 运行测试：

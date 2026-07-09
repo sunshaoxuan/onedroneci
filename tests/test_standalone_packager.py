@@ -21,6 +21,7 @@ from standalone_packager import (
     complete_all_sql_scripts,
     default_organisation_dstart,
     fetch_nginx_releases,
+    help_sql_from_web_zip,
     inspect_artifact_versions,
     patch_account_sql,
     render_ohr_import_sql,
@@ -674,6 +675,38 @@ def test_build_product_package_fails_when_help_sql_is_missing(tmp_path):
         assert "missing Help SQL in web.zip" in str(exc)
     else:
         raise AssertionError("missing Help SQL should fail")
+
+
+def test_help_sql_from_web_zip_validates_docs_paths(tmp_path):
+    web_zip = tmp_path / "web.zip"
+    guid = "11111111-1111-1111-1111-111111111111"
+    sql = (
+        'INSERT INTO ohr_help ("path", "url_uuid") '
+        f"VALUES ('docs/{guid}/portal/sample/', '{guid}');"
+    )
+    with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", sql)
+        z.writestr(f"ohr-cicd/web_prod/help/docs/{guid}/portal/sample/index.html", "ok")
+
+    assert help_sql_from_web_zip(web_zip) == "DELETE FROM ohr_help;\n" + sql
+
+
+def test_help_sql_from_web_zip_fails_when_docs_are_missing(tmp_path):
+    web_zip = tmp_path / "web.zip"
+    guid = "11111111-1111-1111-1111-111111111111"
+    sql = (
+        'INSERT INTO ohr_help ("path", "url_uuid") '
+        f"VALUES ('docs/{guid}/portal/sample/', '{guid}');"
+    )
+    with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", sql)
+
+    try:
+        help_sql_from_web_zip(web_zip)
+    except ValueError as exc:
+        assert "Help docs index files" in str(exc)
+    else:
+        raise AssertionError("missing Help docs should fail")
 
 
 def test_build_product_package_can_skip_help_sql(tmp_path):

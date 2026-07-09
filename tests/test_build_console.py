@@ -814,6 +814,8 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "使用 SVN 文档源构建 Help" in script
     assert "HELP_DOCS_SVN_WORKDIR" in script
     assert "ohr_help_docs_release_*.zip" in script
+    assert "Help SQL/doc validation passed" in script
+    assert "Help SQL と Help docs が一致していません" in script
     assert "HELP_CACHE_KEY" in script
     assert "[cache help] reuse help bundle" in script
     assert "svn info --show-item revision" in script

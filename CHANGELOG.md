@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.68 - 2026-07-09
+
+### Fixed
+
+- Help SQL と `web_prod/help/docs` の整合性検証を追加し、Help SQL が存在しない、または DB 登録パスと実ファイルが一致しない場合は出包を停止するようにした。
+- 既存交付包から `ohr_help` 全量削除・再作成 SQL を生成する `scripts/generate_help_sql_repair.py` を追加した。
+- 筑波大学向け既存交付包から `repair/ohr_help_full_rebuild.sql` を生成した。
+
 ## 0.3.67 - 2026-07-02
 
 ### Fixed
