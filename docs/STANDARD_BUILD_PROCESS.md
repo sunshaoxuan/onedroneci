@@ -292,7 +292,7 @@ python scripts\generate_help_sql_repair.py "dist\standalone\<顧客機関名> <�
 
 ## 15. all.sql 补全
 
-完整標準版交付包在 SQL 资材、数据连携和导入计划写入后，会扫描交付目录下所有含 `.sql` 文件的脚本文件夹。
+完整標準版交付包在 SQL 资材、数据连携和导入计划写入后，会扫描 SQL 资材与导入计划目录下所有含 `.sql` 文件的脚本文件夹。
 
 如果目录中没有 `all.sql`，最终打包器会创建一个。如果同级目录中存在未出现在 `all.sql` 中的 `.sql` 文件，最终打包器会按现有格式追加：
 
@@ -300,7 +300,20 @@ python scripts\generate_help_sql_repair.py "dist\standalone\<顧客機関名> <�
 \i 文件名.sql
 ```
 
-`all.sql` 自身不参与检查。没有普通 `.sql` 文件的目录不会创建总控脚本。
+`all.sql` 自身不参与检查。没有普通 `.sql` 文件的目录不会创建总控脚本。`データ連携` 子目录不参与这一步，也不会复制或生成其中的 `all.sql`。
+
+机构封包还会在交付根生成：
+
+```text
+データ連携/run_all_sql.ps1
+```
+
+该脚本直接执行 `Sequence`、`Function`、`Table`、`ForeignTable`、`View`、`Procedure` 中的个别 SQL。由于打包时已跳过子目录中的 `all.sql`，脚本自身负责整个执行顺序。连接参数收敛为两组：
+
+- OHR 数据库：来源于页面 DB 主机信息，同时用于 `ohr`、`tenant` 和 `djn_self`。
+- UPDS 数据库：来源于页面 UPDS 服务信息，用于 `u7tophr`。
+
+脚本会在执行目录建立 `logs`、`_generated`，并按设置建立 `_converted_sjis`。参考脚本中的客户主机和密码不进入仓库模板，封包时才把本次任务参数写入交付脚本。
 
 ## 16. version.txt
 

@@ -21,6 +21,7 @@ from hv_vm_tools import hyperv_host
 from hv_vm_tools.config import Settings
 from standalone_packager import (
     BuildVersion,
+    DataSyncSqlRunnerConfig,
     OhrImportConfig,
     OhrMenuDisable,
     OhrScheduledTaskDisable,
@@ -49,7 +50,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.71"
+APP_VERSION = "0.3.73"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1326,6 +1327,17 @@ def run_job(job_id: str) -> None:
             data_sync_dir=configured_data_sync_dir(),
             data_sync_subdir=configured_data_sync_subdir(),
             data_sync_custom_subdir=req.get("data_sync_custom_subdir") or configured_data_sync_custom_subdir(),
+            data_sync_runner_config=DataSyncSqlRunnerConfig(
+                ohr_host=req.get("postgresql_host") or "localhost",
+                ohr_port=int(req.get("postgresql_port") or 5432),
+                ohr_user=req.get("postgresql_user") or "postgres",
+                ohr_password=req.get("postgresql_password") or "",
+                upds_host=req.get("upds_host_name") or "",
+                upds_port=int(req.get("upds_port") or 5432),
+                upds_database=req.get("upds_db_name") or "",
+                upds_user=req.get("upds_user") or "postgres",
+                upds_password=req.get("upds_password") or "",
+            ),
             include_help_sql=effective_build_help,
             middleware_versions={
                 "nginx": req.get("middleware_nginx_version") or "bundled",

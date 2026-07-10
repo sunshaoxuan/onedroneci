@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.71"
+    assert console.APP_VERSION == "0.3.73"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -1171,6 +1171,8 @@ def test_standard_console_has_preparation_and_import_plan_tabs():
     assert ".standard-tab-panel" in console.STYLE_CSS
     assert '.standard-tab-panel[data-standard-tab-panel="import"]' in console.STYLE_CSS
     assert ".tag-tree" in console.STYLE_CSS
+    assert "data_sync_runner_config=DataSyncSqlRunnerConfig(" in Path("host_standalone_console.py").read_text(encoding="utf-8")
+    assert 'upds_host=req.get("upds_host_name") or ""' in Path("host_standalone_console.py").read_text(encoding="utf-8")
 
 
 def test_usage_options_are_in_preparation_service_sections():

@@ -30,6 +30,7 @@ DEFAULT_DATA_SYNC_BRANCH = "master"
 DEFAULT_DATA_SYNC_DIR = DEFAULT_TEMPLATE_ROOT / "data-synchronization"
 DEFAULT_DATA_SYNC_SUBDIR = "updsv7phr/PHR"
 DEFAULT_DATA_SYNC_CUSTOM_SUBDIR = ""
+DATA_SYNC_RUNNER_TEMPLATE = ROOT / "scripts" / "templates" / "run_all_sql.ps1"
 DEFAULT_DATA_SYNC_GIT_TIMEOUT = int(os.environ.get("DATA_SYNC_GIT_TIMEOUT", "300"))
 DATA_SYNC_ALLOWED_DIRS = ("ForeignTable", "Function", "Procedure", "Sequence", "Table", "View")
 HELP_SQL_IN_WEB_ZIP = "ohr-cicd/web_prod/help/insert_ohr_help.sql"
@@ -62,6 +63,19 @@ class StandaloneConfig:
     postgresql_password: str = "password"
     ohr_host_address: str = ""
     ohr_service_port: int = 3198
+
+
+@dataclass(frozen=True)
+class DataSyncSqlRunnerConfig:
+    ohr_host: str
+    ohr_port: int = 5432
+    ohr_user: str = "postgres"
+    ohr_password: str = ""
+    upds_host: str = ""
+    upds_port: int = 5432
+    upds_database: str = ""
+    upds_user: str = "postgres"
+    upds_password: str = ""
 
 
 @dataclass(frozen=True)
@@ -766,13 +780,19 @@ def _referenced_sql_filenames(text: str) -> set[str]:
     return names
 
 
-def complete_all_sql_scripts(root: Path) -> dict[str, list[str]]:
+def complete_all_sql_scripts(root: Path, excluded_roots: tuple[Path, ...] = ()) -> dict[str, list[str]]:
     completed: dict[str, list[str]] = {}
+    resolved_excluded_roots = tuple(path.resolve() for path in excluded_roots)
+
+    def is_excluded(path: Path) -> bool:
+        resolved = path.resolve()
+        return any(resolved == excluded or excluded in resolved.parents for excluded in resolved_excluded_roots)
+
     script_dirs = sorted(
         {
             item.parent
             for item in root.rglob("*.sql")
-            if item.is_file() and item.name.lower() != "all.sql"
+            if item.is_file() and item.name.lower() != "all.sql" and not is_excluded(item)
         },
         key=lambda path: str(path).lower(),
     )
@@ -798,6 +818,40 @@ def complete_all_sql_scripts(root: Path) -> dict[str, list[str]]:
         all_sql.write_text(text + separator + addition, encoding="utf-8")
         completed[str(all_sql.relative_to(root)).replace("\\", "/")] = missing
     return completed
+
+
+def _powershell_single_quoted(value: Any) -> str:
+    return str(value or "").replace("'", "''")
+
+
+def render_data_sync_sql_runner(config: DataSyncSqlRunnerConfig) -> str:
+    if not DATA_SYNC_RUNNER_TEMPLATE.is_file():
+        raise FileNotFoundError(f"missing data sync runner template: {DATA_SYNC_RUNNER_TEMPLATE}")
+    text = DATA_SYNC_RUNNER_TEMPLATE.read_text(encoding="utf-8-sig")
+    replacements = {
+        "@@OHR_DB_HOST@@": _powershell_single_quoted(config.ohr_host),
+        "@@OHR_DB_PORT@@": str(int(config.ohr_port)),
+        "@@OHR_DB_USER@@": _powershell_single_quoted(config.ohr_user),
+        "@@OHR_DB_PASSWORD@@": _powershell_single_quoted(config.ohr_password),
+        "@@UPDS_DB_HOST@@": _powershell_single_quoted(config.upds_host),
+        "@@UPDS_DB_PORT@@": str(int(config.upds_port)),
+        "@@UPDS_DB_NAME@@": _powershell_single_quoted(config.upds_database),
+        "@@UPDS_DB_USER@@": _powershell_single_quoted(config.upds_user),
+        "@@UPDS_DB_PASSWORD@@": _powershell_single_quoted(config.upds_password),
+    }
+    for placeholder, value in replacements.items():
+        text = text.replace(placeholder, value)
+    unresolved = sorted(set(re.findall(r"@@[A-Z0-9_]+@@", text)))
+    if unresolved:
+        raise ValueError(f"unresolved data sync runner placeholders: {', '.join(unresolved)}")
+    return text
+
+
+def write_data_sync_sql_runner(target_dir: Path, config: DataSyncSqlRunnerConfig) -> Path:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / "run_all_sql.ps1"
+    target.write_text(render_data_sync_sql_runner(config), encoding="utf-8-sig")
+    return target
 
 
 def _safe_zip_member_name(name: str) -> str:
@@ -1180,10 +1234,13 @@ def sync_git_tree(
 
 
 def _copy_allowed_data_sync_dirs(source: Path, target_dir: Path) -> None:
+    def ignore_all_sql(_directory: str, names: list[str]) -> list[str]:
+        return [name for name in names if name.lower() == "all.sql"]
+
     for name in DATA_SYNC_ALLOWED_DIRS:
         child = source / name
         if child.is_dir():
-            shutil.copytree(child, target_dir / name, dirs_exist_ok=True)
+            shutil.copytree(child, target_dir / name, dirs_exist_ok=True, ignore=ignore_all_sql)
 
 
 def copy_data_sync_assets(
@@ -1254,6 +1311,7 @@ def build_product_package(
     data_sync_dir: Path | None = None,
     data_sync_subdir: str = DEFAULT_DATA_SYNC_SUBDIR,
     data_sync_custom_subdir: str = DEFAULT_DATA_SYNC_CUSTOM_SUBDIR,
+    data_sync_runner_config: DataSyncSqlRunnerConfig | None = None,
     include_help_sql: bool = True,
     middleware_versions: dict[str, str] | None = None,
     middleware_cache_dir: Path | None = None,
@@ -1296,6 +1354,13 @@ def build_product_package(
                 custom_subdir=data_sync_custom_subdir,
                 logger=logger,
             )
+        effective_runner_config = data_sync_runner_config or DataSyncSqlRunnerConfig(
+            ohr_host=config.postgresql_host,
+            ohr_port=config.postgresql_port,
+            ohr_user=config.postgresql_user,
+            ohr_password=config.postgresql_password,
+        )
+        data_sync_runner = write_data_sync_sql_runner(data_sync_target, effective_runner_config)
         account_sql = product_dir / "2.ohr" / "4.account.sql"
         if logger:
             logger("account_sql_patch")
@@ -1322,7 +1387,7 @@ def build_product_package(
                 render_ohr_import_sql(ohr_import_config),
                 encoding="utf-8",
             )
-        complete_all_sql_scripts(delivery_root)
+        complete_all_sql_scripts(delivery_root, excluded_roots=(data_sync_target,))
         (product_dir / "version.txt").write_text(render_version_txt(version), encoding="utf-8")
 
         final_zip = product_dir / "OneHrStandalone.zip"
@@ -1339,6 +1404,7 @@ def build_product_package(
             "product_dir": str(delivery_root),
             "standalone_zip": str(final_zip),
             "version_txt": str(product_dir / "version.txt"),
+            "data_sync_runner": str(data_sync_runner),
             "size": final_zip.stat().st_size,
         }
 

@@ -83,7 +83,10 @@
     OneHrStandalone.zip
     version.txt
   データ連携/
+    run_all_sql.ps1
 ```
+
+`run_all_sql.ps1` は画面の DB 主機情報と UPDS サービス情報から生成され、データ連携配下の個別 SQL を順序実行します。各サブフォルダーの `all.sql` は実行対象から除外されます。
 
 `version.txt` 记录页面填写的资材编号与本次构建分支：
 

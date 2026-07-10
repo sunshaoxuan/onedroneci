@@ -10,6 +10,7 @@ from standalone_packager import (
     PACKAGE_IN_STANDALONE_ZIP,
     WEB_IN_STANDALONE_ZIP,
     BuildVersion,
+    DataSyncSqlRunnerConfig,
     OhrImportConfig,
     OhrMenuDisable,
     OhrScheduledTaskDisable,
@@ -475,6 +476,17 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
         data_sync_git_url=str(data_sync_repo),
         data_sync_dir=data_sync_work,
         data_sync_custom_subdir="customv7phr/PHR",
+        data_sync_runner_config=DataSyncSqlRunnerConfig(
+            ohr_host="10.0.0.8",
+            ohr_port=15432,
+            ohr_user="ohr_user",
+            ohr_password="ohr'password",
+            upds_host="10.0.0.9",
+            upds_port=25432,
+            upds_database="updsv7_customer",
+            upds_user="upds_user",
+            upds_password="upds_password",
+        ),
     )
 
     delivery_root = Path(result["product_dir"])
@@ -482,15 +494,28 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert delivery_root == output / "build-1"
     assert product_dir.is_dir()
     assert (delivery_root / "データ連携" / "Table" / "01_table.sql").read_text(encoding="utf-8") == "custom table"
-    assert "\\i 01_table.sql" in (delivery_root / "データ連携" / "Table" / "all.sql").read_text(encoding="utf-8")
+    assert not (delivery_root / "データ連携" / "Table" / "all.sql").exists()
     assert "\\i 5.ohr.sql" in (product_dir / "2.ohr" / "all.sql").read_text(encoding="utf-8")
     assert "\\i ohr_help.sql" in (product_dir / "1.tenant" / "all.sql").read_text(encoding="utf-8")
-    assert "\\i 02_view.sql" in (delivery_root / "データ連携" / "View" / "all.sql").read_text(encoding="utf-8")
-    assert "\\i 02_custom.sql" in (delivery_root / "データ連携" / "Procedure" / "all.sql").read_text(encoding="utf-8")
+    assert not (delivery_root / "データ連携" / "View" / "all.sql").exists()
+    assert not (delivery_root / "データ連携" / "Procedure" / "all.sql").exists()
     assert (delivery_root / "データ連携" / "View" / "02_view.sql").read_text(encoding="utf-8") == "view sync"
     assert (delivery_root / "データ連携" / "Procedure" / "02_custom.sql").read_text(encoding="utf-8") == "custom procedure"
     assert not (delivery_root / "データ連携" / "Ignored").exists()
     assert not (delivery_root / "データ連携" / "00_all_updsv7tophr.sql").exists()
+    runner_path = delivery_root / "データ連携" / "run_all_sql.ps1"
+    runner = runner_path.read_text(encoding="utf-8-sig")
+    assert result["data_sync_runner"] == str(runner_path)
+    assert "[string]$OhrDbHost = '10.0.0.8'" in runner
+    assert "[int]$OhrDbPort = 15432" in runner
+    assert "[string]$OhrDbPassword = 'ohr''password'" in runner
+    assert "[string]$UpdsDbHost = '10.0.0.9'" in runner
+    assert "[int]$UpdsDbPort = 25432" in runner
+    assert "[string]$UpdsDbName = 'updsv7_customer'" in runner
+    assert "$TnToPhrHost = $OhrDbHost" in runner
+    assert "Where-Object { $_.Name -ine 'all.sql' }" in runner
+    assert "[string]$DjnSelfHostAddr" not in runner
+    assert "@@" not in runner
     assert (product_dir / "version.txt").read_text(encoding="utf-8") == (
         "資材:M-001\n前台分支：release_front\n后台分支：release_back\n"
     )
