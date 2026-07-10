@@ -52,8 +52,8 @@ $PostgresBin = "C:\Program Files\PostgreSQL\18\bin"
 
 if (Test-Path (Join-Path $PostgresBin "psql.exe")) {
     $env:Path = "$PostgresBin;$env:Path"
-} else {
-    throw "psql.exe not found: $PostgresBin"
+} elseif (-not $PlanOnly -and -not (Get-Command $PsqlExe -ErrorAction SilentlyContinue)) {
+    throw "psql.exe not found in PostgreSQL bin or PATH: $PostgresBin"
 }
 
 Set-StrictMode -Version Latest
@@ -75,6 +75,8 @@ try {
 } catch { }
 $Cp932Encoding = [System.Text.Encoding]::GetEncoding(932)
 $Utf8StrictEncoding = New-Object System.Text.UTF8Encoding($false, $true)
+$SqlFolders = @('Sequence', 'Function', 'Table', 'ForeignTable', 'View', 'Procedure')
+$script:FailedSqlCount = 0
 
 function Write-Log {
     param([string]$Message, [string]$Level = 'INFO')
@@ -153,12 +155,8 @@ function Resolve-SqlFile {
         if (Test-Path -LiteralPath $candidate3 -PathType Leaf) { return (Get-Item -LiteralPath $candidate3) }
     }
 
-    if ($SkipMissing) {
-        Write-Log "Missing SQL skipped: $Folder\$FileName" 'WARN'
-        return $null
-    }
-
-    throw "SQL file not found: $Folder\$FileName"
+    Write-Verbose "Ordered SQL is not included in this package and was skipped: $Folder\$FileName"
+    return $null
 }
 
 function Get-AllSqlFilesInFolder {
@@ -170,9 +168,9 @@ function Get-AllSqlFilesInFolder {
         return @()
     }
 
-    return @(Get-ChildItem -LiteralPath $folderPath -File -Filter '*.sql' |
+    return @(Get-ChildItem -LiteralPath $folderPath -File -Filter '*.sql' -Recurse |
         Where-Object { $_.Name -ine 'all.sql' } |
-        Sort-Object Name)
+        Sort-Object FullName)
 }
 
 function New-SqlPlanItem {
@@ -180,7 +178,8 @@ function New-SqlPlanItem {
         [string]$GroupName,
         [System.IO.FileInfo]$FileInfo,
         [string]$Source,
-        [string]$Remark = ''
+        [string]$Remark = '',
+        [int]$Order = [int]::MaxValue
     )
 
     return [pscustomobject]@{
@@ -189,6 +188,7 @@ function New-SqlPlanItem {
         File = $FileInfo.Name
         Source = $Source
         Remark = $Remark
+        Order = $Order
     }
 }
 
@@ -239,7 +239,7 @@ function Get-SqlPlan {
         if ($null -ne $fileInfo) {
             Add-SetValue -Set $used -Value $fileInfo.FullName
             $source = 'Procedure No.{0}' -f $s.No
-            $plan += (New-SqlPlanItem -GroupName $GroupName -FileInfo $fileInfo -Source $source -Remark $s.Remark)
+            $plan += (New-SqlPlanItem -GroupName $GroupName -FileInfo $fileInfo -Source $source -Remark $s.Remark -Order ([int]$s.No))
         }
     }
 
@@ -255,6 +255,34 @@ function Get-SqlPlan {
     }
 
     return @($plan)
+}
+
+function Get-AllPackagedSqlFiles {
+    $files = @()
+    foreach ($folder in $SqlFolders) {
+        $files += @(Get-AllSqlFilesInFolder -Folder $folder)
+    }
+    return @($files | Sort-Object FullName)
+}
+
+function Assert-SqlPlanCoverage {
+    param([object[]]$Plans)
+
+    $actual = @(Get-AllPackagedSqlFiles)
+    $plannedPaths = @($Plans | ForEach-Object { [System.IO.Path]::GetFullPath($_.Path).ToLowerInvariant() })
+    $actualPaths = @($actual | ForEach-Object { [System.IO.Path]::GetFullPath($_.FullName).ToLowerInvariant() })
+    $duplicates = @($plannedPaths | Group-Object | Where-Object { $_.Count -ne 1 })
+    $missing = @($actualPaths | Where-Object { $_ -notin $plannedPaths })
+    $unexpected = @($plannedPaths | Where-Object { $_ -notin $actualPaths })
+
+    if ($duplicates.Count -gt 0 -or $missing.Count -gt 0 -or $unexpected.Count -gt 0) {
+        if ($duplicates.Count -gt 0) { Write-Log "Duplicate planned SQL: $($duplicates.Name -join ', ')" 'ERROR' }
+        if ($missing.Count -gt 0) { Write-Log "Unplanned SQL: $($missing -join ', ')" 'ERROR' }
+        if ($unexpected.Count -gt 0) { Write-Log "Planned SQL not found: $($unexpected -join ', ')" 'ERROR' }
+        throw 'SQL execution plan does not cover packaged SQL files exactly once.'
+    }
+
+    Write-Log "SQL execution plan coverage passed: $($actual.Count) files"
 }
 
 function Invoke-PsqlFile {
@@ -291,6 +319,7 @@ function Invoke-PsqlFile {
         $code = $LASTEXITCODE
         if ($code -ne 0) {
             $msg = "FAILED $Label : exit code $code"
+            $script:FailedSqlCount++
             Write-Log $msg 'ERROR'
             if (-not $ContinueOnError) { throw $msg }
         } else {
@@ -614,13 +643,16 @@ try {
 
     $LateFunctionFileNames = @($LateFunctionScripts | ForEach-Object { $_.File })
 
-    $SequencePlan = Get-SqlPlan -GroupName '01_Sequence' -Folder 'Sequence' -OrderedScripts $SequenceScripts -IncludeExtraFiles
-    $InitialFunctionPlan = Get-SqlPlan -GroupName '02_Function_initial' -Folder 'Function' -OrderedScripts $InitialFunctionScripts -ExcludeFileNames $LateFunctionFileNames -IncludeExtraFiles
-    $TablePlan = Get-SqlPlan -GroupName '03_Table' -Folder 'Table' -OrderedScripts $TableScripts -IncludeExtraFiles
-    $ForeignTablePlan = Get-SqlPlan -GroupName '06_ForeignTable' -Folder 'ForeignTable' -OrderedScripts $ForeignTableScripts -IncludeExtraFiles
-    $LateFunctionPlan = Get-SqlPlan -GroupName '07_Function_after_foreign_table' -Folder 'Function' -OrderedScripts $LateFunctionScripts
-    $ViewPlan = Get-SqlPlan -GroupName '08_View' -Folder 'View' -OrderedScripts $ViewScripts -IncludeExtraFiles
-    $ProcedurePlan = Get-SqlPlan -GroupName '09_Procedure' -Folder 'Procedure' -OrderedScripts $ProcedureScripts -IncludeExtraFiles
+    $SequencePlan = @(Get-SqlPlan -GroupName '01_Sequence' -Folder 'Sequence' -OrderedScripts $SequenceScripts -IncludeExtraFiles)
+    $InitialFunctionPlan = @(Get-SqlPlan -GroupName '02_Function_initial' -Folder 'Function' -OrderedScripts $InitialFunctionScripts -ExcludeFileNames $LateFunctionFileNames -IncludeExtraFiles)
+    $TablePlan = @(Get-SqlPlan -GroupName '03_Table' -Folder 'Table' -OrderedScripts $TableScripts -IncludeExtraFiles)
+    $ForeignTablePlan = @(Get-SqlPlan -GroupName '06_ForeignTable' -Folder 'ForeignTable' -OrderedScripts $ForeignTableScripts -IncludeExtraFiles)
+    $LateFunctionPlan = @(Get-SqlPlan -GroupName '07_Function_after_foreign_table' -Folder 'Function' -OrderedScripts $LateFunctionScripts)
+    $ViewPlan = @(Get-SqlPlan -GroupName '08_View' -Folder 'View' -OrderedScripts $ViewScripts -IncludeExtraFiles)
+    $ProcedurePlan = @(Get-SqlPlan -GroupName '09_Procedure' -Folder 'Procedure' -OrderedScripts $ProcedureScripts -IncludeExtraFiles)
+
+    $AllSqlPlans = @($SequencePlan) + @($InitialFunctionPlan) + @($TablePlan) + @($ForeignTablePlan) + @($LateFunctionPlan) + @($ViewPlan) + @($ProcedurePlan)
+    Assert-SqlPlanCoverage -Plans $AllSqlPlans
 
     Write-Log 'Execution plan summary:'
     Write-Log "01_Sequence: $($SequencePlan.Count) files"
@@ -649,8 +681,8 @@ try {
         Invoke-PsqlFile -Path $extensionSql -Label '04_Extension_and_05_dblink' -Source '4, 5' -Remark 'Extension, FDW, server, user mapping'
     }
 
-    $ForeignTablePlanBeforeLateFunction = @($ForeignTablePlan | Select-Object -First 49)
-    $ForeignTablePlanAfterLateFunction = @($ForeignTablePlan | Select-Object -Skip 49)
+    $ForeignTablePlanBeforeLateFunction = @($ForeignTablePlan | Where-Object { $_.Order -le 49 })
+    $ForeignTablePlanAfterLateFunction = @($ForeignTablePlan | Where-Object { $_.Order -gt 49 })
 
     Invoke-Plan -GroupName '06_ForeignTable_before_late_function' -Plan $ForeignTablePlanBeforeLateFunction
     Invoke-Plan -GroupName '07_Function_after_foreign_table' -Plan $LateFunctionPlan
@@ -658,7 +690,9 @@ try {
     Invoke-Plan -GroupName '08_View' -Plan $ViewPlan
     Invoke-Plan -GroupName '09_Procedure' -Plan $ProcedurePlan
 
-    if ($PlanOnly) {
+    if ($script:FailedSqlCount -gt 0) {
+        throw "$($script:FailedSqlCount) SQL file(s) failed. See log: $LogFile"
+    } elseif ($PlanOnly) {
         Write-Log 'PLAN ONLY DONE'
     } else {
         Write-Log 'ALL DONE'

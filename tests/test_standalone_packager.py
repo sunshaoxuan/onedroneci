@@ -514,6 +514,14 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     assert "[string]$UpdsDbName = 'updsv7_customer'" in runner
     assert "$TnToPhrHost = $OhrDbHost" in runner
     assert "Where-Object { $_.Name -ine 'all.sql' }" in runner
+    assert "-Filter '*.sql' -Recurse" in runner
+    assert "function Assert-SqlPlanCoverage" in runner
+    assert "SQL execution plan coverage passed" in runner
+    assert "Ordered SQL is not included in this package and was skipped" in runner
+    assert "Where-Object { $_.Order -le 49 }" in runner
+    assert "Where-Object { $_.Order -gt 49 }" in runner
+    assert "$script:FailedSqlCount++" in runner
+    assert 'throw "$($script:FailedSqlCount) SQL file(s) failed.' in runner
     assert "[string]$DjnSelfHostAddr" not in runner
     assert "@@" not in runner
     assert (product_dir / "version.txt").read_text(encoding="utf-8") == (

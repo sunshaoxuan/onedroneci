@@ -50,7 +50,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.73"
+APP_VERSION = "0.3.74"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")

@@ -1,6 +1,6 @@
 # 庶務事務システム构造器
 
-当前版本：`0.3.73`
+当前版本：`0.3.74`
 
 本仓库提供一套 Direct 方式的庶务事务系统构建与交付包生成工具。产品版本分为 `標準版` 与 `NHO版`；当前主线不启用 DroneCI，也不上传 Nexus。構建终端负责生成变化频繁的代码包，宿主机主控台负责按产品版本合成最终输出。
 
@@ -34,7 +34,7 @@
 10. 机构封包时，主控台从 `data-synchronization.git` 的 `updsv7phr/PHR` 复制 `データ連携` 白名单目录；如填写补充脚本代码源，可粘贴完整 GitLab tree URL 或仓库内目录路径，构建终端校验有效后追加复制该路径下的白名单目录，同名脚本以补充源为准。
 11. 勾选生成 Help 时，构建终端会校验 Help SQL 中登记的 `docs/<uuid>/...` 路径和实际 `web_prod/help/docs` 目录一致；主控台把校验后的 `insert_ohr_help.sql` 转为全量删除再创建 SQL。机构封包写入 `製品/1.tenant/ohr_help.sql`，标准发版写入输出目录同级 `ohr_help.sql`。如果 Help SQL 缺失或路径不一致则终止打包。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
 12. 机构封包时，主控台把页面填写的资材编号与前后端分支写入 `version.txt`，重建 `OneHrStandalone.zip`。
-13. 机构封包在交付根的 `データ連携/run_all_sql.ps1` 生成数据连携 SQL 总执行脚本。脚本使用 OHR 与 UPDS 两组连接设置，OHR 设置同时用于 `ohr` 与 `tenant`；数据连携子目录不再复制或生成 `all.sql`。
+13. 机构封包在交付根的 `データ連携/run_all_sql.ps1` 生成数据连携 SQL 总执行脚本。脚本使用 OHR 与 UPDS 两组连接设置，OHR 设置同时用于 `ohr` 与 `tenant`；数据连携子目录不再复制或生成 `all.sql`。执行时递归发现六类业务目录中的全部 SQL，并在连接数据库前校验每个文件恰好进入一次执行计划。
 13. 標準版完整交付包可为 nginx、Redis、MinIO 选择中间件版本。默认使用模板内置包；选择其他版本时，主控台从官方发布源下载到宿主机缓存，并在重建 `OneHrStandalone.zip` 时替换 `OneHrStandalone/software/` 下的同名 zip。
 14. 非内置下载版中间件会在缓存 zip 生成阶段合并 `addons/<product>/` 下的补充文件到对应包根目录；当前包含 nginx 的启动/停止脚本和 Redis 的启动脚本/配置文件。
 15. 机构封包最终输出到 `dist\standalone\<顧客機関名> <主控タスクID>\`：

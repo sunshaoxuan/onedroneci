@@ -308,12 +308,18 @@ python scripts\generate_help_sql_repair.py "dist\standalone\<顧客機関名> <�
 データ連携/run_all_sql.ps1
 ```
 
-该脚本直接执行 `Sequence`、`Function`、`Table`、`ForeignTable`、`View`、`Procedure` 中的个别 SQL。由于打包时已跳过子目录中的 `all.sql`，脚本自身负责整个执行顺序。连接参数收敛为两组：
+该脚本递归发现并执行 `Sequence`、`Function`、`Table`、`ForeignTable`、`View`、`Procedure` 中的全部个别 SQL。由于打包时已跳过子目录中的 `all.sql`，脚本自身负责整个执行顺序。连接参数收敛为两组：
 
 - OHR 数据库：来源于页面 DB 主机信息，同时用于 `ohr`、`tenant` 和 `djn_self`。
 - UPDS 数据库：来源于页面 UPDS 服务信息，用于 `u7tophr`。
 
 脚本会在执行目录建立 `logs`、`_generated`，并按设置建立 `_converted_sjis`。参考脚本中的客户主机和密码不进入仓库模板，封包时才把本次任务参数写入交付脚本。
+
+脚本先按参考构筑顺序放置当前包内仍存在的已知 SQL，再把新出现的 SQL 按完整路径排序追加到所属阶段。预定义清单中已经从新版本删除的文件会被忽略。`ForeignTable` 的前后阶段按参考顺序号分割，不依赖当前文件数量。
+
+数据库连接前会比较实际 SQL 集合与执行计划，发现遗漏、重复或计划中不存在的文件就终止。执行时使用 `ON_ERROR_STOP=1`；默认首个 SQL 失败即停止。指定 `ContinueOnError` 时可以继续收集后续错误，但最终仍返回失败退出码。
+
+源目录的 `Extension/*.sql` 与 `dblink/*.sql` 含环境固定值，封包时不直接复制；脚本使用页面 OHR/UPDS 参数生成等效 extension、FDW、server 与 user mapping SQL。根目录总控 SQL 由 `run_all_sql.ps1` 替代。
 
 ## 16. version.txt
 
