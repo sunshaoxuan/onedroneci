@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.69"
+    assert console.APP_VERSION == "0.3.70"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -1091,7 +1091,7 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "materialNumber" in console.APP_JS
     assert "/build-terminal/api/nho-material-numbers" in console.APP_JS
     assert "/build-terminal/api/standard-material-numbers" in console.APP_JS
-    assert "variant === 'nho' ? '/build-terminal/api/nho-material-numbers'" in console.APP_JS
+    assert "expectedVariant === 'nho' ? '/build-terminal/api/nho-material-numbers'" in console.APP_JS
     assert "fillMaterialSelect" in console.APP_JS
     assert "materialNumberLoadFailed" in console.APP_JS
     assert "input[name=\"material_number\"]" in console.APP_JS
@@ -1114,6 +1114,18 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "enterCreateMode();" in console.APP_JS
     assert "document.querySelectorAll('.standard-only')" in console.APP_JS
     assert "[hidden], .standard-only[hidden] { display: none !important; }" in console.STYLE_CSS
+
+
+def test_build_context_switch_clears_material_number_and_rejects_stale_requests():
+    assert "function clearMaterialSelection()" in console.APP_JS
+    assert "if (input) input.value = '';" in console.APP_JS
+    assert "materialReleaseRequestSeq += 1;" in console.APP_JS
+    assert "clearMaterialSelection();\n    clearBranchInputs();" in console.APP_JS
+    assert "input[name=\"standard_build_mode\"]" in console.APP_JS
+    assert "el.addEventListener('change', () => {\n    clearMaterialSelection();" in console.APP_JS
+    assert "requestSeq !== materialListRequestSeq || getProductVariant() !== expectedVariant" in console.APP_JS
+    assert "requestSeq !== materialReleaseRequestSeq || getProductVariant() !== expectedVariant" in console.APP_JS
+    assert "currentMaterial.value.trim() !== value" in console.APP_JS
 
 
 def test_validate_job_payload_uses_common_org_without_conf_prod():

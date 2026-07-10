@@ -49,7 +49,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.69"
+APP_VERSION = "0.3.70"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -2161,6 +2161,8 @@ let lastFilledJobId = null;
 let terminalResourceTimer = null;
 let terminalResourceIntervalMs = 0;
 let branchListRequestSeq = 0;
+let materialListRequestSeq = 0;
+let materialReleaseRequestSeq = 0;
 let configHistories = [];
 const MAX_LOG_LINES = 1600;
 
@@ -2237,6 +2239,14 @@ function clearBranchInputs() {
     if (input) input.value = '';
     if (menu) menu.innerHTML = '';
   });
+  closeMaterialMenu();
+}
+function clearMaterialSelection() {
+  materialReleaseRequestSeq += 1;
+  const input = document.querySelector('input[name="material_number"]');
+  const menu = document.getElementById('material-number-menu');
+  if (input) input.value = '';
+  if (menu) filterComboMenu(menu);
   closeMaterialMenu();
 }
 function fillDatalist(id, values) {
@@ -2525,16 +2535,19 @@ async function loadBranchLists() {
   }
 }
 async function loadMaterialNumbers() {
-  const variant = getProductVariant();
-  const endpoint = variant === 'nho' ? '/build-terminal/api/nho-material-numbers' : '/build-terminal/api/standard-material-numbers';
+  const expectedVariant = getProductVariant();
+  const requestSeq = ++materialListRequestSeq;
+  const endpoint = expectedVariant === 'nho' ? '/build-terminal/api/nho-material-numbers' : '/build-terminal/api/standard-material-numbers';
   try {
     const res = await fetch(endpoint);
     const data = await res.json();
+    if (requestSeq !== materialListRequestSeq || getProductVariant() !== expectedVariant) return;
     const values = data.material_numbers || [];
     fillDatalist('material-numbers', values);
     fillMaterialSelect(values, !values.length && Boolean(data.error));
   } catch (error) {
     console.warn('failed to load material numbers', error);
+    if (requestSeq !== materialListRequestSeq || getProductVariant() !== expectedVariant) return;
     fillDatalist('material-numbers', []);
     fillMaterialSelect([], true);
   }
@@ -2578,13 +2591,16 @@ async function loadMiddlewareVersions() {
   }
 }
 async function loadMaterialReleaseBranches(materialNumber) {
-  const variant = getProductVariant();
+  const expectedVariant = getProductVariant();
+  const requestSeq = ++materialReleaseRequestSeq;
   const value = String(materialNumber || '').trim();
   if (!/^\d{8}$/.test(value)) return;
-  const endpoint = variant === 'nho' ? '/api/nho-material-release-branches' : '/api/standard-material-release-branches';
+  const endpoint = expectedVariant === 'nho' ? '/api/nho-material-release-branches' : '/api/standard-material-release-branches';
   try {
     const res = await fetch(`${endpoint}?material_number=${encodeURIComponent(value)}`);
     const data = await res.json();
+    const currentMaterial = document.querySelector('input[name="material_number"]');
+    if (requestSeq !== materialReleaseRequestSeq || getProductVariant() !== expectedVariant || !currentMaterial || currentMaterial.value.trim() !== value) return;
     if (data.error) {
       console.warn('failed to load material release branches', data.error);
       return;
@@ -2592,7 +2608,7 @@ async function loadMaterialReleaseBranches(materialNumber) {
     document.getElementById('backend-branches').value = data.backend_branch || '';
     document.getElementById('frontend-branches').value = data.frontend_branch || '';
     const helpRevision = document.querySelector('input[name="help_docs_svn_revision"]');
-    if (helpRevision && variant === 'standard') {
+    if (helpRevision && expectedVariant === 'standard') {
       helpRevision.value = data.help_docs_svn_revision || '';
       syncHelpBuildFromRevision();
       setFormLocked(false);
@@ -3064,6 +3080,7 @@ document.addEventListener('click', (event) => {
 document.querySelectorAll('input[name="product_variant"]').forEach(el => {
   el.addEventListener('change', () => {
     enterCreateMode();
+    clearMaterialSelection();
     clearBranchInputs();
     applyVariantVisibility();
     loadBranchLists();
@@ -3076,6 +3093,7 @@ document.querySelectorAll('input[name="product_variant"]').forEach(el => {
 });
 document.querySelectorAll('input[name="standard_build_mode"]').forEach(el => {
   el.addEventListener('change', () => {
+    clearMaterialSelection();
     applyVariantVisibility();
     setFormLocked(false);
     renderConfigHistory();
