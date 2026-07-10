@@ -49,7 +49,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.70"
+APP_VERSION = "0.3.71"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -2249,6 +2249,18 @@ function clearMaterialSelection() {
   if (menu) filterComboMenu(menu);
   closeMaterialMenu();
 }
+function clearMaterialDerivedFields() {
+  clearMaterialSelection();
+  ['backend-branches', 'frontend-branches'].forEach(id => {
+    const input = document.getElementById(id);
+    if (input) input.value = '';
+  });
+  const helpRevision = document.querySelector('input[name="help_docs_svn_revision"]');
+  if (helpRevision) {
+    helpRevision.value = '';
+    setDataSyncCustomSourceState(helpRevision, 'valid');
+  }
+}
 function fillDatalist(id, values) {
   return;
 }
@@ -3080,7 +3092,7 @@ document.addEventListener('click', (event) => {
 document.querySelectorAll('input[name="product_variant"]').forEach(el => {
   el.addEventListener('change', () => {
     enterCreateMode();
-    clearMaterialSelection();
+    clearMaterialDerivedFields();
     clearBranchInputs();
     applyVariantVisibility();
     loadBranchLists();
@@ -3093,7 +3105,7 @@ document.querySelectorAll('input[name="product_variant"]').forEach(el => {
 });
 document.querySelectorAll('input[name="standard_build_mode"]').forEach(el => {
   el.addEventListener('change', () => {
-    clearMaterialSelection();
+    clearMaterialDerivedFields();
     applyVariantVisibility();
     setFormLocked(false);
     renderConfigHistory();

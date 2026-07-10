@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.70"
+    assert console.APP_VERSION == "0.3.71"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -1116,13 +1116,16 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert "[hidden], .standard-only[hidden] { display: none !important; }" in console.STYLE_CSS
 
 
-def test_build_context_switch_clears_material_number_and_rejects_stale_requests():
+def test_build_context_switch_clears_material_and_derived_fields_and_rejects_stale_requests():
     assert "function clearMaterialSelection()" in console.APP_JS
     assert "if (input) input.value = '';" in console.APP_JS
     assert "materialReleaseRequestSeq += 1;" in console.APP_JS
-    assert "clearMaterialSelection();\n    clearBranchInputs();" in console.APP_JS
+    assert "function clearMaterialDerivedFields()" in console.APP_JS
+    assert "['backend-branches', 'frontend-branches'].forEach" in console.APP_JS
+    assert "helpRevision.value = '';" in console.APP_JS
+    assert "clearMaterialDerivedFields();\n    clearBranchInputs();" in console.APP_JS
     assert "input[name=\"standard_build_mode\"]" in console.APP_JS
-    assert "el.addEventListener('change', () => {\n    clearMaterialSelection();" in console.APP_JS
+    assert "el.addEventListener('change', () => {\n    clearMaterialDerivedFields();" in console.APP_JS
     assert "requestSeq !== materialListRequestSeq || getProductVariant() !== expectedVariant" in console.APP_JS
     assert "requestSeq !== materialReleaseRequestSeq || getProductVariant() !== expectedVariant" in console.APP_JS
     assert "currentMaterial.value.trim() !== value" in console.APP_JS
