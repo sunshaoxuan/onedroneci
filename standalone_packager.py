@@ -87,6 +87,32 @@ class BuildVersion:
 
 
 @dataclass(frozen=True)
+class CustomPackageSelection:
+    backend: bool = True
+    frontend: bool = True
+    help: bool = True
+    conf_prod: bool = True
+    sql_assets: bool = True
+    data_sync: bool = True
+    import_plan: bool = True
+    runtime: bool = True
+
+    def any_selected(self) -> bool:
+        return any(
+            (
+                self.backend,
+                self.frontend,
+                self.help,
+                self.conf_prod,
+                self.sql_assets,
+                self.data_sync,
+                self.import_plan,
+                self.runtime,
+            )
+        )
+
+
+@dataclass(frozen=True)
 class ProductSqlConfig:
     organisation_name: str
     organisation_dstart: str
@@ -1409,6 +1435,148 @@ def build_product_package(
         }
 
 
+def build_custom_package(
+    *,
+    template_zip: Path,
+    sql_template_dir: Path,
+    output_root: Path,
+    delivery_name: str,
+    package_zip: Path | None,
+    web_zip: Path | None,
+    selection: CustomPackageSelection,
+    version: BuildVersion,
+    config: StandaloneConfig,
+    sql_config: ProductSqlConfig,
+    tenant_import_config: TenantImportConfig | None = None,
+    ohr_import_config: OhrImportConfig | None = None,
+    sql_svn_url: str | None = None,
+    data_sync_git_url: str | None = None,
+    data_sync_branch: str = DEFAULT_DATA_SYNC_BRANCH,
+    data_sync_dir: Path | None = None,
+    data_sync_subdir: str = DEFAULT_DATA_SYNC_SUBDIR,
+    data_sync_custom_subdir: str = DEFAULT_DATA_SYNC_CUSTOM_SUBDIR,
+    data_sync_runner_config: DataSyncSqlRunnerConfig | None = None,
+    middleware_versions: dict[str, str] | None = None,
+    middleware_cache_dir: Path | None = None,
+    logger: Any | None = None,
+) -> dict[str, Any]:
+    """Assemble a Standard customer package from explicitly selected components."""
+    if not selection.any_selected():
+        raise ValueError("custom package requires at least one selected component")
+    if selection.backend and (package_zip is None or not package_zip.is_file()):
+        raise FileNotFoundError(f"missing selected package.zip: {package_zip}")
+    needs_web = selection.frontend or selection.help or selection.conf_prod
+    if needs_web and (web_zip is None or not web_zip.is_file()):
+        raise FileNotFoundError(f"missing selected web.zip: {web_zip}")
+    if selection.runtime and not template_zip.is_file():
+        raise FileNotFoundError(f"missing standalone template: {template_zip}")
+
+    delivery_root = output_root / delivery_name
+    if delivery_root.exists():
+        shutil.rmtree(delivery_root)
+    delivery_root.mkdir(parents=True, exist_ok=True)
+    outputs: dict[str, Any] = {"product_dir": str(delivery_root)}
+
+    if selection.backend and package_zip is not None:
+        target = delivery_root / "package.zip"
+        shutil.copy2(package_zip, target)
+        outputs["package_zip"] = str(target)
+    if needs_web and web_zip is not None:
+        target = delivery_root / "web.zip"
+        shutil.copy2(web_zip, target)
+        outputs["web_zip"] = str(target)
+
+    product_dir = delivery_root / "製品"
+    data_sync_target = delivery_root / "データ連携"
+    with tempfile.TemporaryDirectory() as sql_tmp:
+        if selection.sql_assets:
+            effective_sql_dir = sql_template_dir
+            if sql_svn_url:
+                effective_sql_dir = Path(sql_tmp) / "sql"
+                if logger:
+                    logger("sql_svn_download")
+                download_svn_http_tree(sql_svn_url, effective_sql_dir)
+            if not (effective_sql_dir / "1.tenant").is_dir() or not (effective_sql_dir / "2.ohr").is_dir():
+                raise FileNotFoundError(f"missing SQL templates under: {effective_sql_dir}")
+            if logger:
+                logger("sql_template_copy")
+            shutil.copytree(effective_sql_dir / "1.tenant", product_dir / "1.tenant")
+            shutil.copytree(effective_sql_dir / "2.ohr", product_dir / "2.ohr")
+            help_sql = product_dir / "1.tenant" / "ohr_help.sql"
+            help_sql.unlink(missing_ok=True)
+            account_sql = product_dir / "2.ohr" / "4.account.sql"
+            if logger:
+                logger("account_sql_patch")
+            account_sql.write_text(
+                patch_account_sql(account_sql.read_text(encoding="utf-8"), sql_config),
+                encoding="utf-8",
+            )
+            if selection.help and web_zip is not None:
+                if logger:
+                    logger("help_sql_replace")
+                _replace_help_sql_if_present(web_zip, help_sql)
+
+        if selection.data_sync:
+            if not data_sync_git_url:
+                raise ValueError("data synchronization source is required when selected")
+            copy_data_sync_assets(
+                repo_url=data_sync_git_url,
+                branch=data_sync_branch,
+                workdir=data_sync_dir or configured_data_sync_dir(),
+                subdir=data_sync_subdir,
+                target_dir=data_sync_target,
+                custom_subdir=data_sync_custom_subdir,
+                logger=logger,
+            )
+            effective_runner_config = data_sync_runner_config or DataSyncSqlRunnerConfig(
+                ohr_host=config.postgresql_host,
+                ohr_port=config.postgresql_port,
+                ohr_user=config.postgresql_user,
+                ohr_password=config.postgresql_password,
+            )
+            outputs["data_sync_runner"] = str(write_data_sync_sql_runner(data_sync_target, effective_runner_config))
+
+        if selection.import_plan:
+            import_dir = delivery_root / "導入"
+            if tenant_import_config:
+                tenant_dir = import_dir / "tenant"
+                tenant_dir.mkdir(parents=True, exist_ok=True)
+                (tenant_dir / "import_plan.sql").write_text(render_tenant_import_sql(tenant_import_config), encoding="utf-8")
+            if ohr_import_config:
+                ohr_dir = import_dir / "ohr"
+                ohr_dir.mkdir(parents=True, exist_ok=True)
+                (ohr_dir / "import_plan.sql").write_text(render_ohr_import_sql(ohr_import_config), encoding="utf-8")
+
+    if selection.sql_assets or selection.runtime:
+        product_dir.mkdir(parents=True, exist_ok=True)
+        version_txt = product_dir / "version.txt"
+        version_txt.write_text(render_version_txt(version), encoding="utf-8")
+        outputs["version_txt"] = str(version_txt)
+    complete_all_sql_scripts(delivery_root, excluded_roots=(data_sync_target,))
+
+    if selection.runtime:
+        final_zip = product_dir / "OneHrStandalone.zip"
+        if logger:
+            logger("standalone_zip_rebuild")
+        middleware_overrides = prepare_middleware_overrides(
+            middleware_versions,
+            template_zip=template_zip,
+            cache_dir=middleware_cache_dir,
+            logger=logger,
+        )
+        _rebuild_standalone_zip(
+            template_zip,
+            final_zip,
+            package_zip if selection.backend else None,
+            web_zip if needs_web else None,
+            config,
+            middleware_overrides=middleware_overrides,
+        )
+        outputs["standalone_zip"] = str(final_zip)
+        outputs["size"] = final_zip.stat().st_size
+    return outputs
+
+
 def build_nho_common_package(
     *,
     output_root: Path,
@@ -1551,8 +1719,8 @@ def _validate_help_sql_matches_web_zip(web_zip: Path, sql_text: str) -> None:
 def _rebuild_standalone_zip(
     template_zip: Path,
     final_zip: Path,
-    package_zip: Path,
-    web_zip: Path,
+    package_zip: Path | None,
+    web_zip: Path | None,
     config: StandaloneConfig,
     middleware_overrides: dict[str, Path] | None = None,
 ) -> None:
@@ -1572,8 +1740,10 @@ def _rebuild_standalone_zip(
                     zout.writestr(item, update_config_ini(original, config).encode("utf-8"))
                     continue
                 zout.writestr(item, zin.read(item))
-            zout.write(package_zip, PACKAGE_IN_STANDALONE_ZIP)
-            zout.write(web_zip, WEB_IN_STANDALONE_ZIP)
+            if package_zip is not None:
+                zout.write(package_zip, PACKAGE_IN_STANDALONE_ZIP)
+            if web_zip is not None:
+                zout.write(web_zip, WEB_IN_STANDALONE_ZIP)
             for member, source in sorted(middleware_overrides.items()):
                 if not source.is_file():
                     raise FileNotFoundError(f"missing middleware cache: {source}")

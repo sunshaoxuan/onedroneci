@@ -10,6 +10,7 @@ from standalone_packager import (
     PACKAGE_IN_STANDALONE_ZIP,
     WEB_IN_STANDALONE_ZIP,
     BuildVersion,
+    CustomPackageSelection,
     DataSyncSqlRunnerConfig,
     OhrImportConfig,
     OhrMenuDisable,
@@ -18,6 +19,7 @@ from standalone_packager import (
     StandaloneConfig,
     TenantImportConfig,
     build_nho_common_package,
+    build_custom_package,
     build_product_package,
     complete_all_sql_scripts,
     default_organisation_dstart,
@@ -570,6 +572,108 @@ def test_build_product_package_can_use_custom_delivery_name(tmp_path):
 
     assert Path(result["product_dir"]) == output / "顧客A 20260623000105"
     assert (output / "顧客A 20260623000105" / "製品" / "OneHrStandalone.zip").is_file()
+
+
+def test_build_custom_package_help_only_contains_only_web_zip(tmp_path):
+    web_zip = tmp_path / "web.zip"
+    make_web_package(web_zip)
+
+    result = build_custom_package(
+        template_zip=tmp_path / "unused-template.zip",
+        sql_template_dir=tmp_path / "unused-sql",
+        output_root=tmp_path / "out",
+        delivery_name="顧客A custom-help",
+        package_zip=None,
+        web_zip=web_zip,
+        selection=CustomPackageSelection(
+            backend=False,
+            frontend=False,
+            help=True,
+            conf_prod=False,
+            sql_assets=False,
+            data_sync=False,
+            import_plan=False,
+            runtime=False,
+        ),
+        version=BuildVersion("remote-1", "M-001", "", ""),
+        config=StandaloneConfig(postgresql_host=""),
+        sql_config=ProductSqlConfig("顧客A", "2026-07-01"),
+    )
+
+    delivery_root = Path(result["product_dir"])
+    assert set(path.name for path in delivery_root.iterdir()) == {"web.zip"}
+    assert Path(result["web_zip"]).read_bytes() == web_zip.read_bytes()
+    assert "package_zip" not in result
+    assert "standalone_zip" not in result
+
+
+def test_build_custom_package_backend_runtime_excludes_template_web_zip(tmp_path):
+    template = tmp_path / "OneHrStandalone.zip"
+    package_zip = tmp_path / "package.zip"
+    make_template(template)
+    package_zip.write_bytes(b"selected-package")
+
+    result = build_custom_package(
+        template_zip=template,
+        sql_template_dir=tmp_path / "unused-sql",
+        output_root=tmp_path / "out",
+        delivery_name="顧客A custom-backend",
+        package_zip=package_zip,
+        web_zip=None,
+        selection=CustomPackageSelection(
+            backend=True,
+            frontend=False,
+            help=False,
+            conf_prod=False,
+            sql_assets=False,
+            data_sync=False,
+            import_plan=False,
+            runtime=True,
+        ),
+        version=BuildVersion("remote-1", "M-001", "release_back", ""),
+        config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
+        sql_config=ProductSqlConfig("顧客A", "2026-07-01"),
+        middleware_versions={"nginx": "bundled", "redis": "bundled", "minio": "bundled"},
+    )
+
+    with zipfile.ZipFile(Path(result["standalone_zip"])) as outer:
+        assert outer.read(PACKAGE_IN_STANDALONE_ZIP) == b"selected-package"
+        assert WEB_IN_STANDALONE_ZIP not in outer.namelist()
+        assert "OneHrStandalone/software/jdk.zip" in outer.namelist()
+
+
+def test_build_custom_package_sql_only_removes_unselected_help_sql(tmp_path):
+    sql_dir = tmp_path / "sql"
+    make_sql_templates(sql_dir)
+
+    result = build_custom_package(
+        template_zip=tmp_path / "unused-template.zip",
+        sql_template_dir=sql_dir,
+        output_root=tmp_path / "out",
+        delivery_name="顧客A custom-sql",
+        package_zip=None,
+        web_zip=None,
+        selection=CustomPackageSelection(
+            backend=False,
+            frontend=False,
+            help=False,
+            conf_prod=False,
+            sql_assets=True,
+            data_sync=False,
+            import_plan=False,
+            runtime=False,
+        ),
+        version=BuildVersion("remote-1", "M-001", "", ""),
+        config=StandaloneConfig(postgresql_host=""),
+        sql_config=ProductSqlConfig("顧客A", "2026-07-01"),
+    )
+
+    delivery_root = Path(result["product_dir"])
+    assert (delivery_root / "製品" / "1.tenant" / "url_info.sql").is_file()
+    assert not (delivery_root / "製品" / "1.tenant" / "ohr_help.sql").exists()
+    assert not (delivery_root / "package.zip").exists()
+    assert not (delivery_root / "web.zip").exists()
+    assert "standalone_zip" not in result
 
 
 def test_rebuild_standalone_zip_can_replace_selected_middleware(tmp_path):

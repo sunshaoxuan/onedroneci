@@ -480,6 +480,11 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
     help_docs_svn_revision = str(payload.get("help_docs_svn_revision") or "").strip()
     build_help = parse_bool_field(payload, "build_help", True)
     build_conf_prod = parse_bool_field(payload, "build_conf_prod", True)
+    build_web_package = parse_bool_field(
+        payload,
+        "build_web_package",
+        build_frontend,
+    )
     conf_server_host = str(payload.get("conf_server_host") or "").strip()
     conf_web_port = parse_int_field(payload, "conf_web_port", 80)
     conf_enable_https = parse_bool_field(payload, "conf_enable_https", False)
@@ -487,7 +492,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
     conf_worker_connections = parse_int_field(payload, "conf_worker_connections", 1024)
     note = str(payload.get("note") or "").strip()
 
-    if not build_backend and not build_frontend:
+    if not build_backend and not build_web_package:
         raise ValueError("请至少选择一个构建目标")
     if build_backend and not backend_branch:
         raise ValueError("请填写后端分支")
@@ -497,25 +502,25 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("请填写前端版本分支")
     if frontend_release_branch and not BRANCH_RE.fullmatch(frontend_release_branch):
         raise ValueError("前端版本分支名仅允许字母、数字、._/-")
-    if product_variant == "standard" and build_frontend and not help_docs_branch:
+    if product_variant == "standard" and build_help and not help_docs_branch:
         raise ValueError("请填写 Help 文档分支")
     if product_variant == "standard" and help_docs_branch and not BRANCH_RE.fullmatch(help_docs_branch):
         raise ValueError("Help 文档分支名仅允许字母、数字、._/-")
     if product_variant == "standard" and help_docs_svn_revision and not HELP_DOCS_SVN_REVISION_RE.fullmatch(help_docs_svn_revision):
         raise ValueError("Help SVN revision 仅允许数字")
-    if product_variant == "standard" and build_frontend and build_help and help_docs_svn_revision:
+    if product_variant == "standard" and build_help and help_docs_svn_revision:
         revision_check = validate_help_docs_svn_revision(help_docs_svn_revision)
         if not revision_check.get("ok"):
             raise ValueError("Help SVN revision 不存在")
-    if build_conf_prod and build_frontend and not conf_server_host:
+    if build_conf_prod and build_web_package and not conf_server_host:
         raise ValueError("请填写客户访问地址")
     if conf_server_host and not CONF_HOST_RE.fullmatch(conf_server_host):
         raise ValueError("客户访问地址仅允许字母、数字、点和中划线")
-    if build_conf_prod and build_frontend and not (1 <= conf_web_port <= 65535):
+    if build_conf_prod and build_web_package and not (1 <= conf_web_port <= 65535):
         raise ValueError("Web 端口必须在 1-65535 之间")
-    if build_conf_prod and build_frontend and conf_worker_processes < 1:
+    if build_conf_prod and build_web_package and conf_worker_processes < 1:
         raise ValueError("worker_processes 必须大于 0")
-    if build_conf_prod and build_frontend and conf_worker_connections < 1:
+    if build_conf_prod and build_web_package and conf_worker_connections < 1:
         raise ValueError("worker_connections 必须大于 0")
     # ohr-workspace 不跟随 release_*；它固定使用配置分支。用户选择的是四个子项目共同存在的版本分支。
     frontend_workspace_branch = NHO_FRONTEND_WORKSPACE_BRANCH if product_variant == "nho" else FRONTEND_WORKSPACE_BRANCH
@@ -564,6 +569,7 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
             "conf_worker_connections": conf_worker_connections,
             "build_backend": build_backend,
             "build_frontend": build_frontend,
+            "build_web_package": build_web_package,
             "note": note,
         },
         "steps": make_steps(EXECUTOR),
@@ -595,10 +601,12 @@ def run_direct_build(build_id: str) -> None:
         product_variant = request.get("product_variant") or "standard"
         build_backend = bool(request.get("build_backend", True))
         build_frontend = bool(request.get("build_frontend", True))
+        build_web_package = bool(request.get("build_web_package", build_frontend))
         branch = request["backend_branch"]
         append_log(
             build_id,
             f"构建开始：product_variant={product_variant}, build_backend={build_backend}, build_frontend={build_frontend}, "
+            f"build_web_package={build_web_package}, "
             f"backend_branch={branch or '-'}, frontend_release_branch={request.get('frontend_release_branch') or '-'}",
         )
         cleanup_previous_build_outputs(product_variant, build_id)
@@ -607,7 +615,7 @@ def run_direct_build(build_id: str) -> None:
         back_dir = NHO_BACK_DIR if product_variant == "nho" else OHR_BACK_DIR
         if product_variant == "standard" and build_backend and not back_dir.is_dir():
             raise RuntimeError(f"后端目录不存在：{OHR_BACK_DIR}")
-        if build_frontend and not os.environ.get("OHR_BACK_GIT_TOKEN") and not os.environ.get("FRONTEND_GIT_TOKEN"):
+        if build_web_package and not os.environ.get("OHR_BACK_GIT_TOKEN") and not os.environ.get("FRONTEND_GIT_TOKEN"):
             raise RuntimeError("需配置 OHR_BACK_GIT_TOKEN 或 FRONTEND_GIT_TOKEN 以克隆前端 workspace")
         update_step(build_id, "validate", "success")
 
@@ -633,23 +641,26 @@ def run_direct_build(build_id: str) -> None:
             update_step(build_id, "build_backend", "skipped", "未选择后端构建")
 
         variant_artifact_root(product_variant).joinpath(build_id).mkdir(parents=True, exist_ok=True)
-        if build_frontend:
+        if build_web_package:
             fe_env = nho_frontend_env(request, build_id) if product_variant == "nho" else direct_frontend_env(request, build_id)
             restore_script = NHO_FRONTEND_RESTORE_SCRIPT if product_variant == "nho" else DIRECT_FRONTEND_RESTORE_SCRIPT
             build_script = NHO_FRONTEND_BUILD_SCRIPT if product_variant == "nho" else DIRECT_FRONTEND_BUILD_SCRIPT
 
-            update_step(build_id, "restore_frontend", "running")
-            rc = run_command(
-                build_id,
-                restore_script,
-                cwd=Path("/"),
-                timeout=None,
-                extra_env=fe_env,
-            )
-            ensure_not_cancelled(build_id)
-            if rc != 0:
-                raise RuntimeError("前端工作区恢复失败")
-            update_step(build_id, "restore_frontend", "success")
+            if build_frontend:
+                update_step(build_id, "restore_frontend", "running")
+                rc = run_command(
+                    build_id,
+                    restore_script,
+                    cwd=Path("/"),
+                    timeout=None,
+                    extra_env=fe_env,
+                )
+                ensure_not_cancelled(build_id)
+                if rc != 0:
+                    raise RuntimeError("前端工作区恢复失败")
+                update_step(build_id, "restore_frontend", "success")
+            else:
+                update_step(build_id, "restore_frontend", "skipped", "未选择前端主体构建")
 
             update_step(build_id, "build_frontend", "running")
             rc = run_command(
@@ -664,20 +675,20 @@ def run_direct_build(build_id: str) -> None:
                 raise RuntimeError("前端构建失败")
             update_step(build_id, "build_frontend", "success")
         else:
-            update_step(build_id, "restore_frontend", "skipped", "未选择前端构建")
-            update_step(build_id, "build_frontend", "skipped", "未选择前端构建")
+            update_step(build_id, "restore_frontend", "skipped", "未选择 Web 资材构建")
+            update_step(build_id, "build_frontend", "skipped", "未选择 Web 资材构建")
 
         update_step(build_id, "collect_artifacts", "running")
         pkg_src = back_dir / "package.zip"
         web_src = shared_artifact_path(build_id, "web.zip", product_variant)
         if build_backend and not pkg_src.is_file():
             raise RuntimeError(f"未找到产物：{pkg_src}")
-        if build_frontend and not web_src.is_file():
+        if build_web_package and not web_src.is_file():
             raise RuntimeError(f"未找到产物：{web_src}")
         if build_backend:
             shutil.copy2(pkg_src, artifact_path(build_id, "package.zip", product_variant))
             shutil.copy2(pkg_src, shared_artifact_path(build_id, "package.zip", product_variant))
-        if build_frontend:
+        if build_web_package:
             shutil.copy2(web_src, artifact_path(build_id, "web.zip", product_variant))
         artifacts = []
         for name in ("package.zip", "web.zip"):
@@ -1535,6 +1546,7 @@ if [[ ! "$OHR_CICD_ENV" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "ohr-cicd 环境名不合法：$OHR_CICD_ENV"
   exit 6
 fi
+if [ "${BUILD_CONF_PROD:-true}" = "true" ]; then
 mkdir -p "$(dirname "$CICD_DIR")"
 if [ -d "$CICD_DIR/.git" ]; then
   echo "[sync ohr-cicd] fetch $OHR_CICD_BRANCH"
@@ -1636,6 +1648,9 @@ settings = re.sub(r'set \$ohr_portal_origin "[^"]+";', f'set $ohr_portal_origin 
 settings_path.write_text(settings, encoding="utf-8")
 PY
 fi
+else
+  echo "conf_prod 生成已跳过"
+fi
 help_zip=""
 if [ "${BUILD_HELP:-true}" = "true" ]; then
 HELP_DIR="$HELP_DOCS_WORKDIR"
@@ -1734,6 +1749,16 @@ fi
 else
   echo "Help 构建已跳过"
 fi
+mkdir -p "$(dirname "$OUT_WEB_ZIP")" "$OUT_TMP_DIR"
+rm -f "$OUT_WEB_ZIP"
+publish_root="$(mktemp -d "$OUT_TMP_DIR/publish.XXXXXX")"
+cleanup_publish_root() {
+  rm -rf "$publish_root"
+}
+trap cleanup_publish_root EXIT
+mkdir -p "$publish_root/ohr-cicd/web_prod"
+bundle_zip=""
+if [ "${BUILD_FRONTEND_CORE:-true}" = "true" ]; then
 cd "$OHR_FRONTEND_WORKDIR"
 apply_standard_low_memory_overrides() {
   python3 - <<'PY'
@@ -1794,20 +1819,15 @@ find . -maxdepth 1 -type f -name 'release_*.zip' -delete
 find . -maxdepth 1 -type d -name 'release_*' -exec rm -rf {} +
 npm run build
 npm run bundle
-mkdir -p "$(dirname "$OUT_WEB_ZIP")" "$OUT_TMP_DIR"
-rm -f "$OUT_WEB_ZIP"
 bundle_zip="$(find . -maxdepth 1 -type f -name 'release_*.zip' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
 if [ -z "$bundle_zip" ] || [ ! -f "$bundle_zip" ]; then
   echo "前端发布包生成失败：npm run bundle 未生成 release_*.zip"
   exit 3
 fi
-publish_root="$(mktemp -d "$OUT_TMP_DIR/publish.XXXXXX")"
-cleanup_publish_root() {
-  rm -rf "$publish_root"
-}
-trap cleanup_publish_root EXIT
-mkdir -p "$publish_root/ohr-cicd/web_prod"
 unzip -q "$bundle_zip" -d "$publish_root/ohr-cicd/web_prod"
+else
+  echo "前端主体构建已跳过"
+fi
 if [ -n "$help_zip" ]; then
   mkdir -p "$publish_root/ohr-cicd/web_prod/help"
   unzip -q "$help_zip" -d "$publish_root/ohr-cicd/web_prod/help"
@@ -1856,8 +1876,10 @@ fi
   cd "$publish_root"
   zip -qr "$OUT_WEB_ZIP" ohr-cicd
 )
-bundle_dir="${bundle_zip%.zip}"
-rm -rf "$bundle_zip" "$bundle_dir"
+if [ -n "$bundle_zip" ]; then
+  bundle_dir="${bundle_zip%.zip}"
+  rm -rf "$bundle_zip" "$bundle_dir"
+fi
 if [ -n "$help_zip" ] && [[ "$help_zip" == "$HELP_DIR"/ohr_help_docs_release_*.zip ]]; then
   help_dir="${help_zip%.zip}"
   rm -rf "$help_zip" "$help_dir"
@@ -1867,7 +1889,7 @@ ls -lh "$OUT_WEB_ZIP"
 
 
 def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
-    rel = req["frontend_release_branch"]
+    rel = req.get("frontend_release_branch") or ""
     token = os.environ.get("FRONTEND_GIT_TOKEN") or os.environ.get("OHR_BACK_GIT_TOKEN", "")
     host = urllib.parse.urlparse(FRONTEND_WORKSPACE_GIT_URL).hostname or "upds7.ujob100.com"
     return {
@@ -1892,6 +1914,7 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "HELP_DOCS_SVN_REVISION": req.get("help_docs_svn_revision") or "",
         "BUILD_HELP": "true" if req.get("build_help", True) else "false",
         "BUILD_CONF_PROD": "true" if req.get("build_conf_prod", True) else "false",
+        "BUILD_FRONTEND_CORE": "true" if req.get("build_frontend", True) else "false",
         "CONF_PROD_TEMPLATE_DIR": str(CONF_PROD_TEMPLATE_DIR),
         "OHR_CICD_GIT_URL": git_url_with_token(OHR_CICD_GIT_URL),
         "OHR_CICD_BRANCH": OHR_CICD_BRANCH,

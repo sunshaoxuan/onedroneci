@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.3.74"
+    assert console.APP_VERSION == "0.4.0"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -1084,7 +1084,8 @@ def test_host_console_supports_standard_and_nho_product_variants():
     assert 'id="material-number-menu"' in console.INDEX_HTML
     assert "required-field material-field" in console.INDEX_HTML
     assert 'class="standard-only help-option"' in console.INDEX_HTML
-    assert "const buildHelp = buildHelpInput ? buildHelpInput.checked : true;" in console.APP_JS
+    assert "const buildHelp = customPackage" in console.APP_JS
+    assert "customComponentChecked('custom_include_help')" in console.APP_JS
     assert "standardRelease ? false : (buildHelpInput" not in console.APP_JS
     assert "function syncHelpBuildFromRevision()" in console.APP_JS
     assert "if (String(revisionInput.value || '').trim()) buildHelpInput.checked = true;" in console.APP_JS
@@ -1145,6 +1146,88 @@ def test_validate_job_payload_uses_common_org_without_conf_prod():
     assert error is None
     assert payload["build_conf_prod"] is False
     assert payload["organisation_name"] == "共通"
+
+
+def test_validate_custom_package_allows_help_only_without_code_branches():
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "standard_build_mode": "custom_package",
+            "material_number": "20260714",
+            "backend_branch": "",
+            "frontend_release_branch": "",
+            "custom_include_backend": False,
+            "custom_include_frontend": False,
+            "custom_include_help": True,
+            "custom_include_conf_prod": False,
+            "custom_include_sql_assets": False,
+            "custom_include_data_sync": False,
+            "custom_include_import_plan": False,
+            "custom_include_runtime": False,
+        }
+    )
+
+    assert error is None
+    assert payload["build_help"] is True
+    assert payload["build_conf_prod"] is False
+    assert payload["custom_include_help"] is True
+
+
+def test_validate_custom_package_rejects_empty_component_selection():
+    request = {
+        "product_variant": "standard",
+        "standard_build_mode": "custom_package",
+        "material_number": "20260714",
+    }
+    for name in (
+        "backend", "frontend", "help", "conf_prod", "sql_assets", "data_sync", "import_plan", "runtime"
+    ):
+        request[f"custom_include_{name}"] = False
+
+    _, error = console.validate_job_payload(request)
+
+    assert error == "missing custom package component"
+
+
+def test_validate_custom_package_requires_only_selected_code_branch():
+    request = {
+        "product_variant": "standard",
+        "standard_build_mode": "custom_package",
+        "material_number": "20260714",
+        "custom_include_backend": False,
+        "custom_include_frontend": True,
+        "custom_include_help": False,
+        "custom_include_conf_prod": False,
+        "custom_include_sql_assets": False,
+        "custom_include_data_sync": False,
+        "custom_include_import_plan": False,
+        "custom_include_runtime": False,
+    }
+
+    _, error = console.validate_job_payload(request)
+    assert error == "missing frontend_release_branch"
+
+    request["frontend_release_branch"] = "release_20260714"
+    payload, error = console.validate_job_payload(request)
+    assert error is None
+    assert payload["custom_include_backend"] is False
+    assert payload["custom_include_frontend"] is True
+
+
+def test_custom_package_ui_uses_component_selection_to_hide_settings():
+    assert 'value="custom_package"' in console.INDEX_HTML
+    for name in (
+        "backend", "frontend", "help", "conf_prod", "sql_assets", "data_sync", "import_plan", "runtime"
+    ):
+        assert f'name="custom_include_{name}"' in console.INDEX_HTML
+    assert 'data-custom-components="backend"' in console.INDEX_HTML
+    assert 'data-custom-components="frontend"' in console.INDEX_HTML
+    assert 'data-custom-components="help"' in console.INDEX_HTML
+    assert 'data-custom-components="runtime"' in console.INDEX_HTML
+    assert 'data-custom-components="import_plan"' in console.INDEX_HTML
+    assert "function applyCustomSettingVisibility()" in console.APP_JS
+    assert "el.hidden = !visible;" in console.APP_JS
+    assert "customPackage && el.closest('[data-custom-components][hidden]')" in console.APP_JS
 
 
 def test_standard_console_has_preparation_and_import_plan_tabs():

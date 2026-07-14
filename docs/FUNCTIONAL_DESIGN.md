@@ -79,6 +79,15 @@
 
 宿主机主控台对应 `host_standalone_console.py`。
 
+### 標準版客户化构造
+
+- `standard_build_mode=custom_package` 启用客户化构造。
+- 选择模型为 `CustomPackageSelection`，覆盖 backend、frontend、help、conf_prod、sql_assets、data_sync、import_plan、runtime 八类资材。
+- 页面顶部资材列表同时控制设置块可见性与请求布尔字段。隐藏设置会禁用，未勾选值不会成为打包依据。
+- 代码类资材由构建终端生成。`build_web_package` 表示本次需要组装 `web.zip`，`BUILD_FRONTEND_CORE`、`BUILD_HELP`、`BUILD_CONF_PROD` 分别控制前端本体、Help 和 conf_prod。
+- 宿主机类资材由 `build_custom_package` 独立组装。模板重建时先剔除旧 `package.zip`、`web.zip`，再按选择结果写入。
+- 至少选择一类资材。纯 SQL、数据连携、导入计划或运行环境资材任务可以跳过构建终端代码构建。
+
 ### 页面行为
 
 - 页面名称固定为“庶務事務システム构造器”。

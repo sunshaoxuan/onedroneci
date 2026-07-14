@@ -315,6 +315,32 @@ def test_create_build_requires_at_least_one_target(tmp_path, monkeypatch):
         raise AssertionError("missing build target should fail")
 
 
+def test_create_build_allows_help_only_web_package(tmp_path, monkeypatch):
+    server = load_server()
+    monkeypatch.setattr(server, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(server, "run_direct_build", lambda build_id: None)
+    monkeypatch.setattr(server, "EXECUTOR", "direct")
+
+    meta = server.create_build(
+        {
+            "build_backend": False,
+            "build_frontend": False,
+            "build_web_package": True,
+            "build_help": True,
+            "build_conf_prod": False,
+            "backend_branch": "",
+            "frontend_release_branch": "",
+        }
+    )
+
+    request = meta["request"]
+    assert request["build_backend"] is False
+    assert request["build_frontend"] is False
+    assert request["build_web_package"] is True
+    assert request["build_help"] is True
+    assert request["build_conf_prod"] is False
+
+
 def test_create_build_uses_release_for_child_repos_and_configured_workspace(tmp_path, monkeypatch):
     server = load_server()
     monkeypatch.setattr(server, "DATA_DIR", tmp_path)
@@ -839,12 +865,26 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "node_modules/*" not in script
     assert 'mkdir -p "$(dirname "$OUT_WEB_ZIP")" "$OUT_TMP_DIR"' in script
     assert 'publish_root="$(mktemp -d "$OUT_TMP_DIR/publish.XXXXXX")' in script
+    assert 'if [ "${BUILD_FRONTEND_CORE:-true}" = "true" ]; then' in script
+    assert 'if [ "${BUILD_CONF_PROD:-true}" = "true" ]; then' in script
 
     restore_script = server.DIRECT_FRONTEND_RESTORE_SCRIPT
     assert "pnpm_install_cached . ohr-workspace" in restore_script
     assert "[cache pnpm] $name unchanged; skip pnpm i" in restore_script
     assert "git clean -fd -e node_modules" in restore_script
     assert "-e .ci-cache" in restore_script
+
+
+def test_direct_frontend_build_script_has_valid_bash_syntax(tmp_path):
+    import subprocess
+
+    server = load_server()
+    script_path = tmp_path / "direct-frontend-build.sh"
+    script_path.write_text(server.DIRECT_FRONTEND_BUILD_SCRIPT, encoding="utf-8")
+
+    result = subprocess.run(["bash", "-n", str(script_path)], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_build_console_service_keeps_api_alive_on_child_oom():

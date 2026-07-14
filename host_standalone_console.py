@@ -21,6 +21,7 @@ from hv_vm_tools import hyperv_host
 from hv_vm_tools.config import Settings
 from standalone_packager import (
     BuildVersion,
+    CustomPackageSelection,
     DataSyncSqlRunnerConfig,
     OhrImportConfig,
     OhrMenuDisable,
@@ -29,6 +30,7 @@ from standalone_packager import (
     StandaloneConfig,
     TenantImportConfig,
     build_nho_common_package,
+    build_custom_package,
     build_product_package,
     configured_data_sync_branch,
     configured_data_sync_custom_subdir,
@@ -50,7 +52,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.3.74"
+APP_VERSION = "0.4.0"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -478,44 +480,77 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     payload["product_variant"] = product_variant
     standard_build_mode = str(payload.get("standard_build_mode") or "institution_package").strip().lower()
     if product_variant == "standard":
-        if standard_build_mode not in {"standard_release", "institution_package"}:
+        if standard_build_mode not in {"standard_release", "institution_package", "custom_package"}:
             return payload, "invalid standard_build_mode"
     else:
         standard_build_mode = "nho_common"
     payload["standard_build_mode"] = standard_build_mode
     standard_release = product_variant == "standard" and standard_build_mode == "standard_release"
+    custom_package = product_variant == "standard" and standard_build_mode == "custom_package"
     help_docs_svn_revision = str(payload.get("help_docs_svn_revision") or "").strip()
-    payload["build_help"] = (
-        True if help_docs_svn_revision else request_bool(payload, "build_help", True)
-    ) if product_variant == "standard" else False
+    if custom_package:
+        selection = custom_package_selection_from_request(payload)
+        payload.update(
+            {
+                "custom_include_backend": selection.backend,
+                "custom_include_frontend": selection.frontend,
+                "custom_include_help": selection.help,
+                "custom_include_conf_prod": selection.conf_prod,
+                "custom_include_sql_assets": selection.sql_assets,
+                "custom_include_data_sync": selection.data_sync,
+                "custom_include_import_plan": selection.import_plan,
+                "custom_include_runtime": selection.runtime,
+            }
+        )
+        payload["build_help"] = selection.help
+    else:
+        payload["build_help"] = (
+            True if help_docs_svn_revision else request_bool(payload, "build_help", True)
+        ) if product_variant == "standard" else False
     build_conf_prod = request_bool(payload, "build_conf_prod", True)
     if standard_release:
         build_conf_prod = False
+    elif custom_package:
+        build_conf_prod = selection.conf_prod
     payload["build_conf_prod"] = build_conf_prod
-    if not build_conf_prod:
+    if not build_conf_prod and not custom_package:
         payload["organisation_name"] = "共通"
 
     if not str(payload.get("material_number") or "").strip():
         return payload, "missing material_number"
 
-    build_backend = bool(str(payload.get("backend_branch") or "").strip())
-    build_frontend = bool(str(payload.get("frontend_release_branch") or "").strip())
+    backend_branch = str(payload.get("backend_branch") or "").strip()
+    frontend_branch = str(payload.get("frontend_release_branch") or "").strip()
+    build_backend = bool(backend_branch)
+    build_frontend = bool(frontend_branch)
+    if custom_package:
+        if not selection.any_selected():
+            return payload, "missing custom package component"
+        if selection.backend and not backend_branch:
+            return payload, "missing backend_branch"
+        if selection.frontend and not frontend_branch:
+            return payload, "missing frontend_release_branch"
+        build_backend = selection.backend
+        build_frontend = selection.frontend
     if standard_release and not (build_backend and build_frontend):
         return payload, "missing build target"
-    if not build_backend and not build_frontend:
+    if not custom_package and not build_backend and not build_frontend:
         return payload, "missing build target"
 
-    required = ["conf_server_host"] if build_conf_prod and build_frontend else []
+    required = ["conf_server_host"] if build_conf_prod and (build_frontend or custom_package) else []
     if product_variant == "standard" and build_conf_prod and build_backend and build_frontend:
         required.extend(["postgresql_host", "organisation_name"])
-    if product_variant == "standard" and build_conf_prod and str(payload.get("mail_usage") or "none") == "use":
+    if custom_package and (selection.sql_assets or selection.data_sync or selection.import_plan or selection.runtime):
+        required.extend(["postgresql_host", "organisation_name"])
+    uses_import_services = build_conf_prod or (custom_package and selection.import_plan)
+    if product_variant == "standard" and uses_import_services and str(payload.get("mail_usage") or "none") == "use":
         payload["mail_auth_required"] = mail_auth_required_from_request(payload)
         required.extend(["mail_host_ip", "mail_port", "mail_encryption", "mail_user"])
         if payload["mail_auth_required"]:
             required.append("mail_password")
-    if product_variant == "standard" and build_conf_prod and str(payload.get("workflow_upds_usage") or "none") == "use":
+    if product_variant == "standard" and uses_import_services and str(payload.get("workflow_upds_usage") or "none") == "use":
         required.extend(["upds_host_name", "upds_user", "upds_password", "upds_port", "upds_db_name"])
-    if product_variant == "standard" and build_conf_prod and str(payload.get("ekispert_usage") or "none") == "use":
+    if product_variant == "standard" and uses_import_services and str(payload.get("ekispert_usage") or "none") == "use":
         required.append("ekispert_url")
     for key in required:
         if not str(payload.get(key) or "").strip():
@@ -530,6 +565,19 @@ def request_bool(payload: dict[str, Any], key: str, default: bool = False) -> bo
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "on", "yes", "use"}
+
+
+def custom_package_selection_from_request(payload: dict[str, Any]) -> CustomPackageSelection:
+    return CustomPackageSelection(
+        backend=request_bool(payload, "custom_include_backend", True),
+        frontend=request_bool(payload, "custom_include_frontend", True),
+        help=request_bool(payload, "custom_include_help", True),
+        conf_prod=request_bool(payload, "custom_include_conf_prod", True),
+        sql_assets=request_bool(payload, "custom_include_sql_assets", True),
+        data_sync=request_bool(payload, "custom_include_data_sync", True),
+        import_plan=request_bool(payload, "custom_include_import_plan", True),
+        runtime=request_bool(payload, "custom_include_runtime", True),
+    )
 
 
 def mail_auth_required_from_request(payload: dict[str, Any]) -> bool:
@@ -1146,36 +1194,47 @@ def run_job(job_id: str) -> None:
     product_variant = str(req.get("product_variant") or "standard").lower()
     standard_build_mode = str(req.get("standard_build_mode") or "institution_package").lower()
     standard_release = product_variant == "standard" and standard_build_mode == "standard_release"
+    custom_package = product_variant == "standard" and standard_build_mode == "custom_package"
+    custom_selection = custom_package_selection_from_request(req) if custom_package else None
     material_number = str(req.get("material_number") or "").strip()
-    build_backend = bool(str(req.get("backend_branch") or "").strip())
-    build_frontend = bool(str(req.get("frontend_release_branch") or "").strip())
+    build_backend = custom_selection.backend if custom_selection else bool(str(req.get("backend_branch") or "").strip())
+    build_frontend = custom_selection.frontend if custom_selection else bool(str(req.get("frontend_release_branch") or "").strip())
     help_docs_svn_revision = str(req.get("help_docs_svn_revision") or "").strip()
-    effective_build_help = (
-        truthy(req.get("build_help"), True) or bool(help_docs_svn_revision)
-    ) if product_variant == "standard" else False
+    effective_build_help = custom_selection.help if custom_selection else (
+        (truthy(req.get("build_help"), True) or bool(help_docs_svn_revision)) if product_variant == "standard" else False
+    )
+    effective_build_conf_prod = custom_selection.conf_prod if custom_selection else (
+        False if standard_release else truthy(req.get("build_conf_prod"), True)
+    )
+    build_web_package = build_frontend or effective_build_help or effective_build_conf_prod
+    needs_remote_build = build_backend or build_web_package
     work_dir = job_dir(job_id)
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
         update_job(job_id, status="running")
-        update_progress(job_id, "terminal_check", "running")
-        terminal = build_terminal_status()
-        if terminal["status"] != "running":
-            raise RuntimeError("build_terminal_unavailable")
-        update_progress(job_id, "terminal_check", "success")
+        if needs_remote_build:
+            update_progress(job_id, "terminal_check", "running")
+            terminal = build_terminal_status()
+            if terminal["status"] != "running":
+                raise RuntimeError("build_terminal_unavailable")
+            update_progress(job_id, "terminal_check", "success")
+        else:
+            update_progress(job_id, "terminal_check", "skipped")
 
-        if remote_id:
+        if remote_id and needs_remote_build:
             append_log(job_id, f"resume_remote_build: {remote_id}")
             update_progress(job_id, "terminal_dispatch", "success")
             update_progress(job_id, "terminal_build", "running")
-        else:
+        elif needs_remote_build:
             update_progress(job_id, "terminal_dispatch", "running")
             append_log(job_id, "build_terminal_dispatch")
             remote_payload = {
                 "product_variant": product_variant,
                 "build_backend": build_backend,
                 "build_frontend": build_frontend,
+                "build_web_package": build_web_package,
                 "build_help": effective_build_help,
-                "build_conf_prod": False if standard_release else truthy(req.get("build_conf_prod"), True),
+                "build_conf_prod": effective_build_conf_prod,
                 "backend_branch": req.get("backend_branch") or "",
                 "frontend_release_branch": req.get("frontend_release_branch") or "",
                 "help_docs_svn_revision": help_docs_svn_revision,
@@ -1194,29 +1253,115 @@ def run_job(job_id: str) -> None:
             update_progress(job_id, "terminal_build", "running")
             append_log(job_id, f"remote_build_id: {remote_id}")
 
-        while True:
-            check_cancelled(job_id)
-            fetch_remote_log(job_id, remote_id)
-            status = remote_json(REMOTE_BUILD_CONSOLE_URL, f"/api/builds/{remote_id}")
-            if status["status"] in ("success", "failed", "cancelled"):
+        else:
+            update_progress(job_id, "terminal_dispatch", "skipped")
+            update_progress(job_id, "terminal_build", "skipped")
+
+        if needs_remote_build:
+            while True:
+                check_cancelled(job_id)
                 fetch_remote_log(job_id, remote_id)
-                if status["status"] != "success":
-                    raise RuntimeError(f"remote_build_not_success: {status['status']}")
-                break
-            update_job(job_id, remote_build_status=status["status"], heartbeat_at=now())
-            time.sleep(5)
-        update_progress(job_id, "terminal_build", "success")
+                status = remote_json(REMOTE_BUILD_CONSOLE_URL, f"/api/builds/{remote_id}")
+                if status["status"] in ("success", "failed", "cancelled"):
+                    fetch_remote_log(job_id, remote_id)
+                    if status["status"] != "success":
+                        raise RuntimeError(f"remote_build_not_success: {status['status']}")
+                    break
+                update_job(job_id, remote_build_status=status["status"], heartbeat_at=now())
+                time.sleep(5)
+            update_progress(job_id, "terminal_build", "success")
 
         check_cancelled(job_id)
-        update_progress(job_id, "download_artifacts", "running")
-        append_log(job_id, "download_artifacts")
+        if needs_remote_build:
+            update_progress(job_id, "download_artifacts", "running")
+            append_log(job_id, "download_artifacts")
         package_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "package.zip", work_dir / "package.zip") if build_backend else None
-        web_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "web.zip", work_dir / "web.zip") if build_frontend else None
+        web_zip = download_remote_artifact(REMOTE_BUILD_CONSOLE_URL, remote_id, "web.zip", work_dir / "web.zip") if build_web_package else None
         partial_outputs = {
             "package_zip": str(package_zip) if package_zip else "",
             "web_zip": str(web_zip) if web_zip else "",
         }
-        update_progress(job_id, "download_artifacts", "success")
+        update_progress(job_id, "download_artifacts", "success" if needs_remote_build else "skipped")
+        if custom_package and custom_selection is not None:
+            append_log(job_id, "custom_packaging")
+
+            def custom_package_log(message: str) -> None:
+                step_id = PACKAGING_STEP_MAP.get(message)
+                if step_id:
+                    finish_progress_before(job_id, step_id)
+                    update_progress(job_id, step_id, "running")
+                append_log(job_id, message)
+
+            outputs = build_custom_package(
+                template_zip=configured_template_zip(),
+                sql_template_dir=configured_sql_template_dir(),
+                output_root=configured_output_dir(),
+                delivery_name=delivery_folder_name(req, job_id),
+                package_zip=package_zip,
+                web_zip=web_zip,
+                selection=custom_selection,
+                version=BuildVersion(
+                    build_id=remote_id or job_id,
+                    material_number=material_number,
+                    backend_branch=req.get("backend_branch") or "-",
+                    frontend_branch=req.get("frontend_release_branch") or "-",
+                ),
+                config=StandaloneConfig(
+                    postgresql_host=req.get("postgresql_host") or "localhost",
+                    postgresql_port=int(req.get("postgresql_port") or 5432),
+                    postgresql_user=req.get("postgresql_user") or "postgres",
+                    postgresql_password=req.get("postgresql_password") or "password",
+                    ohr_host_address=req.get("ohr_host_address") or req.get("conf_server_host") or "localhost",
+                    ohr_service_port=int(req.get("ohr_service_port") or 3198),
+                ),
+                sql_config=ProductSqlConfig(
+                    organisation_name=req.get("organisation_name") or "共通",
+                    organisation_dstart=req.get("organisation_dstart") or default_organisation_dstart(),
+                ),
+                tenant_import_config=tenant_import_config_from_request(req) if custom_selection.import_plan else None,
+                ohr_import_config=ohr_import_config_from_request(req) if custom_selection.import_plan else None,
+                sql_svn_url=configured_sql_svn_url(),
+                data_sync_git_url=configured_data_sync_git_url(),
+                data_sync_branch=configured_data_sync_branch(),
+                data_sync_dir=configured_data_sync_dir(),
+                data_sync_subdir=configured_data_sync_subdir(),
+                data_sync_custom_subdir=req.get("data_sync_custom_subdir") or configured_data_sync_custom_subdir(),
+                data_sync_runner_config=DataSyncSqlRunnerConfig(
+                    ohr_host=req.get("postgresql_host") or "localhost",
+                    ohr_port=int(req.get("postgresql_port") or 5432),
+                    ohr_user=req.get("postgresql_user") or "postgres",
+                    ohr_password=req.get("postgresql_password") or "",
+                    upds_host=req.get("upds_host_name") or "",
+                    upds_port=int(req.get("upds_port") or 5432),
+                    upds_database=req.get("upds_db_name") or "",
+                    upds_user=req.get("upds_user") or "postgres",
+                    upds_password=req.get("upds_password") or "",
+                ),
+                middleware_versions={
+                    "nginx": req.get("middleware_nginx_version") or "bundled",
+                    "redis": req.get("middleware_redis_version") or "bundled",
+                    "minio": req.get("middleware_minio_version") or "bundled",
+                },
+                logger=custom_package_log,
+            )
+            selected_steps = {
+                "sql_assets": custom_selection.sql_assets,
+                "data_sync_assets": custom_selection.data_sync,
+                "account_sql": custom_selection.sql_assets,
+                "help_sql": custom_selection.sql_assets and custom_selection.help,
+                "standalone_zip": custom_selection.runtime,
+            }
+            current_progress = read_job(job_id).get("progress") or []
+            for step_id, enabled in selected_steps.items():
+                current = next((step for step in current_progress if step.get("id") == step_id), {})
+                if not enabled:
+                    update_progress(job_id, step_id, "skipped")
+                elif current.get("status") in ("pending", "running"):
+                    update_progress(job_id, step_id, "success")
+            update_progress(job_id, "complete", "success")
+            update_job(job_id, status="success", outputs=outputs)
+            append_log(job_id, "custom_package_done")
+            return
         if standard_release:
             for step_id in ("sql_assets", "data_sync_assets", "account_sql", "standalone_zip"):
                 update_progress(job_id, step_id, "skipped")
@@ -1450,46 +1595,58 @@ INDEX_HTML = """<!doctype html>
           <legend data-i18n="standardBuildMode">標準版構造種別</legend>
           <label class="radio-pill"><input name="standard_build_mode" type="radio" value="institution_package" checked><span data-i18n="modeInstitutionPackage">機関封包</span></label>
           <label class="radio-pill"><input name="standard_build_mode" type="radio" value="standard_release"><span data-i18n="modeStandardRelease">標準発版</span></label>
+          <label class="radio-pill"><input name="standard_build_mode" type="radio" value="custom_package"><span data-i18n="modeCustomPackage">顧客化</span></label>
+        </fieldset>
+        <fieldset class="variant-field standard-only custom-package-only custom-component-selector" hidden>
+          <legend data-i18n="customComponents">顧客化パッケージ内容</legend>
+          <label><input name="custom_include_backend" type="checkbox" checked><span data-i18n="customBackend">バックエンド package.zip</span></label>
+          <label><input name="custom_include_frontend" type="checkbox" checked><span data-i18n="customFrontend">フロントエンド本体</span></label>
+          <label><input name="custom_include_help" type="checkbox" checked><span data-i18n="customHelp">Help</span></label>
+          <label><input name="custom_include_conf_prod" type="checkbox" checked><span data-i18n="customConfProd">顧客環境設定 conf_prod</span></label>
+          <label><input name="custom_include_sql_assets" type="checkbox" checked><span data-i18n="customSqlAssets">SQL 資材</span></label>
+          <label><input name="custom_include_data_sync" type="checkbox" checked><span data-i18n="customDataSync">データ連携</span></label>
+          <label><input name="custom_include_import_plan" type="checkbox" checked><span data-i18n="customImportPlan">導入計画</span></label>
+          <label><input name="custom_include_runtime" type="checkbox" checked><span data-i18n="customRuntime">実行環境資材</span></label>
         </fieldset>
         <div class="standard-only standard-package-only standard-tabs" role="tablist" aria-label="standard settings tabs">
           <button class="standard-tab active" type="button" data-standard-tab="prep" data-i18n="tabPreparation">事前準備</button>
-          <button class="standard-tab" type="button" data-standard-tab="import" data-i18n="tabImportPlan">導入計画</button>
+          <button class="standard-tab" type="button" data-standard-tab="import" data-custom-components="import_plan" data-i18n="tabImportPlan">導入計画</button>
         </div>
         <label class="required-field material-field"><span data-i18n="materialNumber">資材番号</span><div class="material-combo"><input name="material_number" required data-i18n-placeholder="materialNumberPlaceholder" placeholder="例：20260520"><button id="material-number-toggle" class="material-toggle" type="button" aria-label="material number candidates" aria-expanded="false">⌄</button><div id="material-number-menu" class="material-menu" hidden></div></div></label>
-        <label><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
-        <label><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
-        <label class="standard-only help-option"><span data-i18n="helpSvnRevision">Help SVN Revision</span><input name="help_docs_svn_revision" data-i18n-placeholder="helpSvnRevisionPlaceholder"></label>
-        <label class="check-row standard-only help-option"><input name="build_help" type="checkbox" checked><span data-i18n="buildHelp">Help パッケージと関連資材を生成</span></label>
+        <label data-custom-components="backend"><span data-i18n="backendBranch">バックエンドブランチ</span><div class="material-combo"><input name="backend_branch" id="backend-branches" autocomplete="off"><button id="backend-branches-toggle" class="material-toggle" type="button" aria-label="backend branch candidates" aria-expanded="false">⌄</button><div id="backend-branches-menu" class="material-menu" hidden></div></div></label>
+        <label data-custom-components="frontend"><span data-i18n="frontendBranch">フロントエンドブランチ</span><div class="material-combo"><input name="frontend_release_branch" id="frontend-branches" autocomplete="off"><button id="frontend-branches-toggle" class="material-toggle" type="button" aria-label="frontend branch candidates" aria-expanded="false">⌄</button><div id="frontend-branches-menu" class="material-menu" hidden></div></div></label>
+        <label class="standard-only help-option" data-custom-components="help"><span data-i18n="helpSvnRevision">Help SVN Revision</span><input name="help_docs_svn_revision" data-i18n-placeholder="helpSvnRevisionPlaceholder"></label>
+        <label class="check-row standard-only help-option non-custom-build-option" data-custom-components="help"><input name="build_help" type="checkbox" checked><span data-i18n="buildHelp">Help パッケージと関連資材を生成</span></label>
         <section class="standard-only standard-package-only standard-tab-panel" data-standard-tab-panel="prep">
-          <fieldset class="form-section">
+          <fieldset class="form-section" data-custom-components="conf_prod,sql_assets,data_sync,import_plan,runtime">
             <legend data-i18n="basicBuildInfo">構築パラメータ</legend>
-            <label class="check-row"><input name="build_conf_prod" type="checkbox" checked><span data-i18n="buildConfProd">顧客環境設定 conf_prod を生成</span></label>
+            <label class="check-row non-custom-build-option"><input name="build_conf_prod" type="checkbox" checked><span data-i18n="buildConfProd">顧客環境設定 conf_prod を生成</span></label>
             <label class="standard-only env-config"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
             <label class="standard-only env-config"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
             <label class="standard-only env-config"><span data-i18n="employeeNumberDigits">職員番号桁数</span><input name="employee_number_digits" type="number" min="1" max="20" placeholder="8"></label>
           </fieldset>
-          <fieldset class="form-section standard-only">
+          <fieldset class="form-section standard-only" data-custom-components="runtime">
             <legend data-i18n="middlewareVersions">ミドルウェアバージョン</legend>
             <label><span>Nginx</span><select name="middleware_nginx_version" id="middleware-nginx-version" data-middleware-product="nginx"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
             <label><span>Redis</span><select name="middleware_redis_version" id="middleware-redis-version" data-middleware-product="redis"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
             <label><span>MinIO</span><select name="middleware_minio_version" id="middleware-minio-version" data-middleware-product="minio"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
             <p class="section-note section-wide" id="middleware-version-note" data-i18n="middlewareVersionNote">同梱版以外は公式配布元から取得し、宿主機キャッシュ経由で差し替えます。</p>
           </fieldset>
-          <fieldset class="form-section env-config">
+          <fieldset class="form-section env-config" data-custom-components="conf_prod,runtime">
             <legend data-i18n="apHostInfo">AP 主機情報</legend>
             <label class="standard-only"><span data-i18n="appHostName">AP 主機名</span><input name="ohr_host_address" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
             <label class="standard-only required-field"><span data-i18n="apHostIp">AP 主機 IP</span><input name="conf_server_host" required placeholder="192.168.70.136"></label>
             <label class="standard-only"><span data-i18n="apCpuCount">AP CPU 数</span><input name="ap_cpu_count" type="number" min="1" placeholder="8"></label>
             <label class="standard-only"><span data-i18n="apMemoryGb">AP メモリ GB</span><input name="ap_memory_gb" type="number" min="1" placeholder="32"></label>
           </fieldset>
-          <fieldset class="form-section env-config">
+          <fieldset class="form-section env-config" data-custom-components="sql_assets,import_plan,runtime">
             <legend data-i18n="dbHostInfo">DB 主機情報</legend>
             <label class="standard-only required-field"><span data-i18n="postgresHost">DB 主機名</span><input name="postgresql_host" required placeholder="192.168.10.209"></label>
             <label class="standard-only"><span data-i18n="postgresUser">DB ユーザー</span><input name="postgresql_user" value="postgres"></label>
             <label class="standard-only"><span data-i18n="postgresPassword">DB パスワード</span><input name="postgresql_password" value="password"></label>
             <label class="standard-only"><span data-i18n="postgresPort">DB ポート</span><input name="postgresql_port" type="number" value="5432"></label>
           </fieldset>
-          <fieldset class="form-section env-config">
+          <fieldset class="form-section env-config" data-custom-components="conf_prod,runtime">
             <legend data-i18n="webHostInfo">WEB 主機情報</legend>
             <label class="standard-only"><span data-i18n="webHostName">WEB 主機名</span><input name="web_host_name" data-i18n-placeholder="appHostPlaceholder" placeholder="顧客アクセスアドレスを使用"></label>
             <label class="standard-only"><span data-i18n="webPort">WEB ポート</span><input name="conf_web_port" type="number" value="80" min="1" max="65535"></label>
@@ -1497,7 +1654,7 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only"><span data-i18n="webKeyName">WEB Key 名</span><input name="web_key_name" value="Server.key"></label>
             <label class="check-row standard-only"><input name="conf_enable_https" type="checkbox"><span data-i18n="enableHttps">HTTPS / 443 設定を生成</span></label>
           </fieldset>
-          <fieldset class="form-section env-config">
+          <fieldset class="form-section env-config" data-custom-components="import_plan">
             <legend data-i18n="mailServiceInfo">メールサービス情報</legend>
             <label class="standard-only"><span data-i18n="mailUsage">メール利用</span><select name="mail_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only"><span data-i18n="mailHostIp">メール主機 IP</span><input name="mail_host_ip"></label>
@@ -1508,23 +1665,23 @@ INDEX_HTML = """<!doctype html>
             <label class="standard-only"><span data-i18n="mailPassword">メールパスワード</span><input name="mail_password"></label>
             <label class="standard-only section-wide"><span data-i18n="mailNote">メール備考</span><input name="mail_note"></label>
           </fieldset>
-          <fieldset class="form-section env-config">
+          <fieldset class="form-section env-config" data-custom-components="import_plan,data_sync">
             <legend data-i18n="updsServiceInfo">UPDS サービス情報</legend>
-            <label class="standard-only"><span data-i18n="workflowUpds">ワークフロー申請 UPDSへ連携</span><select name="workflow_upds_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
-            <label class="standard-only"><span data-i18n="updsHostName">UPDS 主機名</span><input name="upds_host_name"></label>
-            <label class="standard-only"><span data-i18n="updsUser">UPDS ユーザー</span><input name="upds_user"></label>
-            <label class="standard-only"><span data-i18n="updsPassword">UPDS パスワード</span><input name="upds_password"></label>
-            <label class="standard-only"><span data-i18n="updsPort">UPDS ポート</span><input name="upds_port" type="number" min="1" max="65535"></label>
-            <label class="standard-only"><span data-i18n="updsDbName">UPDS DB 名</span><input name="upds_db_name"></label>
-            <label class="standard-only section-wide"><span data-i18n="dataSyncCustomSource">補充スクリプトコード源</span><input name="data_sync_custom_subdir" data-i18n-placeholder="dataSyncCustomSourcePlaceholder"></label>
+            <label class="standard-only" data-custom-components="import_plan"><span data-i18n="workflowUpds">ワークフロー申請 UPDSへ連携</span><select name="workflow_upds_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
+            <label class="standard-only" data-custom-components="import_plan"><span data-i18n="updsHostName">UPDS 主機名</span><input name="upds_host_name"></label>
+            <label class="standard-only" data-custom-components="import_plan"><span data-i18n="updsUser">UPDS ユーザー</span><input name="upds_user"></label>
+            <label class="standard-only" data-custom-components="import_plan"><span data-i18n="updsPassword">UPDS パスワード</span><input name="upds_password"></label>
+            <label class="standard-only" data-custom-components="import_plan"><span data-i18n="updsPort">UPDS ポート</span><input name="upds_port" type="number" min="1" max="65535"></label>
+            <label class="standard-only" data-custom-components="import_plan"><span data-i18n="updsDbName">UPDS DB 名</span><input name="upds_db_name"></label>
+            <label class="standard-only section-wide" data-custom-components="data_sync"><span data-i18n="dataSyncCustomSource">補充スクリプトコード源</span><input name="data_sync_custom_subdir" data-i18n-placeholder="dataSyncCustomSourcePlaceholder"></label>
           </fieldset>
-          <fieldset class="form-section env-config">
+          <fieldset class="form-section env-config" data-custom-components="import_plan">
             <legend data-i18n="ekispertInfo">駅すぱあと情報</legend>
             <label class="standard-only"><span data-i18n="ekispertServer">駅すぱあとサーバ</span><select name="ekispert_usage"><option value="none" data-i18n="notUse">利用しない</option><option value="use" data-i18n="use">利用</option></select></label>
             <label class="standard-only section-wide"><span data-i18n="ekispertUrl">駅すぱあと URL</span><input name="ekispert_url" placeholder="https://"></label>
           </fieldset>
         </section>
-        <section class="standard-only standard-package-only standard-tab-panel" data-standard-tab-panel="import" hidden>
+        <section class="standard-only standard-package-only standard-tab-panel" data-standard-tab-panel="import" data-custom-components="import_plan" hidden>
           <fieldset class="form-section env-config">
             <legend data-i18n="customerSituation">お客様の実績状況収集</legend>
             <div class="option-matrix">
@@ -1633,6 +1790,16 @@ const I18N = {
     standardBuildMode: '標準版構造種別',
     modeStandardRelease: '標準発版',
     modeInstitutionPackage: '機関封包',
+    modeCustomPackage: '顧客化',
+    customComponents: '顧客化パッケージ内容',
+    customBackend: 'バックエンド package.zip',
+    customFrontend: 'フロントエンド本体',
+    customHelp: 'Help',
+    customConfProd: '顧客環境設定 conf_prod',
+    customSqlAssets: 'SQL 資材',
+    customDataSync: 'データ連携',
+    customImportPlan: '導入計画',
+    customRuntime: '実行環境資材',
     materialNumber: '資材番号',
     materialNumberPlaceholder: '例：2026-05-20-001',
     materialNumberSelect: '候補から選択',
@@ -1817,6 +1984,16 @@ const I18N = {
     standardBuildMode: '标准版构造类型',
     modeStandardRelease: '标准发版',
     modeInstitutionPackage: '机构封包',
+    modeCustomPackage: '客户化',
+    customComponents: '客户化打包内容',
+    customBackend: '后端 package.zip',
+    customFrontend: '前端主体',
+    customHelp: 'Help',
+    customConfProd: '客户环境配置 conf_prod',
+    customSqlAssets: 'SQL 资材',
+    customDataSync: '数据连携',
+    customImportPlan: '导入计划',
+    customRuntime: '运行环境资材',
     materialNumber: '资材编号',
     materialNumberPlaceholder: '例如：2026-05-20-001',
     materialNumberSelect: '从候选中选择',
@@ -2001,6 +2178,16 @@ const I18N = {
     standardBuildMode: 'Standard build type',
     modeStandardRelease: 'Standard release',
     modeInstitutionPackage: 'Institution package',
+    modeCustomPackage: 'Customerized package',
+    customComponents: 'Customerized package contents',
+    customBackend: 'Backend package.zip',
+    customFrontend: 'Frontend application',
+    customHelp: 'Help',
+    customConfProd: 'Customer conf_prod',
+    customSqlAssets: 'SQL assets',
+    customDataSync: 'Data synchronization',
+    customImportPlan: 'Import plan',
+    customRuntime: 'Runtime assets',
     materialNumber: 'Material number',
     materialNumberPlaceholder: 'Example: 2026-05-20-001',
     materialNumberSelect: 'Select candidate',
@@ -2325,32 +2512,65 @@ function getStandardBuildMode() {
 function isStandardReleaseMode() {
   return getProductVariant() === 'standard' && getStandardBuildMode() === 'standard_release';
 }
+function isCustomPackageMode() {
+  return getProductVariant() === 'standard' && getStandardBuildMode() === 'custom_package';
+}
+function customComponentChecked(name) {
+  const input = document.querySelector(`input[name="${name}"]`);
+  return Boolean(input && input.checked);
+}
+function customComponentEnabled(component) {
+  return customComponentChecked(`custom_include_${component}`);
+}
+function restoreCustomSettingVisibility() {
+  document.querySelectorAll('[data-custom-hidden="true"]').forEach(el => {
+    el.hidden = false;
+    delete el.dataset.customHidden;
+  });
+}
+function applyCustomSettingVisibility() {
+  if (!isCustomPackageMode()) return;
+  document.querySelectorAll('[data-custom-components]').forEach(el => {
+    const components = String(el.dataset.customComponents || '').split(',').map(value => value.trim()).filter(Boolean);
+    const visible = components.some(customComponentEnabled);
+    el.hidden = !visible;
+    if (!visible) el.dataset.customHidden = 'true';
+  });
+}
 function getBuildConfProd() {
+  if (isCustomPackageMode()) return customComponentChecked('custom_include_conf_prod');
   const input = document.querySelector('input[name="build_conf_prod"]');
   return isStandardReleaseMode() ? false : (input ? input.checked : true);
 }
 function syncHelpBuildFromRevision() {
   const revisionInput = document.querySelector('input[name="help_docs_svn_revision"]');
   const buildHelpInput = document.querySelector('input[name="build_help"]');
-  if (!revisionInput || !buildHelpInput || getProductVariant() !== 'standard') return;
+  if (!revisionInput || !buildHelpInput || getProductVariant() !== 'standard' || isCustomPackageMode()) return;
   if (String(revisionInput.value || '').trim()) buildHelpInput.checked = true;
 }
 function applyEnvironmentVisibility() {
+  if (isCustomPackageMode()) return;
   const buildConfProd = getBuildConfProd();
   document.querySelectorAll('.env-config').forEach(el => { el.hidden = !buildConfProd; });
   const orgInput = document.querySelector('input[name="organisation_name"]');
   if (orgInput && !buildConfProd) orgInput.value = '共通';
 }
 function applyVariantVisibility() {
+  restoreCustomSettingVisibility();
   const isNho = getProductVariant() === 'nho';
   const standardRelease = isStandardReleaseMode();
+  const customPackage = isCustomPackageMode();
   document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho && !el.closest('.env-config'); });
   document.querySelectorAll('.nho-only').forEach(el => { el.hidden = !isNho; });
   document.querySelectorAll('.standard-package-only').forEach(el => { el.hidden = standardRelease || (isNho && el.classList.contains('standard-only')); });
+  document.querySelectorAll('.custom-package-only').forEach(el => { el.hidden = !customPackage; });
+  document.querySelectorAll('.non-custom-build-option').forEach(el => { el.hidden = customPackage; });
   applyEnvironmentVisibility();
   if (!isNho && !standardRelease) {
     const active = document.querySelector('.standard-tab.active');
-    switchStandardTab(active ? active.dataset.standardTab : 'prep');
+    const requestedTab = customPackage && !customComponentEnabled('import_plan') ? 'prep' : (active ? active.dataset.standardTab : 'prep');
+    switchStandardTab(requestedTab);
+    applyCustomSettingVisibility();
   } else {
     document.querySelectorAll('[data-standard-tab-panel]').forEach(panel => { panel.hidden = true; });
   }
@@ -2369,6 +2589,7 @@ function switchStandardTab(tabName) {
     panel.hidden = panel.dataset.standardTabPanel !== tabName;
   });
   applyEnvironmentVisibility();
+  applyCustomSettingVisibility();
 }
 function initializeFixedPublishItems() {
   document.querySelectorAll('.tag-tree input[type="checkbox"][checked]').forEach(input => {
@@ -2810,6 +3031,7 @@ function setFormLocked(locked) {
   const modeLocked = mode !== 'create';
   const isNho = getProductVariant() === 'nho';
   const standardRelease = isStandardReleaseMode();
+  const customPackage = isCustomPackageMode();
   const buildConfProd = getBuildConfProd();
   document.querySelectorAll('#form input, #form select, #form button.material-toggle, #startJob').forEach(el => {
     if (el.name === 'product_variant' || el.name === 'standard_build_mode') {
@@ -2820,13 +3042,17 @@ function setFormLocked(locked) {
       el.disabled = true;
       return;
     }
+    if (customPackage && el.closest('[data-custom-components][hidden]')) {
+      el.disabled = true;
+      return;
+    }
     if (el.classList && el.classList.contains('publish-menu-toggle')) {
       const standardHidden = isNho && el.closest('.standard-only') && !el.closest('.env-config');
       el.disabled = Boolean(standardHidden) || locked || modeLocked || terminalLocked;
       applyPublishMenuGroupState(el.closest('details'));
       return;
     }
-    if (el.closest('.env-config') && !buildConfProd) {
+    if (!customPackage && el.closest('.env-config') && !buildConfProd) {
       el.disabled = true;
       return;
     }
@@ -2853,10 +3079,24 @@ function setFormLocked(locked) {
     const nhoHidden = !isNho;
     el.disabled = Boolean(nhoHidden) || locked || modeLocked || terminalLocked;
   });
+  if (isCustomPackageMode()) {
+    const customLocks = {
+      backend_branch: !customComponentChecked('custom_include_backend'),
+      frontend_release_branch: !customComponentChecked('custom_include_frontend'),
+      help_docs_svn_revision: !customComponentChecked('custom_include_help')
+    };
+    Object.entries(customLocks).forEach(([name, componentDisabled]) => {
+      const input = document.querySelector(`[name="${name}"]`);
+      if (input && componentDisabled) input.disabled = true;
+      const combo = input && input.closest('.material-combo');
+      const toggle = combo && combo.querySelector('.material-toggle');
+      if (toggle && componentDisabled) toggle.disabled = true;
+    });
+  }
   const buildHelpInput = document.querySelector('input[name="build_help"]');
   const helpRevisionInput = document.querySelector('input[name="help_docs_svn_revision"]');
   syncHelpBuildFromRevision();
-  if (helpRevisionInput && buildHelpInput) {
+  if (helpRevisionInput && buildHelpInput && !isCustomPackageMode()) {
     helpRevisionInput.disabled = helpRevisionInput.disabled || !buildHelpInput.checked;
   }
   document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
@@ -3098,6 +3338,12 @@ if (buildConfProdInput) {
     setFormLocked(false);
   });
 }
+document.querySelectorAll('.custom-component-selector input[type="checkbox"]').forEach(input => {
+  input.addEventListener('change', () => {
+    applyVariantVisibility();
+    setFormLocked(false);
+  });
+});
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.material-combo')) closeMaterialMenu();
 });
@@ -3219,9 +3465,12 @@ async function deleteConfigHistory(configId) {
 document.getElementById('form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const standardRelease = isStandardReleaseMode();
+  const customPackage = isCustomPackageMode();
   if (!standardRelease && !validateConditionalRequiredFields(event.target)) return;
   const buildConfProdInput = event.target.elements.build_conf_prod;
-  const buildConfProd = standardRelease ? false : (buildConfProdInput ? buildConfProdInput.checked : true);
+  const buildConfProd = standardRelease ? false : (customPackage
+    ? customComponentChecked('custom_include_conf_prod')
+    : (buildConfProdInput ? buildConfProdInput.checked : true));
   const dataSyncCustomInput = event.target.elements.data_sync_custom_subdir;
   if (!standardRelease && buildConfProd && dataSyncCustomInput && !(await validateDataSyncCustomSource(dataSyncCustomInput))) {
     dataSyncCustomInput.focus();
@@ -3230,7 +3479,9 @@ document.getElementById('form').addEventListener('submit', async (event) => {
   const helpSvnRevisionInput = event.target.elements.help_docs_svn_revision;
   const buildHelpInput = event.target.elements.build_help;
   syncHelpBuildFromRevision();
-  const buildHelp = buildHelpInput ? buildHelpInput.checked : true;
+  const buildHelp = customPackage
+    ? customComponentChecked('custom_include_help')
+    : (buildHelpInput ? buildHelpInput.checked : true);
   if (buildHelp && helpSvnRevisionInput && !(await validateHelpSvnRevision(helpSvnRevisionInput))) {
     helpSvnRevisionInput.focus();
     return;
@@ -3241,6 +3492,11 @@ document.getElementById('form').addEventListener('submit', async (event) => {
     return;
   }
   const payload = Object.fromEntries(new FormData(event.target).entries());
+  [
+    'custom_include_backend', 'custom_include_frontend', 'custom_include_help',
+    'custom_include_conf_prod', 'custom_include_sql_assets', 'custom_include_data_sync',
+    'custom_include_import_plan', 'custom_include_runtime'
+  ].forEach(name => { payload[name] = customComponentChecked(name); });
   payload.conf_enable_https = Boolean(event.target.elements.conf_enable_https && event.target.elements.conf_enable_https.checked);
   payload.build_help = buildHelp;
   payload.build_conf_prod = buildConfProd;
@@ -4044,6 +4300,29 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   font-size: 13px;
   font-weight: 760;
 }
+.custom-component-selector {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  background: var(--block-green);
+}
+.custom-component-selector legend { grid-column: 1 / -1; }
+.custom-component-selector label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  cursor: pointer;
+}
+.custom-component-selector label:has(input:checked) {
+  border-color: #737373;
+  background: #f7f7f7;
+}
+.custom-component-selector input { width: auto; }
 .radio-pill {
   position: relative;
   display: inline-flex;
@@ -4448,6 +4727,7 @@ pre {
 }
 .muted { color: var(--muted); font-size: 13px; }
 @media (max-width: 980px) {
+  .custom-component-selector { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero, .terminal-panel, .panel-heading { align-items: stretch; flex-direction: column; }
   h1 { font-size: 36px; }
   .workbench, .form-panel .grid, .standard-tab-panel, .form-section, .option-matrix, .tag-tree, .result-summary, .artifact-grid, .path-row { grid-template-columns: 1fr; }
