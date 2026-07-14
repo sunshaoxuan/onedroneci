@@ -82,6 +82,8 @@
 ### 標準版客户化构造
 
 - `standard_build_mode=custom_package` 启用客户化构造。
+- 客户机构名位于构造类型之后，在机构封包和客户化模式中始终显示，并在客户化模式中设为必填。该字段独立于资材勾选，用于构建记录和成果物目录命名。
+- 标准发版提交时在请求层使用“共通”，页面模式切换不改写客户机构名输入值。
 - 选择模型为 `CustomPackageSelection`，覆盖 backend、frontend、help、conf_prod、sql_assets、data_sync、import_plan、runtime 八类资材。
 - 页面顶部资材列表同时控制设置块可见性与请求布尔字段。隐藏设置会禁用，未勾选值不会成为打包依据。
 - 代码类资材由构建终端生成。`build_web_package` 表示本次需要组装 `web.zip`，`BUILD_FRONTEND_CORE`、`BUILD_HELP`、`BUILD_CONF_PROD` 分别控制前端本体、Help 和 conf_prod。

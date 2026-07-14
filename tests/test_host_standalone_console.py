@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.4.0"
+    assert console.APP_VERSION == "0.4.1"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -1132,10 +1132,11 @@ def test_build_context_switch_clears_material_and_derived_fields_and_rejects_sta
     assert "currentMaterial.value.trim() !== value" in console.APP_JS
 
 
-def test_validate_job_payload_uses_common_org_without_conf_prod():
+def test_validate_standard_release_uses_common_org_without_conf_prod():
     payload, error = console.validate_job_payload(
         {
             "product_variant": "standard",
+            "standard_build_mode": "standard_release",
             "material_number": "20260522",
             "backend_branch": "release_back",
             "frontend_release_branch": "release_front",
@@ -1156,6 +1157,7 @@ def test_validate_custom_package_allows_help_only_without_code_branches():
             "material_number": "20260714",
             "backend_branch": "",
             "frontend_release_branch": "",
+            "organisation_name": "顧客A",
             "custom_include_backend": False,
             "custom_include_frontend": False,
             "custom_include_help": True,
@@ -1171,6 +1173,26 @@ def test_validate_custom_package_allows_help_only_without_code_branches():
     assert payload["build_help"] is True
     assert payload["build_conf_prod"] is False
     assert payload["custom_include_help"] is True
+
+
+def test_validate_custom_package_requires_customer_name_for_help_only():
+    _, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "standard_build_mode": "custom_package",
+            "material_number": "20260714",
+            "custom_include_backend": False,
+            "custom_include_frontend": False,
+            "custom_include_help": True,
+            "custom_include_conf_prod": False,
+            "custom_include_sql_assets": False,
+            "custom_include_data_sync": False,
+            "custom_include_import_plan": False,
+            "custom_include_runtime": False,
+        }
+    )
+
+    assert error == "missing organisation_name"
 
 
 def test_validate_custom_package_rejects_empty_component_selection():
@@ -1194,6 +1216,7 @@ def test_validate_custom_package_requires_only_selected_code_branch():
         "product_variant": "standard",
         "standard_build_mode": "custom_package",
         "material_number": "20260714",
+        "organisation_name": "顧客A",
         "custom_include_backend": False,
         "custom_include_frontend": True,
         "custom_include_help": False,
@@ -1228,6 +1251,13 @@ def test_custom_package_ui_uses_component_selection_to_hide_settings():
     assert "function applyCustomSettingVisibility()" in console.APP_JS
     assert "el.hidden = !visible;" in console.APP_JS
     assert "customPackage && el.closest('[data-custom-components][hidden]')" in console.APP_JS
+    assert console.INDEX_HTML.count('name="organisation_name"') == 1
+    assert console.INDEX_HTML.index('name="organisation_name"') < console.INDEX_HTML.index('custom-component-selector')
+    assert 'standard-package-only customer-name-field' in console.INDEX_HTML
+    assert 'customerNameInput.required = customPackage;' in console.APP_JS
+    assert "customerNameLabel.classList.toggle('required-field', customPackage);" in console.APP_JS
+    assert "if (standardRelease) payload.organisation_name = '共通';" in console.APP_JS
+    assert "orgInput.value = '共通'" not in console.APP_JS
 
 
 def test_standard_console_has_preparation_and_import_plan_tabs():

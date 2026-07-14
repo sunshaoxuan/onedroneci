@@ -52,7 +52,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -513,7 +513,7 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     elif custom_package:
         build_conf_prod = selection.conf_prod
     payload["build_conf_prod"] = build_conf_prod
-    if not build_conf_prod and not custom_package:
+    if standard_release:
         payload["organisation_name"] = "共通"
 
     if not str(payload.get("material_number") or "").strip():
@@ -538,10 +538,12 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
         return payload, "missing build target"
 
     required = ["conf_server_host"] if build_conf_prod and (build_frontend or custom_package) else []
+    if custom_package:
+        required.append("organisation_name")
     if product_variant == "standard" and build_conf_prod and build_backend and build_frontend:
-        required.extend(["postgresql_host", "organisation_name"])
+        required.append("postgresql_host")
     if custom_package and (selection.sql_assets or selection.data_sync or selection.import_plan or selection.runtime):
-        required.extend(["postgresql_host", "organisation_name"])
+        required.append("postgresql_host")
     uses_import_services = build_conf_prod or (custom_package and selection.import_plan)
     if product_variant == "standard" and uses_import_services and str(payload.get("mail_usage") or "none") == "use":
         payload["mail_auth_required"] = mail_auth_required_from_request(payload)
@@ -1597,6 +1599,7 @@ INDEX_HTML = """<!doctype html>
           <label class="radio-pill"><input name="standard_build_mode" type="radio" value="standard_release"><span data-i18n="modeStandardRelease">標準発版</span></label>
           <label class="radio-pill"><input name="standard_build_mode" type="radio" value="custom_package"><span data-i18n="modeCustomPackage">顧客化</span></label>
         </fieldset>
+        <label class="standard-only standard-package-only customer-name-field"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
         <fieldset class="variant-field standard-only custom-package-only custom-component-selector" hidden>
           <legend data-i18n="customComponents">顧客化パッケージ内容</legend>
           <label><input name="custom_include_backend" type="checkbox" checked><span data-i18n="customBackend">バックエンド package.zip</span></label>
@@ -1621,7 +1624,6 @@ INDEX_HTML = """<!doctype html>
           <fieldset class="form-section" data-custom-components="conf_prod,sql_assets,data_sync,import_plan,runtime">
             <legend data-i18n="basicBuildInfo">構築パラメータ</legend>
             <label class="check-row non-custom-build-option"><input name="build_conf_prod" type="checkbox" checked><span data-i18n="buildConfProd">顧客環境設定 conf_prod を生成</span></label>
-            <label class="standard-only env-config"><span data-i18n="organisationName">顧客機関名</span><input name="organisation_name" data-i18n-placeholder="organisationNamePlaceholder" placeholder="例：学校法人サンプル"></label>
             <label class="standard-only env-config"><span data-i18n="organisationDstart">機関開始日</span><input name="organisation_dstart" id="organisation-dstart" type="date"></label>
             <label class="standard-only env-config"><span data-i18n="employeeNumberDigits">職員番号桁数</span><input name="employee_number_digits" type="number" min="1" max="20" placeholder="8"></label>
           </fieldset>
@@ -2552,14 +2554,16 @@ function applyEnvironmentVisibility() {
   if (isCustomPackageMode()) return;
   const buildConfProd = getBuildConfProd();
   document.querySelectorAll('.env-config').forEach(el => { el.hidden = !buildConfProd; });
-  const orgInput = document.querySelector('input[name="organisation_name"]');
-  if (orgInput && !buildConfProd) orgInput.value = '共通';
 }
 function applyVariantVisibility() {
   restoreCustomSettingVisibility();
   const isNho = getProductVariant() === 'nho';
   const standardRelease = isStandardReleaseMode();
   const customPackage = isCustomPackageMode();
+  const customerNameInput = document.querySelector('input[name="organisation_name"]');
+  const customerNameLabel = customerNameInput && customerNameInput.closest('label');
+  if (customerNameInput) customerNameInput.required = customPackage;
+  if (customerNameLabel) customerNameLabel.classList.toggle('required-field', customPackage);
   document.querySelectorAll('.standard-only').forEach(el => { el.hidden = isNho && !el.closest('.env-config'); });
   document.querySelectorAll('.nho-only').forEach(el => { el.hidden = !isNho; });
   document.querySelectorAll('.standard-package-only').forEach(el => { el.hidden = standardRelease || (isNho && el.classList.contains('standard-only')); });
@@ -3500,7 +3504,7 @@ document.getElementById('form').addEventListener('submit', async (event) => {
   payload.conf_enable_https = Boolean(event.target.elements.conf_enable_https && event.target.elements.conf_enable_https.checked);
   payload.build_help = buildHelp;
   payload.build_conf_prod = buildConfProd;
-  if (!buildConfProd) payload.organisation_name = '共通';
+  if (standardRelease) payload.organisation_name = '共通';
   payload.ui_language = lang;
   const res = await fetch('/api/jobs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
   const job = await res.json();
