@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import shutil
 import zipfile
 from pathlib import Path
@@ -31,6 +32,7 @@ from standalone_packager import (
     render_tenant_import_sql,
     render_version_txt,
     update_config_ini,
+    _set_azure_proxy_enabled,
     _rebuild_standalone_zip,
 )
 
@@ -100,6 +102,14 @@ def make_web_package(path: Path, help_sql: str = "new help sql") -> None:
         web.writestr(
             "ohr-cicd/web_prod/help/meta.json",
             '{"releaseTimestamp":"ohr_help_docs_release_2026_01_01","gitInfo":{"branch":"release_ci","latestCommit":"1234567890abcdef"}}',
+        )
+        web.writestr(
+            "ohr-cicd/conf_prod/api-proxy.conf",
+            "# location ~ ^/azure/(.*)$ {\n# \tproxy_pass undefined;\n# }\n",
+        )
+        web.writestr(
+            "ohr-cicd/conf_prod/api-proxy-debug.conf",
+            "location ~ ^/azure/(.*)$ {\n\tproxy_pass undefined;\n}\n",
         )
 
 
@@ -694,6 +704,7 @@ def test_rebuild_standalone_zip_can_replace_selected_middleware(tmp_path):
         web_zip,
         StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
         middleware_overrides={MIDDLEWARE_IN_STANDALONE_ZIP["redis"]: redis_override},
+        include_minio=True,
     )
 
     with zipfile.ZipFile(final_zip) as outer:
@@ -707,6 +718,71 @@ def test_rebuild_standalone_zip_can_replace_selected_middleware(tmp_path):
         assert "redis/redis-server.exe" in expected.namelist()
     with zipfile.ZipFile(template) as original:
         assert nginx_data == original.read(MIDDLEWARE_IN_STANDALONE_ZIP["nginx"])
+
+
+def test_rebuild_standalone_zip_disables_optional_storage_by_default(tmp_path):
+    template = tmp_path / "OneHrStandalone.zip"
+    web_zip = tmp_path / "web.zip"
+    final_zip = tmp_path / "final.zip"
+    make_template(template)
+    make_web_package(web_zip)
+
+    _rebuild_standalone_zip(
+        template,
+        final_zip,
+        None,
+        web_zip,
+        StandaloneConfig(postgresql_host="10.0.0.8"),
+    )
+
+    with zipfile.ZipFile(final_zip) as outer:
+        assert MIDDLEWARE_IN_STANDALONE_ZIP["minio"] not in outer.namelist()
+        rewritten_web = outer.read(WEB_IN_STANDALONE_ZIP)
+    with zipfile.ZipFile(io.BytesIO(rewritten_web)) as web:
+        for name in ("ohr-cicd/conf_prod/api-proxy.conf", "ohr-cicd/conf_prod/api-proxy-debug.conf"):
+            assert web.read(name).decode("utf-8").splitlines() == [
+                "# location ~ ^/azure/(.*)$ {",
+                "# \tproxy_pass undefined;",
+                "# }",
+            ]
+
+
+def test_rebuild_standalone_zip_can_enable_optional_storage(tmp_path):
+    template = tmp_path / "OneHrStandalone.zip"
+    web_zip = tmp_path / "web.zip"
+    final_zip = tmp_path / "final.zip"
+    make_template(template)
+    make_web_package(web_zip)
+
+    _rebuild_standalone_zip(
+        template,
+        final_zip,
+        None,
+        web_zip,
+        StandaloneConfig(postgresql_host="10.0.0.8"),
+        include_minio=True,
+        enable_azure_blob_storage=True,
+    )
+
+    with zipfile.ZipFile(final_zip) as outer:
+        assert MIDDLEWARE_IN_STANDALONE_ZIP["minio"] in outer.namelist()
+        rewritten_web = outer.read(WEB_IN_STANDALONE_ZIP)
+    with zipfile.ZipFile(io.BytesIO(rewritten_web)) as web:
+        for name in ("ohr-cicd/conf_prod/api-proxy.conf", "ohr-cicd/conf_prod/api-proxy-debug.conf"):
+            assert web.read(name).decode("utf-8").splitlines() == [
+                "location ~ ^/azure/(.*)$ {",
+                "\tproxy_pass undefined;",
+                "}",
+            ]
+
+
+def test_set_azure_proxy_enabled_leaves_other_locations_unchanged():
+    source = "location ~ ^/minio/(.*)$ {\n\tproxy_pass minio;\n}\n\nlocation ~ ^/azure/(.*)$ {\n\tproxy_pass azure;\n}\n"
+
+    disabled = _set_azure_proxy_enabled(source, False)
+
+    assert disabled.startswith("location ~ ^/minio/(.*)$ {\n\tproxy_pass minio;\n}\n")
+    assert "# location ~ ^/azure/(.*)$ {\n# \tproxy_pass azure;\n# }" in disabled
 
 
 def test_build_product_package_prepares_middleware_versions(monkeypatch, tmp_path):
@@ -741,6 +817,7 @@ def test_build_product_package_prepares_middleware_versions(monkeypatch, tmp_pat
         version=BuildVersion("build-mw", "M-001", "release_back", "release_front"),
         config=StandaloneConfig(postgresql_host="10.0.0.8", ohr_host_address="OHR-HOST"),
         sql_config=ProductSqlConfig("テスト大学", "2026-05-01"),
+        include_minio=True,
         middleware_versions={"nginx": "bundled", "redis": "8.2.7", "minio": "bundled"},
     )
 

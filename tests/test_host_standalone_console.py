@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.4.1"
+    assert console.APP_VERSION == "0.4.2"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -153,6 +153,10 @@ def test_standard_page_supports_middleware_version_selection():
     assert "middlewareBundled" in console.APP_JS
     assert "middleware_assets" in console.APP_JS
     assert "fetch_middleware_catalog" in Path("host_standalone_console.py").read_text(encoding="utf-8")
+    assert 'name="include_minio"' in console.INDEX_HTML
+    assert 'name="enable_azure_blob_storage"' in console.INDEX_HTML
+    assert "payload.include_minio" in console.APP_JS
+    assert "payload.enable_azure_blob_storage" in console.APP_JS
 
 
 def test_i18n_contains_terminal_controls_and_statuses():

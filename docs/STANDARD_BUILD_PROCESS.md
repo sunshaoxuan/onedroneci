@@ -14,7 +14,8 @@
 - 生成 Help 包及相关资源：默认勾选。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
 - 生成客户环境配置 `conf_prod`：默认勾选。取消勾选时前端 `web.zip` 不包含 `ohr-cicd/conf_prod`，页面隐藏 AP、DB、WEB、邮件、UPDS、駅すぱあと等环境信息，机构名称固定为 `共通`。
 - Help SVN revision：可空。填写时必须为 SVN revision 数字，并由构建终端校验；为空时使用最新 revision。该字段有值时，主控台自动启用 Help 构造。
-- nginx / Redis / MinIO 版本：默认使用宿主机模板内置版本；选择其他版本时，构造时下载到宿主机缓存并替换最终 `OneHrStandalone.zip` 中的同名中间件包。
+- nginx / Redis / MinIO 版本：nginx 与 Redis 默认使用宿主机模板内置版本；MinIO 默认不生成，勾选后使用模板内置版本或所选版本。选择其他版本时，构造时下载到宿主机缓存并替换最终 `OneHrStandalone.zip` 中的同名中间件包。
+- Azure Blob Storage：默认关闭。最终包中 `api-proxy.conf` 与 `api-proxy-debug.conf` 的 Azure 代理段根据开关逐行注释或取消注释。
 - 客户访问地址、Web 端口、HTTPS / 443 选项
 - PostgreSQL Host / Port / User / Password
 - 应用服务主机名、OHR 服务端口
@@ -381,7 +382,7 @@ STANDALONE_OUTPUT_DIR/標準発版 <主控タスクID>/
 
 `config.ini` 写入页面 PostgreSQL 与应用服务配置。JDK、nssm 等固定中间件保持模板内容，不从构建终端重复传输。
 
-nginx、Redis、MinIO 可在主控台页面选择版本：
+nginx、Redis、MinIO 可在主控台页面选择版本。MinIO 还需先勾选包含开关，未勾选时最终包不生成 `OneHrStandalone/software/minio.zip`：
 
 - `bundled`：使用模板内置 zip。
 - 其他版本：主控台从发布源下载并缓存到 `STANDALONE_MIDDLEWARE_CACHE_DIR`，然后替换 `OneHrStandalone/software/nginx.zip`、`redis.zip`、`minio.zip`。

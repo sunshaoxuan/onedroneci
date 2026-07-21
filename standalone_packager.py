@@ -1339,6 +1339,8 @@ def build_product_package(
     data_sync_custom_subdir: str = DEFAULT_DATA_SYNC_CUSTOM_SUBDIR,
     data_sync_runner_config: DataSyncSqlRunnerConfig | None = None,
     include_help_sql: bool = True,
+    include_minio: bool = False,
+    enable_azure_blob_storage: bool = False,
     middleware_versions: dict[str, str] | None = None,
     middleware_cache_dir: Path | None = None,
     logger: Any | None = None,
@@ -1419,13 +1421,25 @@ def build_product_package(
         final_zip = product_dir / "OneHrStandalone.zip"
         if logger:
             logger("standalone_zip_rebuild")
+        selected_middleware = dict(middleware_versions or {})
+        if not include_minio:
+            selected_middleware.pop("minio", None)
         middleware_overrides = prepare_middleware_overrides(
-            middleware_versions,
+            selected_middleware,
             template_zip=template_zip,
             cache_dir=middleware_cache_dir,
             logger=logger,
         )
-        _rebuild_standalone_zip(template_zip, final_zip, package_zip, web_zip, config, middleware_overrides=middleware_overrides)
+        _rebuild_standalone_zip(
+            template_zip,
+            final_zip,
+            package_zip,
+            web_zip,
+            config,
+            middleware_overrides=middleware_overrides,
+            include_minio=include_minio,
+            enable_azure_blob_storage=enable_azure_blob_storage,
+        )
         return {
             "product_dir": str(delivery_root),
             "standalone_zip": str(final_zip),
@@ -1456,6 +1470,8 @@ def build_custom_package(
     data_sync_subdir: str = DEFAULT_DATA_SYNC_SUBDIR,
     data_sync_custom_subdir: str = DEFAULT_DATA_SYNC_CUSTOM_SUBDIR,
     data_sync_runner_config: DataSyncSqlRunnerConfig | None = None,
+    include_minio: bool = False,
+    enable_azure_blob_storage: bool = False,
     middleware_versions: dict[str, str] | None = None,
     middleware_cache_dir: Path | None = None,
     logger: Any | None = None,
@@ -1483,7 +1499,10 @@ def build_custom_package(
         outputs["package_zip"] = str(target)
     if needs_web and web_zip is not None:
         target = delivery_root / "web.zip"
-        shutil.copy2(web_zip, target)
+        if selection.conf_prod or selection.runtime:
+            target.write_bytes(_rewrite_web_zip_azure_proxy(web_zip, enable_azure_blob_storage))
+        else:
+            shutil.copy2(web_zip, target)
         outputs["web_zip"] = str(target)
 
     product_dir = delivery_root / "製品"
@@ -1558,8 +1577,11 @@ def build_custom_package(
         final_zip = product_dir / "OneHrStandalone.zip"
         if logger:
             logger("standalone_zip_rebuild")
+        selected_middleware = dict(middleware_versions or {})
+        if not include_minio:
+            selected_middleware.pop("minio", None)
         middleware_overrides = prepare_middleware_overrides(
-            middleware_versions,
+            selected_middleware,
             template_zip=template_zip,
             cache_dir=middleware_cache_dir,
             logger=logger,
@@ -1571,6 +1593,8 @@ def build_custom_package(
             web_zip if needs_web else None,
             config,
             middleware_overrides=middleware_overrides,
+            include_minio=include_minio,
+            enable_azure_blob_storage=enable_azure_blob_storage,
         )
         outputs["standalone_zip"] = str(final_zip)
         outputs["size"] = final_zip.stat().st_size
@@ -1716,6 +1740,47 @@ def _validate_help_sql_matches_web_zip(web_zip: Path, sql_text: str) -> None:
         raise ValueError("Help SQL and Help docs are inconsistent; " + "; ".join(details))
 
 
+def _set_azure_proxy_enabled(text: str, enabled: bool) -> str:
+    lines = text.splitlines(keepends=True)
+    in_azure_block = False
+    found = False
+    for index, line in enumerate(lines):
+        content = line.rstrip("\r\n")
+        ending = line[len(content) :]
+        normalized = re.sub(r"^\s*#\s?", "", content)
+        if not in_azure_block and normalized.startswith("location ~ ^/azure/"):
+            in_azure_block = True
+            found = True
+        if not in_azure_block:
+            continue
+        if enabled:
+            content = re.sub(r"^(\s*)#\s?", r"\1", content)
+        elif not re.match(r"^\s*#", content):
+            content = f"# {content}"
+        lines[index] = content + ending
+        if normalized.strip() == "}":
+            in_azure_block = False
+    if not found:
+        return text
+    return "".join(lines)
+
+
+def _rewrite_web_zip_azure_proxy(web_zip: Path, enabled: bool) -> bytes:
+    try:
+        with zipfile.ZipFile(web_zip, "r") as source:
+            output = io.BytesIO()
+            with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as target:
+                for item in source.infolist():
+                    data = source.read(item)
+                    if item.filename.lower().endswith(("/api-proxy.conf", "/api-proxy-debug.conf")):
+                        text = data.decode("utf-8-sig", "replace")
+                        data = _set_azure_proxy_enabled(text, enabled).encode("utf-8")
+                    target.writestr(item, data)
+            return output.getvalue()
+    except zipfile.BadZipFile:
+        return web_zip.read_bytes()
+
+
 def _rebuild_standalone_zip(
     template_zip: Path,
     final_zip: Path,
@@ -1723,8 +1788,11 @@ def _rebuild_standalone_zip(
     web_zip: Path | None,
     config: StandaloneConfig,
     middleware_overrides: dict[str, Path] | None = None,
+    include_minio: bool = False,
+    enable_azure_blob_storage: bool = False,
 ) -> None:
     middleware_overrides = middleware_overrides or {}
+    minio_member = MIDDLEWARE_IN_STANDALONE_ZIP["minio"]
     final_zip.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(delete=False, dir=final_zip.parent, suffix=".tmp") as tmp:
         tmp_path = Path(tmp.name)
@@ -1735,6 +1803,8 @@ def _rebuild_standalone_zip(
             for item in zin.infolist():
                 if item.filename in {PACKAGE_IN_STANDALONE_ZIP, WEB_IN_STANDALONE_ZIP} or item.filename in middleware_overrides:
                     continue
+                if item.filename == minio_member and not include_minio:
+                    continue
                 if item.filename == CONFIG_IN_STANDALONE_ZIP:
                     original = zin.read(item).decode("utf-8-sig", "replace")
                     zout.writestr(item, update_config_ini(original, config).encode("utf-8"))
@@ -1743,8 +1813,10 @@ def _rebuild_standalone_zip(
             if package_zip is not None:
                 zout.write(package_zip, PACKAGE_IN_STANDALONE_ZIP)
             if web_zip is not None:
-                zout.write(web_zip, WEB_IN_STANDALONE_ZIP)
+                zout.writestr(WEB_IN_STANDALONE_ZIP, _rewrite_web_zip_azure_proxy(web_zip, enable_azure_blob_storage))
             for member, source in sorted(middleware_overrides.items()):
+                if member == minio_member and not include_minio:
+                    continue
                 if not source.is_file():
                     raise FileNotFoundError(f"missing middleware cache: {source}")
                 zout.write(source, member)

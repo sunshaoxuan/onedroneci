@@ -190,7 +190,9 @@ STANDALONE_OUTPUT_DIR/<顧客機関名> <主控タスクID>/
 - `OneHrStandalone/software/web.zip`
 - `OneHrStandalone/bin/kernel/config.ini`
 
-JDK、nssm 等固定中间件包保持模板内容。nginx、Redis、MinIO 默认使用模板内置包；主控台选择其他版本时，构造阶段从官方发布源下载到宿主机缓存，并替换 `OneHrStandalone/software/` 下对应 zip。
+JDK、nssm 等固定中间件包保持模板内容。nginx、Redis 默认使用模板内置包；主控台选择其他版本时，构造阶段从官方发布源下载到宿主机缓存，并替换 `OneHrStandalone/software/` 下对应 zip。MinIO 默认不包含，勾选后才保留模板内置包或写入所选版本。
+
+Azure Blob Storage 默认关闭。关闭时，最终 `web.zip` 内 `ohr-cicd/conf_prod/api-proxy.conf` 和 `api-proxy-debug.conf` 的 Azure `location` 块逐行注释；开启时逐行取消注释。旧任务或旧保存配置没有对应字段时按关闭处理。
 
 下载版中间件缓存 zip 生成时，会额外合并 `addons/<product>/` 下的补充文件到包内 `<product>/` 根目录。当前用于补齐 nginx 的启动/停止脚本和 Redis 的启动脚本/配置文件。缓存包中缺少这些文件或文件内容与 `addons` 不一致时，构造器会重建该版本缓存包。
 

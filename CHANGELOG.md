@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2 - 2026-07-21
+
+### Added
+
+- 標準版主控台的中间件区域新增 MinIO 包含开关和 Azure Blob Storage 启用开关，两项默认均不勾选。
+- MinIO 未启用时不生成 `OneHrStandalone/software/minio.zip`；Azure Blob Storage 未启用时注释 `api-proxy.conf` 与 `api-proxy-debug.conf` 的完整 Azure 代理段，启用时取消注释。
+
 ## 0.4.1 - 2026-07-14
 
 ### Changed

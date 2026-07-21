@@ -134,7 +134,8 @@ NHO版不执行標準版 SQL、数据连携、help 或 `OneHrStandalone.zip` 处
 - 数据连携分支：`DATA_SYNC_BRANCH`，默认 `master`
 - 数据连携子目录：`DATA_SYNC_SUBDIR`，默认 `updsv7phr/PHR`
 - `package.zip` / `web.zip`：来自构建终端
-- nginx / Redis / MinIO：默认使用 `OneHrStandalone.zip` 模板中的内置包；页面选择其他版本时，从发布源下载并缓存到 `STANDALONE_MIDDLEWARE_CACHE_DIR`，重建 `OneHrStandalone.zip` 时替换 `OneHrStandalone/software/nginx.zip`、`redis.zip`、`minio.zip`
+- nginx / Redis / MinIO：nginx 与 Redis 默认使用 `OneHrStandalone.zip` 模板中的内置包；MinIO 默认不生成，页面勾选后使用内置包或所选版本。页面选择其他版本时，从发布源下载并缓存到 `STANDALONE_MIDDLEWARE_CACHE_DIR`，重建 `OneHrStandalone.zip` 时替换对应 zip
+- Azure Blob Storage：默认关闭；重建最终包时，按页面开关统一注释或取消注释 `web.zip` 中 `api-proxy.conf` 与 `api-proxy-debug.conf` 的 Azure 代理段
 - 下载版中间件生成缓存 zip 时，会把 `MIDDLEWARE_ADDONS_DIR/<product>/` 下的文件合并到 `<product>/` 根目录。当前仓库提供 `addons/nginx/startup.bat`、`addons/nginx/stop.bat`、`addons/redis/startup.cmd`、`addons/redis/redis.windows.conf`。
 - 如果缓存 zip 中缺少 addon 文件，或包内文件内容与 `addons` 当前内容不一致，构造器会重新下载并生成该版本缓存包。
 

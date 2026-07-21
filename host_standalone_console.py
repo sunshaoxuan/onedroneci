@@ -52,7 +52,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.4.2"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -1344,6 +1344,8 @@ def run_job(job_id: str) -> None:
                     "redis": req.get("middleware_redis_version") or "bundled",
                     "minio": req.get("middleware_minio_version") or "bundled",
                 },
+                include_minio=bool(req.get("include_minio")),
+                enable_azure_blob_storage=bool(req.get("enable_azure_blob_storage")),
                 logger=custom_package_log,
             )
             selected_steps = {
@@ -1491,6 +1493,8 @@ def run_job(job_id: str) -> None:
                 "redis": req.get("middleware_redis_version") or "bundled",
                 "minio": req.get("middleware_minio_version") or "bundled",
             },
+            include_minio=bool(req.get("include_minio")),
+            enable_azure_blob_storage=bool(req.get("enable_azure_blob_storage")),
             logger=package_log,
         )
         outputs.update(partial_outputs)
@@ -1631,7 +1635,8 @@ INDEX_HTML = """<!doctype html>
             <legend data-i18n="middlewareVersions">ミドルウェアバージョン</legend>
             <label><span>Nginx</span><select name="middleware_nginx_version" id="middleware-nginx-version" data-middleware-product="nginx"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
             <label><span>Redis</span><select name="middleware_redis_version" id="middleware-redis-version" data-middleware-product="redis"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
-            <label><span>MinIO</span><select name="middleware_minio_version" id="middleware-minio-version" data-middleware-product="minio"><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
+            <label><span class="middleware-name"><input name="include_minio" id="include-minio" type="checkbox"><span>MinIO</span></span><select name="middleware_minio_version" id="middleware-minio-version" data-middleware-product="minio" disabled><option value="bundled" data-i18n="middlewareBundled">同梱版</option></select></label>
+            <label class="check-row"><input name="enable_azure_blob_storage" type="checkbox"><span data-i18n="enableAzureBlobStorage">Azure Blob Storage を有効化</span></label>
             <p class="section-note section-wide" id="middleware-version-note" data-i18n="middlewareVersionNote">同梱版以外は公式配布元から取得し、宿主機キャッシュ経由で差し替えます。</p>
           </fieldset>
           <fieldset class="form-section env-config" data-custom-components="conf_prod,runtime">
@@ -1822,6 +1827,7 @@ const I18N = {
     buildConfProd: '顧客環境設定 conf_prod を生成',
     middlewareVersions: 'ミドルウェアバージョン',
     middlewareBundled: '同梱版',
+    enableAzureBlobStorage: 'Azure Blob Storage を有効化',
     middlewareVersionNote: '同梱版以外は公式配布元から取得し、宿主機キャッシュ経由で差し替えます。',
     middlewareLoadFailed: '候補を取得できません。同梱版を使用します。',
     customerHost: '顧客アクセスアドレス',
@@ -2016,6 +2022,7 @@ const I18N = {
     buildConfProd: '生成客户环境配置 conf_prod',
     middlewareVersions: '中间件版本',
     middlewareBundled: '内置版本',
+    enableAzureBlobStorage: '启用 Azure Blob Storage',
     middlewareVersionNote: '非内置版本会从官方发布源取得，并通过宿主机缓存替换。',
     middlewareLoadFailed: '候选取得失败，将使用内置版本。',
     customerHost: '客户访问地址',
@@ -2210,6 +2217,7 @@ const I18N = {
     buildConfProd: 'Generate customer environment conf_prod',
     middlewareVersions: 'Middleware versions',
     middlewareBundled: 'Bundled version',
+    enableAzureBlobStorage: 'Enable Azure Blob Storage',
     middlewareVersionNote: 'Non-bundled versions are downloaded from official sources and replaced from host cache.',
     middlewareLoadFailed: 'Could not load candidates; bundled versions will be used.',
     customerHost: 'Customer access address',
@@ -3103,6 +3111,11 @@ function setFormLocked(locked) {
   if (helpRevisionInput && buildHelpInput && !isCustomPackageMode()) {
     helpRevisionInput.disabled = helpRevisionInput.disabled || !buildHelpInput.checked;
   }
+  const includeMinioInput = document.querySelector('input[name="include_minio"]');
+  const minioVersionSelect = document.querySelector('select[name="middleware_minio_version"]');
+  if (includeMinioInput && minioVersionSelect) {
+    minioVersionSelect.disabled = minioVersionSelect.disabled || !includeMinioInput.checked;
+  }
   document.getElementById('stopJob').disabled = !(mode === 'active' && selected && locked);
   enforcePublishMenuGroups();
 }
@@ -3342,6 +3355,10 @@ if (buildConfProdInput) {
     setFormLocked(false);
   });
 }
+const includeMinioInput = document.querySelector('input[name="include_minio"]');
+if (includeMinioInput) {
+  includeMinioInput.addEventListener('change', () => setFormLocked(false));
+}
 document.querySelectorAll('.custom-component-selector input[type="checkbox"]').forEach(input => {
   input.addEventListener('change', () => {
     applyVariantVisibility();
@@ -3502,6 +3519,8 @@ document.getElementById('form').addEventListener('submit', async (event) => {
     'custom_include_import_plan', 'custom_include_runtime'
   ].forEach(name => { payload[name] = customComponentChecked(name); });
   payload.conf_enable_https = Boolean(event.target.elements.conf_enable_https && event.target.elements.conf_enable_https.checked);
+  payload.include_minio = Boolean(event.target.elements.include_minio && !event.target.elements.include_minio.disabled && event.target.elements.include_minio.checked);
+  payload.enable_azure_blob_storage = Boolean(event.target.elements.enable_azure_blob_storage && !event.target.elements.enable_azure_blob_storage.disabled && event.target.elements.enable_azure_blob_storage.checked);
   payload.build_help = buildHelp;
   payload.build_conf_prod = buildConfProd;
   if (standardRelease) payload.organisation_name = '共通';
@@ -4175,6 +4194,8 @@ input:disabled, select:disabled { background: #f5f5f5; color: #8a8a8a; }
   border-radius: 999px;
 }
 .form-section .section-wide { grid-column: 1 / -1; }
+.middleware-name { display: inline-flex; align-items: center; gap: 7px; }
+.middleware-name input { width: auto; }
 .section-note {
   margin: 4px 0 0;
   padding: 8px 10px;
