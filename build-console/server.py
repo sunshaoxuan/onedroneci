@@ -488,6 +488,8 @@ def create_build(payload: dict[str, Any]) -> dict[str, Any]:
     conf_server_host = str(payload.get("conf_server_host") or "").strip()
     conf_web_port = parse_int_field(payload, "conf_web_port", 80)
     conf_enable_https = parse_bool_field(payload, "conf_enable_https", False)
+    if conf_enable_https:
+        conf_web_port = 80
     conf_worker_processes = parse_int_field(payload, "conf_worker_processes", 1)
     conf_worker_connections = parse_int_field(payload, "conf_worker_connections", 1024)
     note = str(payload.get("note") or "").strip()
@@ -1579,8 +1581,9 @@ cat > "config.$OHR_CICD_ENV.js" <<'JS'
 const getSharedConfig = require('./sharedConfig');
 
 const ENV = process.env.OHR_CICD_ENV || 'direct_prod';
-const PORT_PORTAL = Number(process.env.CONF_WEB_PORT || 80);
 const ENABLE_HTTPS = process.env.CONF_ENABLE_HTTPS === 'true';
+const REQUESTED_HTTP_PORT = Number(process.env.CONF_WEB_PORT || 80);
+const PORT_PORTAL = ENABLE_HTTPS ? 80 : REQUESTED_HTTP_PORT;
 const HTTPS_PORT = Number(process.env.CONF_HTTPS_PORT || 443);
 const HOST_NAME = `${ENABLE_HTTPS ? 'https' : 'http'}://${process.env.CONF_SERVER_HOST}`;
 const HOST_PORTAL = ENABLE_HTTPS
@@ -1629,6 +1632,10 @@ if [ "${CONF_ENABLE_HTTPS:-false}" = "true" ]; then
   fi
   if ! grep -q "listen[[:space:]]*443[[:space:]]*ssl" "$conf_out/nginx.conf"; then
     echo "HTTPS が有効ですが、ohr-cicd が 443 ssl 用 nginx.conf を生成していません"
+    exit 6
+  fi
+  if ! grep -q "listen[[:space:]]*80[[:space:]]*;" "$conf_out/nginx.conf" || ! grep -q 'return[[:space:]]*301[[:space:]]*https://\$host\$request_uri;' "$conf_out/nginx.conf"; then
+    echo "HTTPS が有効ですが、HTTP 80 から HTTPS 443 へのリダイレクトが生成されていません"
     exit 6
   fi
   python3 - "$conf_out/nginx.conf" "$conf_out/common-settings.conf" "$CONF_SERVER_HOST" <<'PY'
@@ -1926,7 +1933,7 @@ def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
         "OHR_CICD_RUSTFS_SERVER": OHR_CICD_RUSTFS_SERVER,
         "OHR_CICD_RUSTFS_HOST": OHR_CICD_RUSTFS_HOST,
         "CONF_SERVER_HOST": req.get("conf_server_host") or "",
-        "CONF_WEB_PORT": str(req.get("conf_web_port") or 80),
+        "CONF_WEB_PORT": "80" if req.get("conf_enable_https") else str(req.get("conf_web_port") or 80),
         "CONF_ENABLE_HTTPS": "true" if req.get("conf_enable_https") else "false",
         "CONF_HTTPS_PORT": "443",
         "CONF_WORKER_PROCESSES": str(req.get("conf_worker_processes") or 1),
@@ -3120,8 +3127,8 @@ document.getElementById('build-form').addEventListener('submit', async (event) =
   const ws = getFrontendWorkspaceBranch();
   const helpDocsRevision = (form.get('help_docs_svn_revision') || '').trim();
   const confServerHost = (form.get('conf_server_host') || '').trim();
-  const confWebPort = Number(form.get('conf_web_port') || 80);
   const confEnableHttps = document.getElementById('input-conf-enable-https').checked;
+  const confWebPort = confEnableHttps ? 80 : Number(form.get('conf_web_port') || 80);
   const confWorkerProcesses = Number(form.get('conf_worker_processes') || 1);
   const confWorkerConnections = Number(form.get('conf_worker_connections') || 1024);
   if (!buildBackend && !buildFrontend) {
@@ -3249,6 +3256,15 @@ function syncBuildTargetInputs() {
   if (helpToggle) helpToggle.disabled = isNho || !frontendToggle.checked;
   helpDocsInput.disabled = isNho || !frontendToggle.checked || (helpToggle && !helpToggle.checked);
   confInputs.forEach(input => { input.disabled = isNho || !frontendToggle.checked; });
+  syncHttpsWebPort();
+}
+
+function syncHttpsWebPort() {
+  const httpsInput = document.getElementById('input-conf-enable-https');
+  const portInput = document.getElementById('input-conf-web-port');
+  if (!httpsInput || !portInput) return;
+  if (httpsInput.checked) portInput.value = '80';
+  portInput.readOnly = httpsInput.checked;
 }
 
 (function wireBuildTargetToggles() {
@@ -3262,6 +3278,8 @@ function syncBuildTargetInputs() {
   frontendToggle.addEventListener('change', syncIfEditable);
   const helpToggle = document.getElementById('toggle-help');
   if (helpToggle) helpToggle.addEventListener('change', syncIfEditable);
+  const httpsToggle = document.getElementById('input-conf-enable-https');
+  if (httpsToggle) httpsToggle.addEventListener('change', syncHttpsWebPort);
   syncBuildTargetInputs();
 })();
 

@@ -45,6 +45,8 @@
 - 来源为 `ohr-cicd`。
 - Direct 构建中临时写入本次环境配置。
 - 执行 `env=<OHR_CICD_ENV> node ./src/generateConf.js`。
+- HTTPS / 443 启用时，将生成器的 `PORT_PORTAL` 固定为 80。生成的第一个 `server` 块保留 `common-settings.conf`、`server_name` 和 301 跳转并监听 80；第二个 `server` 块保留全部 TLS、代理、静态资源和 location 配置并监听 `443 ssl`。
+- HTTPS 后处理只替换交付证书文件名，并校验最终 `nginx.conf` 同时包含 HTTP 80 跳转和 HTTPS 443 SSL 监听。
 - 将 `conf_<OHR_CICD_ENV>` 写入 `web.zip/ohr-cicd/conf_prod/`。
 - 主控台提供“生成客户环境配置 `conf_prod`”选项，標準版和 NHO版都适用。关闭时不向 `web.zip` 写入 `ohr-cicd/conf_prod/`，环境信息字段隐藏，机构名称固定为 `共通`。
 

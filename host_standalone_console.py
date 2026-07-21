@@ -52,7 +52,7 @@ from standalone_packager import (
 )
 
 
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.4.3"
 HOST = os.environ.get("HOST_STANDALONE_CONSOLE_HOST", "0.0.0.0")
 PORT = int(os.environ.get("HOST_STANDALONE_CONSOLE_PORT", "8091"))
 REMOTE_BUILD_CONSOLE_URL = os.environ.get("REMOTE_BUILD_CONSOLE_URL", "http://192.168.250.50:8090")
@@ -513,6 +513,10 @@ def validate_job_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
     elif custom_package:
         build_conf_prod = selection.conf_prod
     payload["build_conf_prod"] = build_conf_prod
+    conf_enable_https = request_bool(payload, "conf_enable_https", False)
+    payload["conf_enable_https"] = conf_enable_https
+    if conf_enable_https:
+        payload["conf_web_port"] = 80
     if standard_release:
         payload["organisation_name"] = "共通"
 
@@ -1241,7 +1245,7 @@ def run_job(job_id: str) -> None:
                 "frontend_release_branch": req.get("frontend_release_branch") or "",
                 "help_docs_svn_revision": help_docs_svn_revision,
                 "conf_server_host": req.get("conf_server_host") or "common.local",
-                "conf_web_port": int(req.get("conf_web_port") or 80),
+                "conf_web_port": 80 if req.get("conf_enable_https") else int(req.get("conf_web_port") or 80),
                 "conf_enable_https": bool(req.get("conf_enable_https")),
                 "conf_worker_processes": int(req.get("conf_worker_processes") or 1),
                 "conf_worker_connections": int(req.get("conf_worker_connections") or 1024),
@@ -3111,6 +3115,7 @@ function setFormLocked(locked) {
   if (helpRevisionInput && buildHelpInput && !isCustomPackageMode()) {
     helpRevisionInput.disabled = helpRevisionInput.disabled || !buildHelpInput.checked;
   }
+  syncHttpsWebPort();
   const includeMinioInput = document.querySelector('input[name="include_minio"]');
   const minioVersionSelect = document.querySelector('select[name="middleware_minio_version"]');
   if (includeMinioInput && minioVersionSelect) {
@@ -3352,6 +3357,20 @@ const buildConfProdInput = document.querySelector('input[name="build_conf_prod"]
 if (buildConfProdInput) {
   buildConfProdInput.addEventListener('change', () => {
     applyEnvironmentVisibility();
+    setFormLocked(false);
+  });
+}
+function syncHttpsWebPort() {
+  const httpsInput = document.querySelector('input[name="conf_enable_https"]');
+  const portInput = document.querySelector('input[name="conf_web_port"]');
+  if (!httpsInput || !portInput) return;
+  if (httpsInput.checked) portInput.value = '80';
+  portInput.readOnly = httpsInput.checked;
+}
+const confEnableHttpsInput = document.querySelector('input[name="conf_enable_https"]');
+if (confEnableHttpsInput) {
+  confEnableHttpsInput.addEventListener('change', () => {
+    syncHttpsWebPort();
     setFormLocked(false);
   });
 }

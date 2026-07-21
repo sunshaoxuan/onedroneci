@@ -21,7 +21,7 @@ def test_default_host_console_bind_is_fixed():
 
 
 def test_host_console_displays_app_version():
-    assert console.APP_VERSION == "0.4.2"
+    assert console.APP_VERSION == "0.4.3"
     assert "v__APP_VERSION__" in console.INDEX_HTML
     assert ".app-version" in console.STYLE_CSS
 
@@ -263,6 +263,7 @@ def test_console_uses_commercial_delivery_package_naming():
     assert "conf_enable_https" in console.INDEX_HTML
     assert "enableHttps" in console.APP_JS
     assert "payload.conf_enable_https" in console.APP_JS
+    assert "syncHttpsWebPort" in console.APP_JS
     assert "el.type === 'checkbox'" in console.APP_JS
     assert "firstDayOfCurrentMonth" in console.APP_JS
 
@@ -343,6 +344,25 @@ def test_material_number_is_required_for_standard_and_nho_jobs():
         )
         assert error is None
         assert payload["product_variant"] == product_variant
+
+
+def test_https_job_normalizes_http_redirect_port_to_80():
+    payload, error = console.validate_job_payload(
+        {
+            "product_variant": "standard",
+            "material_number": "20260721",
+            "backend_branch": "release_back",
+            "frontend_release_branch": "release_front",
+            "conf_enable_https": True,
+            "conf_web_port": 443,
+            "conf_server_host": "customer.local",
+            "postgresql_host": "db.local",
+        }
+    )
+
+    assert error is None
+    assert payload["conf_enable_https"] is True
+    assert payload["conf_web_port"] == 80
 
 
 def test_standard_release_requires_material_number_backend_and_frontend_branches():
@@ -808,6 +828,7 @@ def test_frontend_only_job_builds_only_web_artifact(tmp_path, monkeypatch):
     assert payloads[0]["build_backend"] is False
     assert payloads[0]["build_frontend"] is True
     assert payloads[0]["conf_enable_https"] is True
+    assert payloads[0]["conf_web_port"] == 80
     assert payloads[0]["help_docs_svn_revision"] == "12345"
     assert payloads[0]["build_help"] is True
 

@@ -389,7 +389,7 @@ def test_create_build_stores_frontend_placeholders(tmp_path, monkeypatch):
     assert meta["request"]["help_docs_branch"] == "release_ci"
     assert meta["request"]["help_docs_svn_revision"] == ""
     assert meta["request"]["conf_server_host"] == "192.168.70.136"
-    assert meta["request"]["conf_web_port"] == 40443
+    assert meta["request"]["conf_web_port"] == 80
     assert meta["request"]["conf_enable_https"] is True
     assert meta["request"]["conf_worker_processes"] == 1
     assert meta["request"]["conf_worker_connections"] == 1024
@@ -820,6 +820,7 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "CONF_SERVER_HOST" in script
     assert "CONF_WEB_PORT" in script
     assert "CONF_ENABLE_HTTPS" in script
+    assert "const PORT_PORTAL = ENABLE_HTTPS ? 80 : REQUESTED_HTTP_PORT;" in script
     assert "ENABLE_HTTPS" in script
     assert "PORT_HTTPS: HTTPS_PORT" in script
     assert "SSL_CERTIFICATE: 'server.crt'" in script
@@ -828,6 +829,8 @@ def test_direct_frontend_build_uses_bundle_zip_only():
     assert "ssl_certificate server.crt" in script
     assert "ssl_certificate_key server.key" in script
     assert "listen[[:space:]]*443[[:space:]]*ssl" in script
+    assert "listen[[:space:]]*80[[:space:]]*;" in script
+    assert "HTTP 80 から HTTPS 443" in script
     assert "const HOST_PORTAL = ENABLE_HTTPS" in script
     assert "CONF_WEB_DIR: 'ohr-cicd/web_prod'" in script
     assert "CONF_CONF_DIR: 'conf_prod'" in script
@@ -908,7 +911,7 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
             "help_docs_svn_revision": "12345",
             "build_help": False,
             "conf_server_host": "customer.local",
-            "conf_web_port": 80,
+            "conf_web_port": 443,
             "conf_enable_https": True,
             "conf_worker_processes": 1,
             "conf_worker_connections": 1024,
@@ -925,6 +928,7 @@ def test_direct_frontend_env_includes_ohr_cicd_config(monkeypatch):
     assert env["BUILD_HELP"] == "false"
     assert env["BUILD_CONF_PROD"] == "true"
     assert env["CONF_SERVER_HOST"] == "customer.local"
+    assert env["CONF_WEB_PORT"] == "80"
     assert env["CONF_ENABLE_HTTPS"] == "true"
 
 

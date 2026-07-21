@@ -134,7 +134,7 @@
 3. 执行 `env=<OHR_CICD_ENV> node ./src/generateConf.js`。
 4. 将生成的 `conf_<OHR_CICD_ENV>` 写入最终 `web.zip/ohr-cicd/conf_prod/`。
 
-当前构造支持 HTTP 配置，并可按页面选项生成 HTTPS / 443 相关 nginx 配置信息。证书实体仍可在安装阶段准备。
+当前构造支持 HTTP 配置，并可按页面选项生成 HTTPS / 443 相关 nginx 配置信息。HTTPS 启用时，HTTP 监听端口固定为 80，生成器保留独立的 HTTP 跳转 `server` 块和完整 HTTPS 业务 `server` 块，HTTP 请求通过 301 跳转到 HTTPS 443。后处理不会删除两个块中的 include、TLS、代理、静态资源或 location 配置。证书实体仍可在安装阶段准备。
 
 ## 6. Help 生成
 
