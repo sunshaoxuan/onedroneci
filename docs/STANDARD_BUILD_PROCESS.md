@@ -382,6 +382,8 @@ STANDALONE_OUTPUT_DIR/標準発版 <主控タスクID>/
 
 `config.ini` 写入页面 PostgreSQL 与应用服务配置。JDK、nssm 等固定中间件保持模板内容，不从构建终端重复传输。
 
+最终包中的 `OneHrStandalone/bin/standalone/important/allow.web.tcp.inbound.ps1` 保留原文件结构，并将 `New-NetFirewallRule` 创建规则语句默认注释。安装包不会默认创建 3198/TCP 入站放行规则；确需开放时，由安装负责人确认环境安全要求后手动取消注释并执行。
+
 nginx、Redis、MinIO 可在主控台页面选择版本。MinIO 还需先勾选包含开关，未勾选时最终包不生成 `OneHrStandalone/software/minio.zip`：
 
 - `bundled`：使用模板内置 zip。

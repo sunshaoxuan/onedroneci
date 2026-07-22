@@ -38,6 +38,9 @@ HELP_SQL_RESET_PREFIX = "DELETE FROM ohr_help;\n"
 HELP_DOC_PATH_RE = re.compile(r"docs/[0-9a-fA-F-]{36}/[^'\"\s]*")
 HELP_DOC_UUID_RE = re.compile(r"docs/([0-9a-fA-F-]{36})/")
 CONFIG_IN_STANDALONE_ZIP = "OneHrStandalone/bin/kernel/config.ini"
+FIREWALL_ALLOW_SCRIPT_IN_STANDALONE_ZIP = (
+    "OneHrStandalone/bin/standalone/important/allow.web.tcp.inbound.ps1"
+)
 PACKAGE_IN_STANDALONE_ZIP = "OneHrStandalone/software/package.zip"
 WEB_IN_STANDALONE_ZIP = "OneHrStandalone/software/web.zip"
 MIDDLEWARE_IN_STANDALONE_ZIP = {
@@ -1781,6 +1784,14 @@ def _rewrite_web_zip_azure_proxy(web_zip: Path, enabled: bool) -> bytes:
         return web_zip.read_bytes()
 
 
+def _comment_firewall_rule_creation(text: str) -> str:
+    return re.sub(
+        r"(?im)^(?P<indent>\s*)(?P<command>New-NetFirewallRule\b.*)$",
+        r"\g<indent># \g<command>",
+        text,
+    )
+
+
 def _rebuild_standalone_zip(
     template_zip: Path,
     final_zip: Path,
@@ -1808,6 +1819,10 @@ def _rebuild_standalone_zip(
                 if item.filename == CONFIG_IN_STANDALONE_ZIP:
                     original = zin.read(item).decode("utf-8-sig", "replace")
                     zout.writestr(item, update_config_ini(original, config).encode("utf-8"))
+                    continue
+                if item.filename == FIREWALL_ALLOW_SCRIPT_IN_STANDALONE_ZIP:
+                    original = zin.read(item).decode("utf-8-sig", "replace")
+                    zout.writestr(item, _comment_firewall_rule_creation(original).encode("utf-8"))
                     continue
                 zout.writestr(item, zin.read(item))
             if package_zip is not None:

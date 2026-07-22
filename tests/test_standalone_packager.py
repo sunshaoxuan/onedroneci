@@ -7,6 +7,7 @@ from pathlib import Path
 
 from standalone_packager import (
     CONFIG_IN_STANDALONE_ZIP,
+    FIREWALL_ALLOW_SCRIPT_IN_STANDALONE_ZIP,
     MIDDLEWARE_IN_STANDALONE_ZIP,
     PACKAGE_IN_STANDALONE_ZIP,
     WEB_IN_STANDALONE_ZIP,
@@ -76,6 +77,10 @@ def make_template(path: Path) -> None:
         z.write(redis, MIDDLEWARE_IN_STANDALONE_ZIP["redis"])
         z.write(minio, MIDDLEWARE_IN_STANDALONE_ZIP["minio"])
         z.writestr("OneHrStandalone/bin/kernel/start.ps1", "start")
+        z.writestr(
+            FIREWALL_ALLOW_SCRIPT_IN_STANDALONE_ZIP,
+            'New-NetFirewallRule -DisplayName "One Hr Suite (Gateway TCP Inbound)" -Direction Inbound -LocalPort 3198 -Protocol TCP -Action Allow\r\n',
+        )
 
 
 def make_backend_package(path: Path) -> None:
@@ -737,6 +742,10 @@ def test_rebuild_standalone_zip_disables_optional_storage_by_default(tmp_path):
 
     with zipfile.ZipFile(final_zip) as outer:
         assert MIDDLEWARE_IN_STANDALONE_ZIP["minio"] not in outer.namelist()
+        assert outer.read(FIREWALL_ALLOW_SCRIPT_IN_STANDALONE_ZIP).decode("utf-8") == (
+            '# New-NetFirewallRule -DisplayName "One Hr Suite (Gateway TCP Inbound)" '
+            "-Direction Inbound -LocalPort 3198 -Protocol TCP -Action Allow\r\n"
+        )
         rewritten_web = outer.read(WEB_IN_STANDALONE_ZIP)
     with zipfile.ZipFile(io.BytesIO(rewritten_web)) as web:
         for name in ("ohr-cicd/conf_prod/api-proxy.conf", "ohr-cicd/conf_prod/api-proxy-debug.conf"):
