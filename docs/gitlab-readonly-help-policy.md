@@ -1,5 +1,27 @@
 # GitLab読取専用とHelp SQL生成物ポリシー
 
+## 毎回の上流同期とローカル適合
+- Help構築を選択した各実行では、Cache判定より先に選択Branchの最新Commitを明示RefspecでFetchする。取得失敗時は停止し、保存済みZIPへ退避しない。
+- Gitの差分転送を利用しながら、取得したCommitの追跡ファイル全体をCheckoutする。追加・変更・削除を反映し、Sparse Checkoutは拒否する。「最新」はFetchが取得した選択Branchの先端を意味する。
+- 構築ログに前回Commit、今回Commit、変更パス、SVN Revision、ローカルポリシーSHA256、Cache Keyを記録する。
+- ローカル適合は自有ツールのHELP_SQL_POLICYで保持する。Helpの上流Checkout内で手編集された追跡ファイル又は新規未追跡ファイルを検出した場合、上書きせず停止する。必要な編集は担当者が自有ツールの構築ポリシーへ移して検証する。自動Stash・自動Mergeは行わない。
+- node_modules、.ci-cache、.cacheは生成Cacheとして扱う。未追跡の任意ファイルを削除するgit cleanは使用しない。
+- SVN文書もCache判定前に同期する。明示されたSVN Revisionは利用者指定を維持する。Git Commit・SVN Revision・依存定義・ローカルポリシーが一致する場合だけ既存ZIPを再利用する。
+
+## 同期強化の受入記録（2026-09-20）
+| 要求 | 成果物・証拠 |
+| --- | --- |
+| 最新の完全な上流取得 | HELP_SOURCE_SYNC。実Gitの2版で追加・変更・削除と再実行を検証 |
+| ローカル適合の保持 | 同期後にHELP_SQL_POLICYを適用する試験合格。追跡編集・新規ファイルは保全して停止 |
+| 古いCacheへの退避禁止 | 遠隔取得失敗の異常終了と、Git/SVN同期がCache判定より前であることを検証 |
+| 関連回帰 | test_help_sql_policy.py / test_build_console.py、47件合格 |
+| 構築VM | 実上流の全追跡パス一致・反復同期・新旧生成器の単一SQL ZIP試験合格 |
+| 配置 | server.py SHA256: 9f193722e7f15a0e3d2e5b4cdcb0120ecc60fe804014b0306aa1d2e24f4be619。systemd active、8090の/api/builds応答確認 |
+| GitLab読取専用 | 遠隔先端50624a1adbfbec490c4e15d27b3dbe3a56428d3fを確認。書込みなし |
+
+この同期強化の配置前バックアップは /opt/ohr-build-console/validation/help-upstream-sync-20260920/server.before.py。顧客本番の全体構築は利用者が実行するため今回未実施。検証は隔離fixtureと構築器稼働確認の範囲である。
+
+
 ## 適用範囲
 GitLabの製品開発リポジトリは管理者権限にかかわらず読取専用とする。Commit、Push、MR作成・Merge、Branch・Tag変更は禁止する。取得・参照を行い、必要な構築適合は自有ツール及び生成物に保持する。上流取消しは開発担当者が行う。
 

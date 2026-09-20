@@ -1,5 +1,6 @@
 """Helpの上流コードを変更しない生成物ポリシーを検証する。"""
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -71,3 +72,58 @@ def test_integration_uses_policy_hash_and_never_commits_or_pushes(policy):
     assert help_step.index('normalize_help_sql prepare') < help_step.index('npm run build')
     assert help_step.index('npm run build') < help_step.index('normalize_help_sql normalize') < help_step.index('npm run bundle')
     assert 'git push' not in help_step and 'git commit' not in help_step
+    assert help_step.index('fetch --no-tags') < help_step.index('if [ -f "$HELP_CACHED_ZIP" ]')
+    assert help_step.index('svn update') < help_step.index('if [ -f "$HELP_CACHED_ZIP" ]')
+
+
+def test_full_upstream_sync_preserves_policy_and_fails_closed(policy, tmp_path):
+    module, _ = policy
+    upstream = tmp_path / 'upstream'
+    checkout = tmp_path / 'checkout'
+    def git(*args):
+        return subprocess.run(['git', '-C', str(upstream), *args], check=True, capture_output=True)
+    upstream.mkdir()
+    git('init', '-b', 'release_ci')
+    git('config', 'user.name', 'fixture')
+    git('config', 'user.email', 'fixture@example.invalid')
+    (upstream / 'changed.txt').write_text('v1')
+    (upstream / 'deleted.txt').write_text('old')
+    git('add', '.')
+    git('commit', '-m', 'fixture one')
+    env = dict(os.environ, HELP_DIR=checkout.as_posix(), HELP_DOCS_GIT_URL=upstream.as_posix(), HELP_DOCS_BRANCH='release_ci')
+    def sync():
+        return subprocess.run([os.environ.get('BASH_EXE', 'bash'), '-c', module.HELP_SOURCE_SYNC], env=env, capture_output=True)
+    first = sync()
+    assert first.returncode == 0, first.stderr
+    (checkout / '.ci-cache').mkdir()
+    (checkout / '.ci-cache/old.zip').write_bytes(b'cached')
+    (upstream / 'changed.txt').write_text('v2')
+    (upstream / 'deleted.txt').unlink()
+    (upstream / 'added.txt').write_text('new')
+    git('add', '-A')
+    git('commit', '-m', 'fixture two')
+    second = sync()
+    assert second.returncode == 0, second.stderr
+    assert (checkout / 'changed.txt').read_text() == 'v2'
+    assert (checkout / 'added.txt').read_text() == 'new'
+    assert not (checkout / 'deleted.txt').exists()
+    assert b'changed.txt' in second.stdout and b'deleted.txt' in second.stdout
+    assert (checkout / '.ci-cache/old.zip').read_bytes() == b'cached'
+    assert sync().returncode == 0
+    # 遠隔更新後も同じローカル生成物ポリシーを適用できる。
+    (checkout / 'docs').mkdir()
+    (checkout / 'docs/insert_ohr_help_a.sql').write_text('SELECT 1;')
+    normalized = subprocess.run([sys.executable, '-c', module.HELP_SQL_POLICY, str(checkout), 'normalize'], capture_output=True)
+    assert normalized.returncode == 0, normalized.stderr
+    (checkout / 'docs/insert_ohr_help.sql').unlink()
+    (checkout / 'changed.txt').write_text('local edit')
+    assert sync().returncode != 0
+    assert (checkout / 'changed.txt').read_text() == 'local edit'
+    (checkout / 'changed.txt').write_text('v2')
+    (checkout / 'local.txt').write_text('local addition')
+    assert sync().returncode != 0
+    assert (checkout / 'local.txt').read_text() == 'local addition'
+    (checkout / 'local.txt').unlink()
+    env['HELP_DOCS_GIT_URL'] = (tmp_path / 'missing-remote').as_posix()
+    assert sync().returncode != 0
+    assert (checkout / 'changed.txt').read_text() == 'v2'

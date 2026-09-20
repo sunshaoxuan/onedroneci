@@ -1530,6 +1530,43 @@ ls -lh "$OUT_WEB_ZIP"
 """
 
 
+# 毎回最新の完全な上流を取得し、管理外のローカル編集は保全して停止する。
+HELP_SOURCE_SYNC = r'''
+set -e
+mkdir -p "$(dirname "$HELP_DIR")"
+if [ -d "$HELP_DIR/.git" ]; then
+  if [ "$(git -C "$HELP_DIR" config --get core.sparseCheckout || true)" = "true" ]; then
+    echo "Help: sparse checkout is not supported" >&2
+    exit 4
+  fi
+  local_changes="$(git -C "$HELP_DIR" status --porcelain --untracked-files=all -- . ':!node_modules' ':!.ci-cache' ':!.cache')"
+  if [ -n "$local_changes" ]; then
+    echo "Help: local edits preserved; move adaptations into the managed build policy before retrying." >&2
+    printf '%s\n' "$local_changes" >&2
+    exit 4
+  fi
+  previous_rev="$(git -C "$HELP_DIR" rev-parse HEAD)"
+  git -C "$HELP_DIR" remote set-url origin "$HELP_DOCS_GIT_URL"
+else
+  if [ -e "$HELP_DIR" ]; then
+    echo "Help: existing non-repository directory preserved" >&2
+    exit 4
+  fi
+  git clone --no-checkout -- "$HELP_DOCS_GIT_URL" "$HELP_DIR"
+  previous_rev=""
+fi
+git -C "$HELP_DIR" config remote.origin.pushurl 'disabled://gitlab-read-only'
+git -C "$HELP_DIR" check-ref-format "refs/heads/$HELP_DOCS_BRANCH"
+git -C "$HELP_DIR" fetch --no-tags origin "+refs/heads/$HELP_DOCS_BRANCH:refs/remotes/origin/$HELP_DOCS_BRANCH"
+latest_rev="$(git -C "$HELP_DIR" rev-parse --verify "refs/remotes/origin/$HELP_DOCS_BRANCH^{commit}")"
+git -C "$HELP_DIR" checkout --detach --force "$latest_rev"
+test "$(git -C "$HELP_DIR" rev-parse HEAD)" = "$latest_rev"
+echo "[help source] branch=$HELP_DOCS_BRANCH previous=${previous_rev:-none} current=$latest_rev"
+if [ -n "$previous_rev" ] && [ "$previous_rev" != "$latest_rev" ]; then
+  git -C "$HELP_DIR" diff --name-status "$previous_rev" "$latest_rev"
+fi
+'''
+
 # 上流のソースを変更せず、生成済みSQLだけを単一の配布ファイルへ統合する。
 HELP_SQL_POLICY = r'''
 import re
@@ -1707,19 +1744,7 @@ fi
 help_zip=""
 if [ "${BUILD_HELP:-true}" = "true" ]; then
 HELP_DIR="$HELP_DOCS_WORKDIR"
-mkdir -p "$(dirname "$HELP_DIR")"
-if [ -d "$HELP_DIR/.git" ]; then
-  echo "[sync ohr-help-docs] fetch $HELP_DOCS_BRANCH"
-  git -C "$HELP_DIR" remote set-url origin "$HELP_DOCS_GIT_URL"
-  git -C "$HELP_DIR" fetch origin "$HELP_DOCS_BRANCH" --prune
-  git -C "$HELP_DIR" checkout -B "$HELP_DOCS_BRANCH" "origin/$HELP_DOCS_BRANCH"
-  git -C "$HELP_DIR" reset --hard "origin/$HELP_DOCS_BRANCH"
-  git -C "$HELP_DIR" clean -fd -e node_modules -e .ci-cache -e .cache
-else
-  rm -rf "$HELP_DIR"
-  echo "[sync ohr-help-docs] clone $HELP_DOCS_BRANCH"
-  git clone -b "$HELP_DOCS_BRANCH" "$HELP_DOCS_GIT_URL" "$HELP_DIR"
-fi
+__HELP_SOURCE_SYNC__
 cd "$HELP_DIR"
 git config remote.origin.pushurl 'disabled://gitlab-read-only'
 normalize_help_sql() {
@@ -1772,6 +1797,7 @@ HELP_CACHE_DIR="$HELP_DIR/.ci-cache/help"
 HELP_CACHE_KEY="$(printf '%s\n%s\n%s\n%s\n%s\n' "$HELP_DOCS_BRANCH" "$HELP_GIT_REV" "$HELP_SVN_REV" "$HELP_LOCK_HASH" "$HELP_SQL_POLICY_HASH" | sha256sum | awk '{print $1}')"
 HELP_CACHED_ZIP="$HELP_CACHE_DIR/$HELP_CACHE_KEY.zip"
 mkdir -p "$HELP_CACHE_DIR"
+echo "[help inputs] git=$HELP_GIT_REV svn=$HELP_SVN_REV policy=$HELP_SQL_POLICY_HASH cache=$HELP_CACHE_KEY"
 if [ -f "$HELP_CACHED_ZIP" ]; then
   echo "[cache help] reuse help bundle git=$HELP_GIT_REV svn=$HELP_SVN_REV"
   help_zip="$HELP_CACHED_ZIP"
@@ -1952,7 +1978,9 @@ ls -lh "$OUT_WEB_ZIP"
 
 DIRECT_FRONTEND_BUILD_SCRIPT = DIRECT_FRONTEND_BUILD_SCRIPT.replace(
     "__HELP_SQL_POLICY__", HELP_SQL_POLICY
-).replace("__HELP_SQL_POLICY_HASH__", hashlib.sha256(HELP_SQL_POLICY.encode("utf-8")).hexdigest())
+).replace("__HELP_SQL_POLICY_HASH__", hashlib.sha256(HELP_SQL_POLICY.encode("utf-8")).hexdigest()).replace(
+    "__HELP_SOURCE_SYNC__", HELP_SOURCE_SYNC
+)
 
 
 def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:
