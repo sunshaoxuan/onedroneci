@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import os
@@ -1529,6 +1530,51 @@ ls -lh "$OUT_WEB_ZIP"
 """
 
 
+# 上流のソースを変更せず、生成済みSQLだけを単一の配布ファイルへ統合する。
+HELP_SQL_POLICY = r'''
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+mode = sys.argv[2]
+pattern = re.compile(r"insert_ohr_help(?:_[A-Za-z0-9_]+)?\.sql\Z")
+files = []
+for directory in (root / "docs", root / "build"):
+    if directory.is_symlink():
+        raise RuntimeError("Help SQL output directory must not be a symbolic link")
+    if directory.is_dir():
+        for path in sorted(directory.glob("insert_ohr_help*.sql")):
+            if not pattern.fullmatch(path.name) or path.is_symlink():
+                raise RuntimeError("Unsupported Help SQL output path")
+            tracked = subprocess.run(["git", "-C", str(root), "ls-files", "--error-unmatch", "--", path.relative_to(root).as_posix()], capture_output=True)
+            if tracked.returncode != 1:
+                raise RuntimeError("Help SQL policy must not modify tracked files")
+            files.append(path)
+if mode == "prepare":
+    for path in files:
+        path.unlink()
+elif mode == "normalize":
+    sources = [path for path in files if path.parent == root / "docs"]
+    single = root / "docs" / "insert_ohr_help.sql"
+    split = [path for path in sources if path != single]
+    if single in sources and split:
+        raise RuntimeError("Mixed single and tenant Help SQL outputs")
+    if not sources:
+        raise RuntimeError("Help SQL output was not generated")
+    if split:
+        content = "\n".join(path.read_text(encoding="utf-8-sig") for path in split)
+        single.write_text(content, encoding="utf-8")
+    for path in files:
+        if path != single:
+            path.unlink()
+    print("[Help SQL policy] single artifact prepared from", len(sources), "file(s)")
+else:
+    raise RuntimeError("Unknown Help SQL policy mode")
+'''
+
+
 DIRECT_FRONTEND_BUILD_SCRIPT = r"""set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export HOME="${HOME:-/root}"
@@ -1675,6 +1721,13 @@ else
   git clone -b "$HELP_DOCS_BRANCH" "$HELP_DOCS_GIT_URL" "$HELP_DIR"
 fi
 cd "$HELP_DIR"
+git config remote.origin.pushurl 'disabled://gitlab-read-only'
+normalize_help_sql() {
+  python3 - "$HELP_DIR" "$1" <<'ONEOPS_HELP_SQL_POLICY'
+__HELP_SQL_POLICY__
+ONEOPS_HELP_SQL_POLICY
+}
+HELP_SQL_POLICY_HASH='__HELP_SQL_POLICY_HASH__'
 SVN_AUTH_ARGS=()
 if [ -n "${HELP_DOCS_SVN_USERNAME:-}" ]; then
   SVN_AUTH_ARGS+=(--username "$HELP_DOCS_SVN_USERNAME")
@@ -1716,7 +1769,7 @@ HELP_GIT_REV="$(git rev-parse HEAD)"
 HELP_SVN_REV="$(svn info --show-item revision "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert 2>/dev/null || svn info "$HELP_DOCS_SVN_WORKDIR" "${SVN_AUTH_ARGS[@]}" --non-interactive --trust-server-cert | awk -F': ' '/^Revision:/ {print $2; exit}')"
 HELP_LOCK_HASH="$( { [ -f package.json ] && sha256sum package.json; [ -f pnpm-lock.yaml ] && sha256sum pnpm-lock.yaml; } | sha256sum | awk '{print $1}' )"
 HELP_CACHE_DIR="$HELP_DIR/.ci-cache/help"
-HELP_CACHE_KEY="$(printf '%s\n%s\n%s\n%s\n' "$HELP_DOCS_BRANCH" "$HELP_GIT_REV" "$HELP_SVN_REV" "$HELP_LOCK_HASH" | sha256sum | awk '{print $1}')"
+HELP_CACHE_KEY="$(printf '%s\n%s\n%s\n%s\n%s\n' "$HELP_DOCS_BRANCH" "$HELP_GIT_REV" "$HELP_SVN_REV" "$HELP_LOCK_HASH" "$HELP_SQL_POLICY_HASH" | sha256sum | awk '{print $1}')"
 HELP_CACHED_ZIP="$HELP_CACHE_DIR/$HELP_CACHE_KEY.zip"
 mkdir -p "$HELP_CACHE_DIR"
 if [ -f "$HELP_CACHED_ZIP" ]; then
@@ -1743,7 +1796,9 @@ find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -delete
 find . -maxdepth 1 -type d -name 'ohr_help_docs_release_*' -exec rm -rf {} +
 rm -rf build
 npm run copy-images
+normalize_help_sql prepare
 npm run build
+normalize_help_sql normalize
 npm run bundle
 help_zip="$(find . -maxdepth 1 -type f -name 'ohr_help_docs_release_*.zip' -printf '%T@ %p\n' | sort -nr | awk 'NR==1 {print $2}')"
 if [ -z "$help_zip" ] || [ ! -f "$help_zip" ]; then
@@ -1893,6 +1948,11 @@ if [ -n "$help_zip" ] && [[ "$help_zip" == "$HELP_DIR"/ohr_help_docs_release_*.z
 fi
 ls -lh "$OUT_WEB_ZIP"
 """
+
+
+DIRECT_FRONTEND_BUILD_SCRIPT = DIRECT_FRONTEND_BUILD_SCRIPT.replace(
+    "__HELP_SQL_POLICY__", HELP_SQL_POLICY
+).replace("__HELP_SQL_POLICY_HASH__", hashlib.sha256(HELP_SQL_POLICY.encode("utf-8")).hexdigest())
 
 
 def direct_frontend_env(req: dict[str, Any], build_id: str) -> dict[str, str]:

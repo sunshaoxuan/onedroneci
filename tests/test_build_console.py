@@ -879,13 +879,14 @@ def test_direct_frontend_build_uses_bundle_zip_only():
 
 
 def test_direct_frontend_build_script_has_valid_bash_syntax(tmp_path):
+    import os
     import subprocess
 
     server = load_server()
     script_path = tmp_path / "direct-frontend-build.sh"
-    script_path.write_text(server.DIRECT_FRONTEND_BUILD_SCRIPT, encoding="utf-8")
+    script_path.write_text(server.DIRECT_FRONTEND_BUILD_SCRIPT, encoding="utf-8", newline="\n")
 
-    result = subprocess.run(["bash", "-n", str(script_path)], capture_output=True, text=True, check=False)
+    result = subprocess.run([os.environ.get("BASH_EXE", "bash"), "-n", script_path.as_posix()], capture_output=True, text=True, check=False)
 
     assert result.returncode == 0, result.stderr
 

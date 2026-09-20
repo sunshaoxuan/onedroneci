@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Help SQLは生成物ポリシーで単一ファイルに統合し、GitLab上流コードを変更しない。ポリシーハッシュでCacheを分離し、追跡ファイル・symlink・混在出力を拒否する。
+- Help取得用checkoutのPush先を無効化し、上流取消しは限定逆Patchを開発担当者へ渡す運用に統一する。
+
 ## 0.4.3 - 2026-07-21
 
 ### Fixed
