@@ -5,6 +5,8 @@ import shutil
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from standalone_packager import (
     CONFIG_IN_STANDALONE_ZIP,
     FIREWALL_ALLOW_SCRIPT_IN_STANDALONE_ZIP,
@@ -27,6 +29,7 @@ from standalone_packager import (
     default_organisation_dstart,
     fetch_nginx_releases,
     help_sql_from_web_zip,
+    write_help_sql_from_web_zip,
     inspect_artifact_versions,
     patch_account_sql,
     render_ohr_import_sql,
@@ -99,7 +102,7 @@ def make_backend_package(path: Path) -> None:
 
 def make_web_package(path: Path, help_sql: str = "new help sql") -> None:
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as web:
-        web.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", help_sql)
+        web.writestr("ohr-cicd/web_prod/help/insert_ohr_help_default.sql", help_sql)
         web.writestr(
             "ohr-cicd/web_prod/meta.json",
             '{"releaseTimestamp":"release_2026_01_01_00_00_00","gitInfo":{"ohr-feelin":{"branch":"release_front","latestCommit":"abcdef1234567890"}}}',
@@ -469,7 +472,7 @@ def test_build_product_package_replaces_only_dynamic_zip_members_and_help_sql(tm
     subprocess.run(["git", "commit", "-m", "init"], cwd=data_sync_repo, check=True)
     package_zip.write_bytes(b"new-package")
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", "new help sql")
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help_default.sql", "new help sql")
         z.writestr("ohr-cicd/web_prod/meta.json", "{}")
 
     result = build_product_package(
@@ -807,7 +810,7 @@ def test_build_product_package_prepares_middleware_versions(monkeypatch, tmp_pat
     make_sql_templates(sql_dir)
     package_zip.write_bytes(b"new-package")
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", "new help sql")
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help_default.sql", "new help sql")
     make_nested_zip(redis_override, "redis", {"redis-server.exe": b"cached"})
     calls: list[dict[str, str]] = []
 
@@ -908,10 +911,47 @@ def test_help_sql_from_web_zip_validates_docs_paths(tmp_path):
         f"VALUES ('docs/{guid}/portal/sample/', '{guid}');"
     )
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", sql)
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help_default.sql", sql)
         z.writestr(f"ohr-cicd/web_prod/help/docs/{guid}/portal/sample/index.html", "ok")
 
     assert help_sql_from_web_zip(web_zip) == "DELETE FROM ohr_help;\n" + sql
+
+
+def test_optional_help_sql_is_separate_and_requires_configuration(tmp_path):
+    web_zip = tmp_path / "web.zip"
+    optional_name = "insert_ohr_help_end_of_year_adjustment_management_role.sql"
+    with zipfile.ZipFile(web_zip, "w") as z:
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help_default.sql", "INSERT INTO ohr_help VALUES ('default');")
+        z.writestr("ohr-cicd/web_prod/help/" + optional_name, "INSERT INTO ohr_help VALUES ('optional');")
+
+    tenant_sql = tmp_path / "製品" / "tenant" / "ohr_help.sql"
+    ohr_dir = tmp_path / "製品" / "ohr"
+    write_help_sql_from_web_zip(web_zip, tenant_sql, ohr_dir)
+
+    assert "optional" not in tenant_sql.read_text(encoding="utf-8")
+    assert "default" in tenant_sql.read_text(encoding="utf-8")
+    assert (ohr_dir / optional_name).read_text(encoding="utf-8") == "INSERT INTO ohr_help VALUES ('optional');"
+    assert "DELETE FROM ohr_help" not in (ohr_dir / optional_name).read_text(encoding="utf-8")
+    assert "設定を反映してから" in (ohr_dir / "README.md").read_text(encoding="utf-8")
+
+
+def test_help_document_validation_covers_optional_sql(tmp_path):
+    web_zip = tmp_path / "web.zip"
+    default_id = "11111111-1111-1111-1111-111111111111"
+    optional_id = "22222222-2222-2222-2222-222222222222"
+    with zipfile.ZipFile(web_zip, "w") as z:
+        z.writestr(
+            "ohr-cicd/web_prod/help/insert_ohr_help_default.sql",
+            f"INSERT INTO ohr_help VALUES ('docs/{default_id}/page/');",
+        )
+        z.writestr(
+            "ohr-cicd/web_prod/help/insert_ohr_help_optional.sql",
+            f"INSERT INTO ohr_help VALUES ('docs/{optional_id}/page/');",
+        )
+        z.writestr(f"ohr-cicd/web_prod/help/docs/{default_id}/page/index.html", "ok")
+
+    with pytest.raises(ValueError, match="missing docs for SQL paths"):
+        help_sql_from_web_zip(web_zip)
 
 
 def test_help_sql_from_web_zip_fails_when_docs_are_missing(tmp_path):
@@ -922,7 +962,7 @@ def test_help_sql_from_web_zip_fails_when_docs_are_missing(tmp_path):
         f"VALUES ('docs/{guid}/portal/sample/', '{guid}');"
     )
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", sql)
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help_default.sql", sql)
 
     try:
         help_sql_from_web_zip(web_zip)
@@ -1247,7 +1287,7 @@ def test_build_product_package_emits_stage_logs(tmp_path, monkeypatch):
     package_zip.write_bytes(b"new-package")
     with zipfile.ZipFile(web_zip, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr("ohr-cicd/web_prod/meta.json", "{}")
-        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", "help sql")
+        z.writestr("ohr-cicd/web_prod/help/insert_ohr_help_default.sql", "help sql")
     monkeypatch.setattr(packager, "sync_git_tree", lambda repo_url, branch, workdir, **kwargs: None)
     logs: list[str] = []
 

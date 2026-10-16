@@ -33,8 +33,17 @@ DEFAULT_DATA_SYNC_CUSTOM_SUBDIR = ""
 DATA_SYNC_RUNNER_TEMPLATE = ROOT / "scripts" / "templates" / "run_all_sql.ps1"
 DEFAULT_DATA_SYNC_GIT_TIMEOUT = int(os.environ.get("DATA_SYNC_GIT_TIMEOUT", "300"))
 DATA_SYNC_ALLOWED_DIRS = ("ForeignTable", "Function", "Procedure", "Sequence", "Table", "View")
-HELP_SQL_IN_WEB_ZIP = "ohr-cicd/web_prod/help/insert_ohr_help.sql"
+HELP_SQL_IN_WEB_ZIP = "ohr-cicd/web_prod/help/insert_ohr_help_default.sql"
+HELP_SQL_DIR_IN_WEB_ZIP = "ohr-cicd/web_prod/help/"
+HELP_SQL_FEATURE_RE = re.compile(r"insert_ohr_help_[A-Za-z0-9_]+\.sql\Z")
 HELP_SQL_RESET_PREFIX = "DELETE FROM ohr_help;\n"
+HELP_SQL_OHR_README = """# ohr 向け Help SQL
+
+このディレクトリの SQL は標準の tenant 向け Help 登録とは別の任意資材です。
+適用機関、対象ロール、登録先の ohr データベース及び必要な設定値を確認し、
+SQL に設定を反映してから、必要なファイルだけを ohr データベースで実行してください。
+確認・設定前に一括実行しないでください。
+"""
 HELP_DOC_PATH_RE = re.compile(r"docs/[0-9a-fA-F-]{36}/[^'\"\s]*")
 HELP_DOC_UUID_RE = re.compile(r"docs/([0-9a-fA-F-]{36})/")
 CONFIG_IN_STANDALONE_ZIP = "OneHrStandalone/bin/kernel/config.ini"
@@ -1402,7 +1411,7 @@ def build_product_package(
         if include_help_sql:
             if logger:
                 logger("help_sql_replace")
-            _replace_help_sql_if_present(web_zip, product_dir / "1.tenant" / "ohr_help.sql")
+            write_help_sql_from_web_zip(web_zip, product_dir / "1.tenant" / "ohr_help.sql", product_dir / "2.ohr" / "任意Help")
         import_dir = delivery_root / "導入"
         if tenant_import_config:
             tenant_import_dir = import_dir / "tenant"
@@ -1418,7 +1427,7 @@ def build_product_package(
                 render_ohr_import_sql(ohr_import_config),
                 encoding="utf-8",
             )
-        complete_all_sql_scripts(delivery_root, excluded_roots=(data_sync_target,))
+        complete_all_sql_scripts(delivery_root, excluded_roots=(data_sync_target, product_dir / "2.ohr" / "任意Help"))
         (product_dir / "version.txt").write_text(render_version_txt(version), encoding="utf-8")
 
         final_zip = product_dir / "OneHrStandalone.zip"
@@ -1536,7 +1545,7 @@ def build_custom_package(
             if selection.help and web_zip is not None:
                 if logger:
                     logger("help_sql_replace")
-                _replace_help_sql_if_present(web_zip, help_sql)
+                write_help_sql_from_web_zip(web_zip, help_sql, product_dir / "2.ohr" / "任意Help")
 
         if selection.data_sync:
             if not data_sync_git_url:
@@ -1574,7 +1583,7 @@ def build_custom_package(
         version_txt = product_dir / "version.txt"
         version_txt.write_text(render_version_txt(version), encoding="utf-8")
         outputs["version_txt"] = str(version_txt)
-    complete_all_sql_scripts(delivery_root, excluded_roots=(data_sync_target,))
+    complete_all_sql_scripts(delivery_root, excluded_roots=(data_sync_target, product_dir / "2.ohr" / "任意Help"))
 
     if selection.runtime:
         final_zip = product_dir / "OneHrStandalone.zip"
@@ -1685,21 +1694,39 @@ def build_nho_common_package(
 
 
 def help_sql_from_web_zip(web_zip: Path) -> str:
-    with zipfile.ZipFile(web_zip) as zf:
-        try:
-            data = zf.read(HELP_SQL_IN_WEB_ZIP)
-        except KeyError:
-            raise FileNotFoundError(f"missing Help SQL in web.zip: {HELP_SQL_IN_WEB_ZIP}") from None
-    text = data.decode("utf-8-sig")
-    _validate_help_sql_matches_web_zip(web_zip, text)
+    sql_files = help_sql_files_from_web_zip(web_zip)
+    text = sql_files.pop("insert_ohr_help_default.sql")
     if not text.lstrip().lower().startswith("delete from ohr_help"):
         text = HELP_SQL_RESET_PREFIX + text
     return text
 
 
-def _replace_help_sql_if_present(web_zip: Path, target: Path) -> None:
-    text = help_sql_from_web_zip(web_zip)
-    target.write_text(text, encoding="utf-8")
+def help_sql_files_from_web_zip(web_zip: Path) -> dict[str, str]:
+    with zipfile.ZipFile(web_zip) as zf:
+        names = [name for name in zf.namelist() if name.startswith(HELP_SQL_DIR_IN_WEB_ZIP) and name.endswith(".sql")]
+        if HELP_SQL_IN_WEB_ZIP not in names:
+            raise FileNotFoundError(f"missing Help SQL in web.zip: {HELP_SQL_IN_WEB_ZIP}") from None
+        sql_files = {}
+        for name in names:
+            filename = name[len(HELP_SQL_DIR_IN_WEB_ZIP):]
+            if not HELP_SQL_FEATURE_RE.fullmatch(filename):
+                raise ValueError(f"unsupported Help SQL path in web.zip: {name}")
+            sql_files[filename] = zf.read(name).decode("utf-8-sig")
+    _validate_help_sql_matches_web_zip(web_zip, "\n".join(sql_files.values()))
+    return sql_files
+
+
+def write_help_sql_from_web_zip(web_zip: Path, tenant_target: Path, ohr_dir: Path) -> None:
+    sql_files = help_sql_files_from_web_zip(web_zip)
+    default = sql_files.pop("insert_ohr_help_default.sql")
+    tenant_target.parent.mkdir(parents=True, exist_ok=True)
+    tenant_sql = default if default.lstrip().lower().startswith("delete from ohr_help") else HELP_SQL_RESET_PREFIX + default
+    tenant_target.write_text(tenant_sql, encoding="utf-8")
+    if sql_files:
+        ohr_dir.mkdir(parents=True, exist_ok=True)
+        for filename, content in sql_files.items():
+            (ohr_dir / filename).write_text(content, encoding="utf-8")
+        (ohr_dir / "README.md").write_text(HELP_SQL_OHR_README, encoding="utf-8")
 
 
 def _extract_help_sql_doc_paths(sql_text: str) -> set[str]:

@@ -22,25 +22,25 @@ def policy(tmp_path):
     return module, run
 
 
-def test_merge_preserves_sql_and_only_removes_generated_outputs(policy, tmp_path):
+def test_feature_sql_is_preserved_and_only_stale_build_output_is_removed(policy, tmp_path):
     _, run = policy
     first = "INSERT INTO ohr_help VALUES ('a', 'docs/a/', '日本語');"
     second = "INSERT INTO ohr_help VALUES ('b', 'docs/b/', 'O''Brien');"
-    (tmp_path / 'docs/insert_ohr_help_a.sql').write_text(first, encoding='utf-8')
+    (tmp_path / 'docs/insert_ohr_help_default.sql').write_text(first, encoding='utf-8')
     (tmp_path / 'docs/insert_ohr_help_b.sql').write_text(second, encoding='utf-8-sig')
-    (tmp_path / 'build/insert_ohr_help_a.sql').write_text(first, encoding='utf-8')
+    (tmp_path / 'build/insert_ohr_help_default.sql').write_text(first, encoding='utf-8')
     (tmp_path / 'docs/manual.md').write_text('manual')
     assert run('normalize').returncode == 0
-    assert (tmp_path / 'docs/insert_ohr_help.sql').read_text(encoding='utf-8') == first + '\n' + second
-    assert not list((tmp_path / 'docs').glob('insert_ohr_help_*.sql'))
+    assert (tmp_path / 'docs/insert_ohr_help_default.sql').read_text(encoding='utf-8') == first
+    assert (tmp_path / 'docs/insert_ohr_help_b.sql').read_text(encoding='utf-8-sig') == second
     assert not list((tmp_path / 'build').glob('*.sql'))
     assert (tmp_path / 'docs/manual.md').read_text() == 'manual'
     assert run('normalize').returncode == 0
 
 
-def test_prepare_cleans_stale_outputs_and_single_is_preserved(policy, tmp_path):
+def test_prepare_cleans_stale_outputs(policy, tmp_path):
     _, run = policy
-    path = tmp_path / 'docs/insert_ohr_help.sql'
+    path = tmp_path / 'docs/insert_ohr_help_default.sql'
     path.write_bytes(b'original\r\n')
     assert run('normalize').returncode == 0
     assert path.read_bytes() == b'original\r\n'
@@ -112,10 +112,10 @@ def test_full_upstream_sync_preserves_policy_and_fails_closed(policy, tmp_path):
     assert sync().returncode == 0
     # 遠隔更新後も同じローカル生成物ポリシーを適用できる。
     (checkout / 'docs').mkdir()
-    (checkout / 'docs/insert_ohr_help_a.sql').write_text('SELECT 1;')
+    (checkout / 'docs/insert_ohr_help_default.sql').write_text('SELECT 1;')
     normalized = subprocess.run([sys.executable, '-c', module.HELP_SQL_POLICY, str(checkout), 'normalize'], capture_output=True)
     assert normalized.returncode == 0, normalized.stderr
-    (checkout / 'docs/insert_ohr_help.sql').unlink()
+    (checkout / 'docs/insert_ohr_help_default.sql').unlink()
     (checkout / 'changed.txt').write_text('local edit')
     assert sync().returncode != 0
     assert (checkout / 'changed.txt').read_text() == 'local edit'

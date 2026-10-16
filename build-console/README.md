@@ -73,7 +73,10 @@ Direct 方式只保留一种构建路径，不混用 DroneCI：
 
 ## NHO Direct 打包设计
 
-NHO版不使用標準版仓库、SVN、help、`ohr-cicd` 或客户配置字段。
+NHO 版の前端構築は標準版のリポジトリ、Help 生成器、`ohr-cicd` 及び顧客環境設定を使用しない。通常構築では NHO Help 資材を取得、生成、封入しない。文書更新時の Help 構築は別途設計する。
+
+標準 PHR の Help SQL は `insert_ohr_help_default.sql` とfeature別の任意SQLを統合せず `web.zip` に収録する。文書Pathとの照合は全SQLを対象とする。交付時はdefaultだけをtenantに登録し、その他はohr向け任意資材としてREADMEとともに分離する。
+
 
 1. 后端仓库为 `nhophr/ohr-back`，按页面后端分支增量同步。
 2. 后端执行 `mvn clean package -Dmaven.test.skip`、`collect-pkg.sh`，再压缩 `./package` 为 `package.zip`。

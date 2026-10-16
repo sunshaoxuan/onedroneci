@@ -1567,7 +1567,7 @@ if [ -n "$previous_rev" ] && [ "$previous_rev" != "$latest_rev" ]; then
 fi
 '''
 
-# 上流のソースを変更せず、生成済みSQLだけを単一の配布ファイルへ統合する。
+# 上流のソースを変更せず、生成済みSQLのfeature別構成を保持する。
 HELP_SQL_POLICY = r'''
 import re
 import subprocess
@@ -1594,19 +1594,13 @@ if mode == "prepare":
         path.unlink()
 elif mode == "normalize":
     sources = [path for path in files if path.parent == root / "docs"]
-    single = root / "docs" / "insert_ohr_help.sql"
-    split = [path for path in sources if path != single]
-    if single in sources and split:
-        raise RuntimeError("Mixed single and tenant Help SQL outputs")
-    if not sources:
-        raise RuntimeError("Help SQL output was not generated")
-    if split:
-        content = "\n".join(path.read_text(encoding="utf-8-sig") for path in split)
-        single.write_text(content, encoding="utf-8")
+    default = root / "docs" / "insert_ohr_help_default.sql"
+    if default not in sources or root / "docs" / "insert_ohr_help.sql" in sources:
+        raise RuntimeError("Feature-specific Help SQL with default output is required")
     for path in files:
-        if path != single:
+        if path.parent == root / "build":
             path.unlink()
-    print("[Help SQL policy] single artifact prepared from", len(sources), "file(s)")
+    print("[Help SQL policy] feature-specific artifacts prepared:", len(sources))
 else:
     raise RuntimeError("Unknown Help SQL policy mode")
 '''
@@ -1925,11 +1919,11 @@ import sys
 from pathlib import Path
 
 help_root = Path(sys.argv[1])
-sql_path = help_root / "insert_ohr_help.sql"
-if not sql_path.is_file():
-    print("Help SQL が生成されていません: insert_ohr_help.sql")
+sql_paths = sorted(help_root.glob("insert_ohr_help_*.sql"))
+if not (help_root / "insert_ohr_help_default.sql").is_file() or not sql_paths:
+    print("Help SQL が生成されていません: insert_ohr_help_default.sql")
     sys.exit(6)
-sql_text = sql_path.read_text(encoding="utf-8-sig")
+sql_text = "\n".join(path.read_text(encoding="utf-8-sig") for path in sql_paths)
 path_re = re.compile(r"docs/[0-9a-fA-F-]{36}/[^'\"\s]*")
 sql_paths = {m.group(0).rstrip("/") + "/" for m in path_re.finditer(sql_text)}
 doc_paths = {

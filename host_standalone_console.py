@@ -45,7 +45,7 @@ from standalone_packager import (
     download_remote_artifact,
     download_remote_file,
     fetch_middleware_catalog,
-    help_sql_from_web_zip,
+    write_help_sql_from_web_zip,
     inspect_artifact_versions,
     remote_json,
     repo_subdir_from_input,
@@ -711,8 +711,8 @@ def build_standard_release_artifacts(
         "web_zip": str(target_web),
     }
     if include_help_sql:
-        help_sql = delivery_root / "ohr_help.sql"
-        help_sql.write_text(help_sql_from_web_zip(target_web), encoding="utf-8")
+        help_sql = delivery_root / "製品" / "tenant" / "ohr_help.sql"
+        write_help_sql_from_web_zip(target_web, help_sql, delivery_root / "製品" / "ohr")
         outputs["help_sql"] = str(help_sql)
     return outputs
 

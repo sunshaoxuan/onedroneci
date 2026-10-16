@@ -33,7 +33,7 @@
 9. 机构封包时，主控台根据 `導入計画` 和服务利用设定生成 `導入/tenant/import_plan.sql` 与 `導入/ohr/import_plan.sql`，用于数据库脚本执行后显式更新 tenant 导入设置、菜单公开状态和定时任务状态，启用项与停用项都会输出更新语句。
    - 邮件服务的“送信サーバーには、認証が必要です”对应产品后端 `MAIL_CONFIG.authConfirmation` 布尔字段，发送时写入 JavaMail `mail.smtp.auth`；构造器不提供 plain/login 类型选择。
 10. 机构封包时，主控台从 `data-synchronization.git` 的 `updsv7phr/PHR` 复制 `データ連携` 白名单目录；如填写补充脚本代码源，可粘贴完整 GitLab tree URL 或仓库内目录路径，构建终端校验有效后追加复制该路径下的白名单目录，同名脚本以补充源为准。
-11. 勾选生成 Help 时，构建终端会校验 Help SQL 中登记的 `docs/<uuid>/...` 路径和实际 `web_prod/help/docs` 目录一致；主控台把校验后的 `insert_ohr_help.sql` 转为全量删除再创建 SQL。机构封包写入 `製品/1.tenant/ohr_help.sql`，标准发版写入输出目录同级 `ohr_help.sql`。如果 Help SQL 缺失或路径不一致则终止打包。取消勾选时跳过 Help 构建和 Help SQL 覆盖。
+ 11. Help 生成時はfeature別の全SQLに記載された `docs/<uuid>/...` と `web_prod/help/docs` を照合する。`default` のみ全量再登録SQLとして機関封包の `製品/1.tenant/ohr_help.sql` 又は標準発版の `製品/tenant/ohr_help.sql` に出力する。非defaultのSQLは機関封包の `製品/2.ohr/任意Help` 又は標準発版の `製品/ohr` に分離し、適用・設定後に必要分だけ実行するREADMEを付ける。機関封包の任意Helpは`all.sql`へ自動追加しない。SQL欠落又は文書Path不一致は構築を停止する。
 12. 机构封包时，主控台把页面填写的资材编号与前后端分支写入 `version.txt`，重建 `OneHrStandalone.zip`。
 13. 机构封包在交付根的 `データ連携/run_all_sql.ps1` 生成数据连携 SQL 总执行脚本。脚本使用 OHR 与 UPDS 两组连接设置，OHR 设置同时用于 `ohr` 与 `tenant`；数据连携子目录不再复制或生成 `all.sql`。执行时递归发现六类业务目录中的全部 SQL，并在连接数据库前校验每个文件恰好进入一次执行计划。
 13. 標準版完整交付包可为 nginx、Redis、MinIO 选择中间件版本。nginx、Redis 默认使用模板内置包；MinIO 默认不包含，勾选后使用模板内置包或所选版本。选择其他版本时，主控台从官方发布源下载到宿主机缓存，并在重建 `OneHrStandalone.zip` 时替换 `OneHrStandalone/software/` 下的同名 zip。Azure Blob Storage 默认关闭，最终包中的 Azure 代理段按开关统一注释或取消注释。

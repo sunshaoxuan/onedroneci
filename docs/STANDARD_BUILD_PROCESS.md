@@ -209,33 +209,33 @@ HOST_STANDALONE_DATA_DIR/<job_id>/
 
 ## 11. Help SQL
 
-勾选生成 Help 时，`web.zip` 内必须存在：
+Help生成時、`web.zip` 内には次のdefault SQLが必要である。非default SQLはfeature別の名前で保持する。
 
 ```text
-ohr-cicd/web_prod/help/insert_ohr_help.sql
+ohr-cicd/web_prod/help/insert_ohr_help_default.sql
 ```
 
-最终打包器会将该文件写入机构封包目录：
+default SQLは機関封包で次へ配置する。
 
 ```text
 製品/1.tenant/ohr_help.sql
 ```
 
-标准发版没有 `製品/1.tenant` 目录，因此会写入标准发版输出目录：
+標準発版では次へ配置する。
 
 ```text
-ohr_help.sql
+製品/tenant/ohr_help.sql
 ```
 
-写入时会在顶部追加：
+default SQLには先頭に次を付ける。
 
 ```sql
 DELETE FROM ohr_help;
 ```
 
-这样 Help 菜单 SQL 与本次构建出的 Help 内容保持一致，并保证重复执行时先清空旧帮助信息。该文件缺失时最终打包失败。标准发版场景下，该外置 SQL 是生产升级后刷新 `ohr_help` 表的正式资材。
+非default SQLは機関封包の `製品/2.ohr/任意Help` 又は標準発版の `製品/ohr` に、設定確認後の実行を求めるREADMEとともに配置する。任意SQLには上記DELETEを付けず、機関封包の `all.sql` に自動追加しない。defaultが欠落した場合は構築を停止する。
 
-构建终端在 `help.zip` 解入 `web_prod/help` 后会检查 `insert_ohr_help.sql` 中所有 `docs/<uuid>/...` 路径是否存在对应的 `docs/<uuid>/.../index.html`。最终打包器也会再次执行同样的检查。发现 SQL 路径和实际 Help 文件不一致时，打包失败，避免交付后点击 Help 标记跳转到 404。
+構築端末と最終打包器はfeature別の全SQLに記載された `docs/<uuid>/...` と `docs/<uuid>/.../index.html` の対応を検証する。不一致の場合は構築を停止する。
 
 既存交付包如需重新生成 `ohr_help` 全量修复 SQL，可执行：
 

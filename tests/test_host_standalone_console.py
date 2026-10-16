@@ -881,7 +881,7 @@ def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, mon
                 f"VALUES ('docs/{guid}/portal/sample/', '{guid}');"
             )
             with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as z:
-                z.writestr("ohr-cicd/web_prod/help/insert_ohr_help.sql", sql)
+                z.writestr("ohr-cicd/web_prod/help/insert_ohr_help_default.sql", sql)
                 z.writestr(f"ohr-cicd/web_prod/help/docs/{guid}/portal/sample/index.html", "ok")
         else:
             destination.write_bytes(name.encode("utf-8"))
@@ -900,8 +900,8 @@ def test_standard_release_job_copies_package_and_web_to_output_dir(tmp_path, mon
     assert stored["outputs"]["product_dir"] == str(output_dir)
     assert (output_dir / "package.zip").read_bytes() == b"package.zip"
     assert (output_dir / "web.zip").is_file()
-    assert (output_dir / "ohr_help.sql").read_text(encoding="utf-8").startswith("DELETE FROM ohr_help;")
-    assert stored["outputs"]["help_sql"] == str(output_dir / "ohr_help.sql")
+    assert (output_dir / "製品" / "tenant" / "ohr_help.sql").read_text(encoding="utf-8").startswith("DELETE FROM ohr_help;")
+    assert stored["outputs"]["help_sql"] == str(output_dir / "製品" / "tenant" / "ohr_help.sql")
     assert payloads[0]["build_backend"] is True
     assert payloads[0]["build_frontend"] is True
     assert payloads[0]["build_help"] is True

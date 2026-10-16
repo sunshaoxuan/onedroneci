@@ -32,8 +32,8 @@ ohr-help-docs/release_ci の 32182154cacf0e2459e05ae0a81aeae425102dc5 は script
 ## 構築処理
 build-console/server.pyのHELP_SQL_POLICYが生成物のみを扱う。
 1. npm run build前にdocs/build内の旧Help SQL生成物を除去する。追跡ファイルとsymlinkは変更せずエラーにする。
-2. ビルド後、租戸別SQLの内容を変更せず単一insert_ohr_help.sqlへ統合する。単一出力だけの場合はそのまま使用する。出力なし又は単一・分割の混在は停止する。
-3. 元のnpm run bundleに単一SQLを渡す。
+2. ビルド後、`insert_ohr_help_default.sql` の存在を確認し、feature別のSQLを統合せず維持する。単一の旧形式又はdefaultの欠落は停止する。
+3. 元のnpm run bundleにfeature別SQLを渡す。標準交付ではdefaultだけをtenantに配置し、その他はohr向け任意資材とREADMEへ分離する。
 4. ポリシー本文のSHA256をHelp Cache Keyに加える。ポリシー変更後に古いCacheを再使用しない。
 5. Help checkoutのorigin.pushurlをdisabled://gitlab-read-onlyに設定する。これはローカル設定であり、遠隔権限の変更ではない。明示URL等を含む全経路を技術的に禁止する保証ではなく、永続作業規則も適用する。
 

@@ -67,7 +67,7 @@ WEB 主机信息启用“HTTPS / 443 設定を生成”时，页面将 HTTP 端�
 5. `sql_assets`：获取并配置 `1.tenant` / `2.ohr` SQL 资材。
 6. `data_sync_assets`：获取并配置 `データ連携`。
 7. `account_sql`：按页面参数修改 `2.ohr/4.account.sql`。
-8. `help_sql`：勾选生成 Help 时，从 `web.zip` 中读取 `insert_ohr_help.sql`，校验 SQL 登记路径与 `web_prod/help/docs` 实文件一致，在顶部追加 `DELETE FROM ohr_help;`。机构封包替换 `1.tenant/ohr_help.sql`，标准发版输出同级 `ohr_help.sql`；缺失或不一致时打包失败。取消勾选时该步骤跳过。
+8. `help_sql`：Help生成時は `web.zip` 内のfeature別SQLを全件照合し、defaultだけに `DELETE FROM ohr_help;` を付けて機関封包の `1.tenant/ohr_help.sql` 又は標準発版の `製品/tenant/ohr_help.sql` に出力する。非defaultはohr向け任意資材としてREADMEとともに分離し、自動実行しない。default欠落又は文書Path不一致なら構築を停止する。
 9. `standalone_zip`：重建 `OneHrStandalone.zip`。
 10. `complete`：完整交付目录生成完成。
 
